@@ -1,0 +1,35 @@
+.env
+.env.*
+!.env.example
+
+# Local secrets and private logs
+.env.local
+MedScope_Agent log.md
+
+# Generated outputs and experiment artifacts
+output/
+outputs/
+
+# Local medical data and case traces
+data/external/
+data/cases/
+data/images/
+data/overlays/
+data/masks/
+
+# Medical images and model weights
+*.nii
+*.nii.gz
+*.dcm
+*.nrrd
+*.pt
+*.pth
+*.ckpt
+
+# Python/cache/system files
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Nested external repository
+moon-bridge/

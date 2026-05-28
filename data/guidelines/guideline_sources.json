@@ -1,0 +1,596 @@
+{
+  "femoral_head_necrosis": {
+    "disease_name": "股骨头坏死",
+    "source_type": "medical_guideline",
+    "evidence_level": "high",
+    "sources": [
+      {
+        "title": "ARCO staging related public medical knowledge summary",
+        "publisher": "ARCO/public medical knowledge",
+        "source_id": "arco_femoral_head_necrosis_summary",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8216992/",
+        "source_kind": "peer_reviewed_review",
+        "evidence_note": "ARCO 2019 revised staging system and ONFH staging summary"
+      }
+    ],
+    "guideline_documents": [
+      {
+        "title": "ARCO staging related public medical knowledge summary",
+        "source_id": "arco_femoral_head_necrosis_summary",
+        "sections": [
+          {
+            "heading": "clinical_features",
+            "text": "common_symptoms: 髋关节疼痛; 腹股沟区疼痛; 活动受限\nrisk_factors: 长期饮酒; 激素使用史; 外伤史",
+            "citations": [
+              {
+                "title": "ARCO staging related public medical knowledge summary",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8216992/",
+                "source_kind": "peer_reviewed_review",
+                "evidence_note": "ONFH clinical context and ARCO staging background"
+              }
+            ]
+          },
+          {
+            "heading": "required_image_views",
+            "text": "双髋正位 X 光; 蛙式位 X 光; MRI T1; MRI T2",
+            "citations": [
+              {
+                "title": "Guidelines for clinical diagnosis and treatment of osteonecrosis of the femoral head in adults (2019 version)",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7152793/",
+                "source_kind": "peer_reviewed_guideline",
+                "evidence_note": "Adult ONFH imaging and clinical diagnostic guideline"
+              }
+            ]
+          },
+          {
+            "heading": "visual_targets",
+            "text": "anatomy: 股骨头; 髋臼; 关节间隙\nlesion_features: 股骨头塌陷; 硬化带; 囊性变; 新月征; 骨小梁纹理异常",
+            "citations": [
+              {
+                "title": "Guidelines for clinical diagnosis and treatment of osteonecrosis of the femoral head in adults (2019 version)",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7152793/",
+                "source_kind": "peer_reviewed_guideline",
+                "evidence_note": "ONFH radiographic staging features"
+              }
+            ]
+          },
+          {
+            "heading": "staging_rules",
+            "text": "ARCO_I: X 光可无明显异常，MRI 可见异常信号 | xray_features=无明显塌陷; 无明显关节间隙狭窄 | mri_features=T1 低信号; T2 异常信号\nARCO_II: X 光可见硬化或囊性变，但无股骨头塌陷 | xray_features=硬化影; 囊性改变; 无明显塌陷\nARCO_III: 出现股骨头塌陷或新月征 | xray_features=新月征; 股骨头塌陷\nARCO_IV: 继发骨关节炎改变 | xray_features=关节间隙狭窄; 髋臼改变; 明显骨关节炎",
+            "citations": [
+              {
+                "title": "Osteonecrosis of the Femoral Head: an Updated Review of ARCO on Pathogenesis, Staging and Treatment",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8216992/",
+                "source_kind": "peer_reviewed_review",
+                "evidence_note": "2019 revised ARCO staging system"
+              }
+            ]
+          },
+          {
+            "heading": "vision_agent_tasks",
+            "text": "segmentation_targets: 股骨头区域; 疑似坏死区域; 关节间隙\nquantitative_features: lesion_area_ratio; collapse_ratio; joint_space_width; texture_abnormality_score",
+            "citations": [
+              {
+                "title": "Guidelines for clinical diagnosis and treatment of osteonecrosis of the femoral head in adults (2019 version)",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7152793/",
+                "source_kind": "peer_reviewed_guideline",
+                "evidence_note": "Imaging targets derived from ONFH diagnostic and staging features"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "pneumonia_chest_xray": {
+    "disease_name": "成人社区获得性肺炎胸片评估",
+    "source_type": "medical_guideline",
+    "evidence_level": "high",
+    "sources": [
+      {
+        "title": "Diagnosis and Treatment of Adults with Community-acquired Pneumonia. An Official Clinical Practice Guideline of the American Thoracic Society and Infectious Diseases Society of America",
+        "publisher": "ATS / IDSA",
+        "source_id": "ats_idsa_cap_adults_2019",
+        "url": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
+        "source_kind": "official_guideline",
+        "publication_year": 2019,
+        "region": "US/global",
+        "source_priority": 10,
+        "evidence_note": "Adult CAP guideline emphasizing clinical diagnosis supported by radiographic criteria and treatment pathway constraints."
+      },
+      {
+        "title": "ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
+        "publisher": "American College of Radiology",
+        "source_id": "acr_acute_respiratory_illness_2018",
+        "url": "https://acsearch.acr.org/docs/69446/Narrative/",
+        "source_kind": "imaging_appropriateness_guideline",
+        "publication_year": 2018,
+        "region": "US",
+        "source_priority": 9,
+        "evidence_note": "Imaging appropriateness guidance for chest radiography and CT in suspected acute respiratory infection or pneumonia."
+      }
+    ],
+    "guideline_documents": [
+      {
+        "title": "ATS/IDSA adult CAP guideline",
+        "source_id": "ats_idsa_cap_adults_2019",
+        "sections": [
+          {
+            "heading": "clinical_features",
+            "text": "common_symptoms: 咳嗽; 发热; 咳痰; 呼吸困难; 胸痛\nrisk_factors: 高龄; 慢性心肺疾病; 免疫抑制; 近期呼吸道感染; 吸烟史",
+            "citations": [
+              {
+                "source_id": "ats_idsa_cap_adults_2019",
+                "title": "Diagnosis and Treatment of Adults with Community-acquired Pneumonia",
+                "url": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
+                "source_kind": "official_guideline",
+                "evidence_note": "Adult CAP clinical syndrome and diagnostic pathway"
+              }
+            ]
+          },
+          {
+            "heading": "staging_rules",
+            "text": "imaging_supportive_finding: 胸片可提供肺部浸润影、实变影或多灶阴影等支持性影像证据，但不能单独确定病原学或完整临床诊断 | xray_features=局灶或多灶肺部浸润影; 肺叶或肺段实变影; 伴随胸腔积液\nclinical_correlation_required: CAP 诊断需要结合症状、体征、实验室检查和影像表现 | required_non_imaging_evidence=体温; 血氧; 白细胞或炎症指标; 病原学检查; 临床查体",
+            "citations": [
+              {
+                "source_id": "ats_idsa_cap_adults_2019",
+                "title": "Diagnosis and Treatment of Adults with Community-acquired Pneumonia",
+                "url": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
+                "source_kind": "official_guideline",
+                "evidence_note": "Clinical diagnosis requires clinical and radiographic correlation"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
+        "source_id": "acr_acute_respiratory_illness_2018",
+        "sections": [
+          {
+            "heading": "required_image_views",
+            "text": "胸部 X 光正位; 胸部 X 光侧位; 必要时胸部 CT",
+            "citations": [
+              {
+                "source_id": "acr_acute_respiratory_illness_2018",
+                "title": "ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
+                "url": "https://acsearch.acr.org/docs/69446/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Chest radiography and selected CT use in suspected pneumonia or acute respiratory illness"
+              }
+            ]
+          },
+          {
+            "heading": "visual_targets",
+            "text": "anatomy: 双肺野; 肺门; 胸膜腔; 心影和纵隔\nlesion_features: 肺部浸润影; 实变影; 磨玻璃影候选; 胸腔积液; 多灶性阴影",
+            "citations": [
+              {
+                "source_id": "acr_acute_respiratory_illness_2018",
+                "title": "ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
+                "url": "https://acsearch.acr.org/docs/69446/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Imaging targets for suspected acute respiratory infection"
+              }
+            ]
+          },
+          {
+            "heading": "vision_agent_tasks",
+            "text": "segmentation_targets: lung_opacity; consolidation; pleural_effusion\nimage_outputs: original_image_path; mask_path; overlay_path\nquantitative_features: opacity_area_ratio; lesion_bbox; lesion_centroid; laterality; lobe_or_zone; pleural_effusion_present; segmentation_quality",
+            "citations": [
+              {
+                "source_id": "acr_acute_respiratory_illness_2018",
+                "title": "ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
+                "url": "https://acsearch.acr.org/docs/69446/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Visual protocol derived from chest imaging assessment requirements"
+              }
+            ]
+          },
+          {
+            "heading": "visual_protocol",
+            "text": "disease_target: community_acquired_pneumonia\nsegmentation_targets: lung_opacity; consolidation; pleural_effusion\navailable_modalities: Chest X-ray\nrequired_modalities.lung_opacity: Chest X-ray\nrequired_modalities.consolidation: Chest X-ray\nrequired_modalities.pleural_effusion: Chest X-ray\nrequired_modalities.complicated_pneumonia: Chest CT\nrequired_modalities.alternative_diagnosis: Chest CT\nmeasurements: opacity_area_ratio; lesion_bbox; lesion_centroid; laterality; lobe_or_zone; pleural_effusion_present; segmentation_quality",
+            "citations": [
+              {
+                "source_id": "acr_acute_respiratory_illness_2018",
+                "title": "ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
+                "url": "https://acsearch.acr.org/docs/69446/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Chest X-ray first visual protocol with CT reserved for uncertain or complicated cases"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "diffuse_glioma_brats": {
+    "disease_name": "成人弥漫性胶质瘤",
+    "source_type": "medical_guideline",
+    "evidence_level": "high",
+    "sources": [
+      {
+        "title": "EANO adult diffuse glioma guideline",
+        "publisher": "EANO",
+        "source_id": "eano_adult_diffuse_glioma_guideline",
+        "url": "https://www.nature.com/articles/s41571-020-00447-z",
+        "source_kind": "official_guideline",
+        "evidence_note": "EANO guideline on diagnosis and treatment of diffuse gliomas of adulthood"
+      },
+      {
+        "title": "ESTRO-EANO glioblastoma target delineation guideline",
+        "publisher": "ESTRO-EANO",
+        "source_id": "estro_eano_glioblastoma_target_delineation",
+        "url": "https://www.eano.eu/publications/eano-guidelines/estro-eano-guideline-on-target-delineation-and-radiotherapy-details-for-glioblastoma-2023/",
+        "source_kind": "official_guideline",
+        "evidence_note": "ESTRO-EANO guideline on target delineation and radiotherapy details for glioblastoma"
+      }
+    ],
+    "guideline_documents": [
+      {
+        "title": "EANO adult diffuse glioma guideline",
+        "source_id": "eano_adult_diffuse_glioma_guideline",
+        "sections": [
+          {
+            "heading": "clinical_features",
+            "text": "common_symptoms: 头痛; 癫痫发作; 局灶性神经功能缺损; 认知改变\nrisk_factors: 既往颅脑放疗史; 遗传易感综合征",
+            "citations": [
+              {
+                "title": "EANO guidelines on the diagnosis and treatment of diffuse gliomas of adulthood",
+                "url": "https://www.nature.com/articles/s41571-020-00447-z",
+                "source_kind": "official_guideline",
+                "evidence_note": "Adult diffuse glioma diagnostic and preoperative management guidance"
+              }
+            ]
+          },
+          {
+            "heading": "required_image_views",
+            "text": "MRI T1; MRI T1ce; MRI T2; MRI FLAIR",
+            "citations": [
+              {
+                "title": "EANO guidelines on the diagnosis and treatment of diffuse gliomas of adulthood",
+                "url": "https://www.nature.com/articles/s41571-020-00447-z",
+                "source_kind": "official_guideline",
+                "evidence_note": "MRI without and with gadolinium is recommended as diagnostic imaging modality"
+              }
+            ]
+          },
+          {
+            "heading": "visual_targets",
+            "text": "anatomy: 大脑半球; 脑室; 皮层和白质; 中线结构\nlesion_features: whole tumor; tumor core; enhancing tumor; peritumoral edema; mass effect; midline shift",
+            "citations": [
+              {
+                "title": "EANO guidelines on the diagnosis and treatment of diffuse gliomas of adulthood",
+                "url": "https://www.nature.com/articles/s41571-020-00447-z",
+                "source_kind": "official_guideline",
+                "evidence_note": "Neuroradiological assessment and MRI features for diffuse glioma workup"
+              }
+            ]
+          },
+          {
+            "heading": "staging_rules",
+            "text": "imaging_suspicion: MRI 可提示胶质瘤可能，但最终分型依赖组织病理和分子标志物 | mri_features=T2/FLAIR 异常高信号; 强化成分; 坏死或非强化核心; 周围水肿\nintegrated_diagnosis_required: EANO/WHO 体系强调组织学和分子诊断整合 | required_non_imaging_evidence=IDH 状态; 1p/19q 共缺失; MGMT 甲基化; TERT/EGFR/+7-10 等标志物",
+            "citations": [
+              {
+                "title": "EANO guidelines on the diagnosis and treatment of diffuse gliomas of adulthood",
+                "url": "https://www.nature.com/articles/s41571-020-00447-z",
+                "source_kind": "official_guideline",
+                "evidence_note": "Integrated histomolecular classification guidance"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "ESTRO-EANO glioblastoma target delineation guideline",
+        "source_id": "estro_eano_glioblastoma_target_delineation",
+        "sections": [
+          {
+            "heading": "vision_agent_tasks",
+            "text": "segmentation_targets: whole tumor; tumor core; enhancing tumor\nimage_outputs: original_image_path; mask_path; overlay_path\nquantitative_features: whole_tumor_volume_ml; tumor_core_volume_ml; enhancing_tumor_volume_ml; edema_present; mass_effect; segmentation_quality",
+            "citations": [
+              {
+                "title": "ESTRO-EANO guideline on target delineation and radiotherapy details for glioblastoma",
+                "url": "https://www.eano.eu/publications/eano-guidelines/estro-eano-guideline-on-target-delineation-and-radiotherapy-details-for-glioblastoma-2023/",
+                "source_kind": "official_guideline",
+                "evidence_note": "Target delineation and radiotherapy planning details for glioblastoma"
+              }
+            ]
+          },
+          {
+            "heading": "visual_protocol",
+            "text": "disease_target: diffuse_glioma_adult\nsegmentation_targets: whole_tumor; tumor_core; enhancing_tumor\navailable_modalities: FLAIR\nrequired_modalities.whole_tumor: FLAIR\nrequired_modalities.tumor_core: T1; T1ce; T2\nrequired_modalities.enhancing_tumor: T1ce\nrequired_modalities.edema: FLAIR\nrequired_modalities.mass_effect: T1; T2; FLAIR\nmeasurements: whole_tumor_volume_ml; tumor_core_volume_ml; enhancing_tumor_volume_ml; edema_present; mass_effect",
+            "citations": [
+              {
+                "title": "ESTRO-EANO guideline on target delineation and radiotherapy details for glioblastoma",
+                "url": "https://www.eano.eu/publications/eano-guidelines/estro-eano-guideline-on-target-delineation-and-radiotherapy-details-for-glioblastoma-2023/",
+                "source_kind": "official_guideline",
+                "evidence_note": "Visual protocol derived from glioblastoma target delineation requirements"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "idiopathic_pulmonary_fibrosis_hrct": {
+    "disease_name": "特发性肺纤维化 HRCT 评估",
+    "source_type": "medical_guideline",
+    "evidence_level": "high",
+    "sources": [
+      {
+        "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+        "publisher": "ATS/ERS/JRS/ALAT",
+        "source_id": "ats_ers_jrs_alat_ipf_2022",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+        "source_kind": "official_guideline",
+        "evidence_note": "2022 ATS/ERS/JRS/ALAT IPF update; probable UIP may support IPF diagnosis after multidisciplinary discussion in an appropriate clinical setting.",
+        "publication_year": "2022",
+        "region": "international",
+        "source_priority": "10"
+      },
+      {
+        "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+        "publisher": "ATS/ERS/JRS/ALAT",
+        "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+        "source_kind": "official_guideline",
+        "evidence_note": "2018 ATS/ERS/JRS/ALAT diagnostic guideline defining HRCT patterns: UIP, probable UIP, indeterminate, and alternative diagnosis.",
+        "publication_year": "2018",
+        "region": "international",
+        "source_priority": "9"
+      }
+    ],
+    "guideline_documents": [
+      {
+        "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+        "source_id": "ats_ers_jrs_alat_ipf_2022",
+        "sections": [
+          {
+            "heading": "clinical_features",
+            "text": "common_symptoms: progressive dyspnea; chronic dry cough; exertional breathlessness\nrisk_factors: older age; smoking history; male sex; family history of pulmonary fibrosis",
+            "citations": [
+              {
+                "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_2022",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2022 ATS/ERS/JRS/ALAT IPF update; probable UIP may support IPF diagnosis after multidisciplinary discussion in an appropriate clinical setting.",
+                "publication_year": "2022",
+                "region": "international",
+                "source_priority": "10"
+              }
+            ]
+          },
+          {
+            "heading": "required_image_views",
+            "text": "HRCT chest; thin-section chest CT",
+            "citations": [
+              {
+                "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_2022",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2022 ATS/ERS/JRS/ALAT IPF update; probable UIP may support IPF diagnosis after multidisciplinary discussion in an appropriate clinical setting.",
+                "publication_year": "2022",
+                "region": "international",
+                "source_priority": "10"
+              }
+            ]
+          },
+          {
+            "heading": "visual_targets",
+            "text": "anatomy: bilateral lungs; subpleural lung zones; basal lung zones\nlesion_features: honeycombing; reticulation; traction bronchiectasis; ground-glass opacity; basal subpleural predominance",
+            "citations": [
+              {
+                "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_2022",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2022 ATS/ERS/JRS/ALAT IPF update; probable UIP may support IPF diagnosis after multidisciplinary discussion in an appropriate clinical setting.",
+                "publication_year": "2022",
+                "region": "international",
+                "source_priority": "10"
+              }
+            ]
+          },
+          {
+            "heading": "staging_rules",
+            "text": "UIP_pattern: HRCT pattern with subpleural and basal predominance plus honeycombing, with or without peripheral traction bronchiectasis | required_visual_evidence=honeycombing_candidate; basal_subpleural_distribution\nprobable_UIP_pattern: HRCT pattern with subpleural and basal predominance plus reticular abnormality and traction bronchiectasis or bronchiolectasis, without honeycombing | required_visual_evidence=reticulation_candidate; traction_bronchiectasis_candidate; basal_subpleural_distribution\nindeterminate_for_UIP: fibrotic HRCT features that do not meet UIP or probable UIP pattern and do not suggest an alternative diagnosis | required_visual_evidence=fibrosis_candidate\nalternative_diagnosis_pattern: HRCT findings suggesting another interstitial lung disease pattern or non-IPF diagnosis | required_visual_evidence=alternative_pattern_candidate",
+            "citations": [
+              {
+                "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_2022",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2022 ATS/ERS/JRS/ALAT IPF update; probable UIP may support IPF diagnosis after multidisciplinary discussion in an appropriate clinical setting.",
+                "publication_year": "2022",
+                "region": "international",
+                "source_priority": "10"
+              }
+            ]
+          },
+          {
+            "heading": "vision_agent_tasks",
+            "text": "segmentation_targets: honeycombing_candidate; reticulation_candidate; traction_bronchiectasis_candidate; fibrosis_candidate\nquantitative_features: fibrosis_area_ratio; basal_subpleural_score; lower_lung_zone_ratio; honeycombing_area_ratio; reticulation_area_ratio",
+            "citations": [
+              {
+                "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_2022",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2022 ATS/ERS/JRS/ALAT IPF update; probable UIP may support IPF diagnosis after multidisciplinary discussion in an appropriate clinical setting.",
+                "publication_year": "2022",
+                "region": "international",
+                "source_priority": "10"
+              }
+            ]
+          },
+          {
+            "heading": "visual_protocol",
+            "text": "disease_target: idiopathic_pulmonary_fibrosis_hrct\nclinical_focus: HRCT pattern evidence for IPF/UIP assessment\nimaging_modalities: HRCT chest; thin-section chest CT\nsegmentation_targets: honeycombing_candidate; reticulation_candidate; traction_bronchiectasis_candidate; fibrosis_candidate\nrequired_modalities.honeycombing_candidate: HRCT chest; thin-section chest CT\nrequired_modalities.reticulation_candidate: HRCT chest; thin-section chest CT\nrequired_modalities.traction_bronchiectasis_candidate: HRCT chest; thin-section chest CT\nrequired_modalities.fibrosis_candidate: HRCT chest; thin-section chest CT\nmeasurements: fibrosis_area_ratio; basal_subpleural_score; lower_lung_zone_ratio; honeycombing_area_ratio; reticulation_area_ratio",
+            "citations": [
+              {
+                "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_2022",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2022 ATS/ERS/JRS/ALAT IPF update; probable UIP may support IPF diagnosis after multidisciplinary discussion in an appropriate clinical setting.",
+                "publication_year": "2022",
+                "region": "international",
+                "source_priority": "10"
+              }
+            ]
+          },
+          {
+            "heading": "report_requirements",
+            "text": "include: HRCT pattern category; supporting visual evidence; missing clinical evidence; need for pulmonary function testing; need for ILD multidisciplinary discussion\nsafety_constraints: do not diagnose IPF from image evidence alone; do not treat missing HRCT findings as negative; request HRCT if only chest X-ray is available",
+            "citations": [
+              {
+                "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_2022",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2022 ATS/ERS/JRS/ALAT IPF update; probable UIP may support IPF diagnosis after multidisciplinary discussion in an appropriate clinical setting.",
+                "publication_year": "2022",
+                "region": "international",
+                "source_priority": "10"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+        "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+        "sections": [
+          {
+            "heading": "clinical_features",
+            "text": "common_symptoms: progressive dyspnea; chronic dry cough; exertional breathlessness\nrisk_factors: older age; smoking history; male sex; family history of pulmonary fibrosis",
+            "citations": [
+              {
+                "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+                "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2018 ATS/ERS/JRS/ALAT diagnostic guideline defining HRCT patterns: UIP, probable UIP, indeterminate, and alternative diagnosis.",
+                "publication_year": "2018",
+                "region": "international",
+                "source_priority": "9"
+              }
+            ]
+          },
+          {
+            "heading": "required_image_views",
+            "text": "HRCT chest; thin-section chest CT",
+            "citations": [
+              {
+                "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+                "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2018 ATS/ERS/JRS/ALAT diagnostic guideline defining HRCT patterns: UIP, probable UIP, indeterminate, and alternative diagnosis.",
+                "publication_year": "2018",
+                "region": "international",
+                "source_priority": "9"
+              }
+            ]
+          },
+          {
+            "heading": "visual_targets",
+            "text": "anatomy: bilateral lungs; subpleural lung zones; basal lung zones\nlesion_features: honeycombing; reticulation; traction bronchiectasis; ground-glass opacity; basal subpleural predominance",
+            "citations": [
+              {
+                "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+                "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2018 ATS/ERS/JRS/ALAT diagnostic guideline defining HRCT patterns: UIP, probable UIP, indeterminate, and alternative diagnosis.",
+                "publication_year": "2018",
+                "region": "international",
+                "source_priority": "9"
+              }
+            ]
+          },
+          {
+            "heading": "staging_rules",
+            "text": "UIP_pattern: HRCT pattern with subpleural and basal predominance plus honeycombing, with or without peripheral traction bronchiectasis | required_visual_evidence=honeycombing_candidate; basal_subpleural_distribution\nprobable_UIP_pattern: HRCT pattern with subpleural and basal predominance plus reticular abnormality and traction bronchiectasis or bronchiolectasis, without honeycombing | required_visual_evidence=reticulation_candidate; traction_bronchiectasis_candidate; basal_subpleural_distribution\nindeterminate_for_UIP: fibrotic HRCT features that do not meet UIP or probable UIP pattern and do not suggest an alternative diagnosis | required_visual_evidence=fibrosis_candidate\nalternative_diagnosis_pattern: HRCT findings suggesting another interstitial lung disease pattern or non-IPF diagnosis | required_visual_evidence=alternative_pattern_candidate",
+            "citations": [
+              {
+                "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+                "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2018 ATS/ERS/JRS/ALAT diagnostic guideline defining HRCT patterns: UIP, probable UIP, indeterminate, and alternative diagnosis.",
+                "publication_year": "2018",
+                "region": "international",
+                "source_priority": "9"
+              }
+            ]
+          },
+          {
+            "heading": "vision_agent_tasks",
+            "text": "segmentation_targets: honeycombing_candidate; reticulation_candidate; traction_bronchiectasis_candidate; fibrosis_candidate\nquantitative_features: fibrosis_area_ratio; basal_subpleural_score; lower_lung_zone_ratio; honeycombing_area_ratio; reticulation_area_ratio",
+            "citations": [
+              {
+                "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+                "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2018 ATS/ERS/JRS/ALAT diagnostic guideline defining HRCT patterns: UIP, probable UIP, indeterminate, and alternative diagnosis.",
+                "publication_year": "2018",
+                "region": "international",
+                "source_priority": "9"
+              }
+            ]
+          },
+          {
+            "heading": "visual_protocol",
+            "text": "disease_target: idiopathic_pulmonary_fibrosis_hrct\nclinical_focus: HRCT pattern evidence for IPF/UIP assessment\nimaging_modalities: HRCT chest; thin-section chest CT\nsegmentation_targets: honeycombing_candidate; reticulation_candidate; traction_bronchiectasis_candidate; fibrosis_candidate\nrequired_modalities.honeycombing_candidate: HRCT chest; thin-section chest CT\nrequired_modalities.reticulation_candidate: HRCT chest; thin-section chest CT\nrequired_modalities.traction_bronchiectasis_candidate: HRCT chest; thin-section chest CT\nrequired_modalities.fibrosis_candidate: HRCT chest; thin-section chest CT\nmeasurements: fibrosis_area_ratio; basal_subpleural_score; lower_lung_zone_ratio; honeycombing_area_ratio; reticulation_area_ratio",
+            "citations": [
+              {
+                "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+                "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2018 ATS/ERS/JRS/ALAT diagnostic guideline defining HRCT patterns: UIP, probable UIP, indeterminate, and alternative diagnosis.",
+                "publication_year": "2018",
+                "region": "international",
+                "source_priority": "9"
+              }
+            ]
+          },
+          {
+            "heading": "report_requirements",
+            "text": "include: HRCT pattern category; supporting visual evidence; missing clinical evidence; need for pulmonary function testing; need for ILD multidisciplinary discussion\nsafety_constraints: do not diagnose IPF from image evidence alone; do not treat missing HRCT findings as negative; request HRCT if only chest X-ray is available",
+            "citations": [
+              {
+                "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+                "publisher": "ATS/ERS/JRS/ALAT",
+                "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+                "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+                "source_kind": "official_guideline",
+                "evidence_note": "2018 ATS/ERS/JRS/ALAT diagnostic guideline defining HRCT patterns: UIP, probable UIP, indeterminate, and alternative diagnosis.",
+                "publication_year": "2018",
+                "region": "international",
+                "source_priority": "9"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

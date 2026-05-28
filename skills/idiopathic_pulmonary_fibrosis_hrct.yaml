@@ -1,0 +1,317 @@
+{
+  "disease_name": "特发性肺纤维化 HRCT 评估",
+  "skill_id": "idiopathic_pulmonary_fibrosis_hrct_guideline_v0.1",
+  "version": "0.1",
+  "path_type": "guideline_aware",
+  "source_type": "medical_guideline",
+  "skill_type": "guideline_based",
+  "evidence_level": "high",
+  "source": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults; Diagnosis of Idiopathic Pulmonary Fibrosis",
+  "source_documents": [
+    {
+      "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+      "publisher": "ATS/ERS/JRS/ALAT",
+      "source_id": "ats_ers_jrs_alat_ipf_2022",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+      "source_kind": "official_guideline",
+      "evidence_note": "2022 ATS/ERS/JRS/ALAT IPF update; probable UIP may support IPF diagnosis after multidisciplinary discussion in an appropriate clinical setting.",
+      "publication_year": "2022",
+      "region": "international",
+      "source_priority": "10"
+    },
+    {
+      "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+      "publisher": "ATS/ERS/JRS/ALAT",
+      "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+      "source_kind": "official_guideline",
+      "evidence_note": "2018 ATS/ERS/JRS/ALAT diagnostic guideline defining HRCT patterns: UIP, probable UIP, indeterminate, and alternative diagnosis.",
+      "publication_year": "2018",
+      "region": "international",
+      "source_priority": "9"
+    }
+  ],
+  "source_priority": [
+    {
+      "source_id": "ats_ers_jrs_alat_ipf_2022",
+      "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+      "publisher": "ATS/ERS/JRS/ALAT",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+      "source_kind": "official_guideline",
+      "publication_year": "2022",
+      "region": "international",
+      "source_priority": "10"
+    },
+    {
+      "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+      "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+      "publisher": "ATS/ERS/JRS/ALAT",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+      "source_kind": "official_guideline",
+      "publication_year": "2018",
+      "region": "international",
+      "source_priority": "9"
+    }
+  ],
+  "guideline_source": {
+    "source_catalog_path": "output/fake/ipf_guideline_skill_demo/guideline_sources.json"
+  },
+  "clinical_features": {
+    "common_symptoms": [
+      "progressive dyspnea",
+      "chronic dry cough",
+      "exertional breathlessness"
+    ],
+    "risk_factors": [
+      "older age",
+      "smoking history",
+      "male sex",
+      "family history of pulmonary fibrosis"
+    ]
+  },
+  "required_image_views": [
+    "HRCT chest",
+    "thin-section chest CT"
+  ],
+  "visual_targets": {
+    "anatomy": [
+      "bilateral lungs",
+      "subpleural lung zones",
+      "basal lung zones"
+    ],
+    "lesion_features": [
+      "honeycombing",
+      "reticulation",
+      "traction bronchiectasis",
+      "ground-glass opacity",
+      "basal subpleural predominance"
+    ]
+  },
+  "vision_agent_tasks": {
+    "segmentation_targets": [
+      "honeycombing_candidate",
+      "reticulation_candidate",
+      "traction_bronchiectasis_candidate",
+      "fibrosis_candidate"
+    ],
+    "quantitative_features": [
+      "fibrosis_area_ratio",
+      "basal_subpleural_score",
+      "lower_lung_zone_ratio",
+      "honeycombing_area_ratio",
+      "reticulation_area_ratio"
+    ]
+  },
+  "report_requirements": {
+    "include": [
+      "HRCT pattern category",
+      "supporting visual evidence",
+      "missing clinical evidence",
+      "need for pulmonary function testing",
+      "need for ILD multidisciplinary discussion"
+    ],
+    "safety_constraints": [
+      "do not diagnose IPF from image evidence alone",
+      "do not treat missing HRCT findings as negative",
+      "request HRCT if only chest X-ray is available"
+    ]
+  },
+  "staging_rules": {
+    "UIP_pattern": {
+      "description": "HRCT pattern with subpleural and basal predominance plus honeycombing, with or without peripheral traction bronchiectasis",
+      "required_visual_evidence": [
+        "honeycombing_candidate",
+        "basal_subpleural_distribution"
+      ]
+    },
+    "probable_UIP_pattern": {
+      "description": "HRCT pattern with subpleural and basal predominance plus reticular abnormality and traction bronchiectasis or bronchiolectasis, without honeycombing",
+      "required_visual_evidence": [
+        "reticulation_candidate",
+        "traction_bronchiectasis_candidate",
+        "basal_subpleural_distribution"
+      ]
+    },
+    "indeterminate_for_UIP": {
+      "description": "fibrotic HRCT features that do not meet UIP or probable UIP pattern and do not suggest an alternative diagnosis",
+      "required_visual_evidence": [
+        "fibrosis_candidate"
+      ]
+    },
+    "alternative_diagnosis_pattern": {
+      "description": "HRCT findings suggesting another interstitial lung disease pattern or non-IPF diagnosis",
+      "required_visual_evidence": [
+        "alternative_pattern_candidate"
+      ]
+    }
+  },
+  "visual_protocol": {
+    "disease_target": "idiopathic_pulmonary_fibrosis_hrct",
+    "clinical_focus": [
+      "HRCT pattern evidence for IPF/UIP assessment"
+    ],
+    "imaging_modalities": [
+      "HRCT chest",
+      "thin-section chest CT"
+    ],
+    "segmentation_targets": [
+      "honeycombing_candidate",
+      "reticulation_candidate",
+      "traction_bronchiectasis_candidate",
+      "fibrosis_candidate"
+    ],
+    "measurements": [
+      "fibrosis_area_ratio",
+      "basal_subpleural_score",
+      "lower_lung_zone_ratio",
+      "honeycombing_area_ratio",
+      "reticulation_area_ratio"
+    ],
+    "required_modalities": {
+      "honeycombing_candidate": [
+        "HRCT chest",
+        "thin-section chest CT"
+      ],
+      "reticulation_candidate": [
+        "HRCT chest",
+        "thin-section chest CT"
+      ],
+      "traction_bronchiectasis_candidate": [
+        "HRCT chest",
+        "thin-section chest CT"
+      ],
+      "fibrosis_candidate": [
+        "HRCT chest",
+        "thin-section chest CT"
+      ]
+    },
+    "available_modalities": [
+      "CT"
+    ],
+    "alignment_tasks": [
+      {
+        "task": "assess_honeycombing_candidate",
+        "required_modalities": [
+          "HRCT chest",
+          "thin-section chest CT"
+        ],
+        "reason": "honeycombing_candidate 需要 HRCT chest、thin-section chest CT 支撑。"
+      },
+      {
+        "task": "assess_reticulation_candidate",
+        "required_modalities": [
+          "HRCT chest",
+          "thin-section chest CT"
+        ],
+        "reason": "reticulation_candidate 需要 HRCT chest、thin-section chest CT 支撑。"
+      },
+      {
+        "task": "assess_traction_bronchiectasis_candidate",
+        "required_modalities": [
+          "HRCT chest",
+          "thin-section chest CT"
+        ],
+        "reason": "traction_bronchiectasis_candidate 需要 HRCT chest、thin-section chest CT 支撑。"
+      },
+      {
+        "task": "assess_fibrosis_candidate",
+        "required_modalities": [
+          "HRCT chest",
+          "thin-section chest CT"
+        ],
+        "reason": "fibrosis_candidate 需要 HRCT chest、thin-section chest CT 支撑。"
+      }
+    ],
+    "suspected_conditions": [
+      {
+        "disease": "特发性肺纤维化 HRCT 评估",
+        "reason": "患者描述或图像线索匹配当前 guideline skill。"
+      }
+    ],
+    "required_next_images": [
+      {
+        "modality": "CT",
+        "region": "target region",
+        "reason": "补充满足当前 visual_protocol 的关键影像后，才能完成缺失视觉证据评估。"
+      }
+    ],
+    "diagnosis_scope": {
+      "allowed": [
+        "只分析当前图像和 skill 支持的视觉证据",
+        "说明缺失影像导致的不确定性",
+        "给出下一步所需影像检查"
+      ],
+      "blocked": [
+        "不得把缺失影像证据解释为阴性",
+        "不得从 missing_input 推断正常"
+      ]
+    },
+    "insufficiency_rules": [
+      {
+        "condition": "missing required modality",
+        "status": "partial_evidence",
+        "reason": "当前影像只支持部分 visual_protocol 任务，缺失任务不能解释为阴性。"
+      }
+    ]
+  },
+  "guideline_extraction": {
+    "tool": "GuidelineExtractionTool",
+    "disease_key": "idiopathic_pulmonary_fibrosis_hrct",
+    "disease_name": "特发性肺纤维化 HRCT 评估",
+    "source_document_count": 2,
+    "extracted_fields": [
+      "clinical_features",
+      "report_requirements",
+      "required_image_views",
+      "staging_rules",
+      "vision_agent_tasks",
+      "visual_protocol",
+      "visual_targets"
+    ],
+    "citations": [
+      {
+        "title": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults",
+        "publisher": "ATS/ERS/JRS/ALAT",
+        "source_id": "ats_ers_jrs_alat_ipf_2022",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9851481/",
+        "source_kind": "official_guideline",
+        "evidence_note": "2022 ATS/ERS/JRS/ALAT IPF update; probable UIP may support IPF diagnosis after multidisciplinary discussion in an appropriate clinical setting.",
+        "publication_year": "2022",
+        "region": "international",
+        "source_priority": "10"
+      },
+      {
+        "title": "Diagnosis of Idiopathic Pulmonary Fibrosis",
+        "publisher": "ATS/ERS/JRS/ALAT",
+        "source_id": "ats_ers_jrs_alat_ipf_diagnosis_2018",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/30168753/",
+        "source_kind": "official_guideline",
+        "evidence_note": "2018 ATS/ERS/JRS/ALAT diagnostic guideline defining HRCT patterns: UIP, probable UIP, indeterminate, and alternative diagnosis.",
+        "publication_year": "2018",
+        "region": "international",
+        "source_priority": "9"
+      }
+    ]
+  },
+  "quality_control": {
+    "citation_status": "verified",
+    "citation_count": 2,
+    "missing_url_count": 0,
+    "source_priority_status": "ranked",
+    "conflict_status": "none",
+    "conflict_count": 0,
+    "conflict_severity_counts": {
+      "low": 0,
+      "medium": 0,
+      "high": 0
+    },
+    "highest_conflict_severity": "none",
+    "missing_core_sections": [],
+    "core_section_status": "complete",
+    "visual_protocol_status": "valid",
+    "visual_protocol_errors": [],
+    "visual_protocol_warnings": [],
+    "formal_skill_status": "formal_ready",
+    "can_enter_formal_guideline_skill": true
+  }
+}

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MedScope Agent</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>MedScope Agent</h1>
+            <p id="statusText">未连接</p>
+          </div>
+          <button id="healthButton" type="button">检查连接</button>
+        </header>
+
+        <div class="layout">
+          <form id="caseForm" class="panel input-panel">
+            <div class="panel-title">
+              <h2>病例输入</h2>
+              <div class="sample-actions">
+                <button id="sampleGliomaButton" type="button">一键标准样例</button>
+                <button id="realVlmMedSAM2Button" type="button">真实 VLM+MedSAM2 样例</button>
+                <button id="evidenceGatewaySnapshotButton" type="button">Evidence Gateway 快照</button>
+                <button id="xrayInsufficientButton" type="button">X 光证据不足样例</button>
+                <button id="fhnNoMaskButton" type="button">FHN no-mask 多征象样例</button>
+              </div>
+            </div>
+
+            <label>
+              患者描述
+              <textarea id="patientMessage" name="patient_message" rows="5" required>请描述症状、检查背景和希望咨询的问题</textarea>
+            </label>
+
+            <div id="dropZone" class="drop-zone">
+              <input id="fileInput" type="file" />
+              <div>
+                <strong>拖拽医疗影像文件到这里</strong>
+                <span id="uploadStatus">支持 MRI / CT / X-ray / PNG / NIfTI 等输入；上传后由 Agent 根据描述和图像选择处理流程。</span>
+              </div>
+            </div>
+
+            <input id="imagePath" name="image_path" type="hidden" value="" />
+            <label>
+              症状
+              <input id="symptoms" name="symptoms" value="" />
+            </label>
+
+            <div class="actions">
+              <button id="submitButton" type="submit">运行分析</button>
+              <button id="resetButton" type="button">清空</button>
+            </div>
+          </form>
+
+          <section id="visualPanel" class="panel visual-panel">
+            <div class="panel-title">
+              <h2>图像输出</h2>
+              <span id="caseIdBadge">无病例</span>
+            </div>
+            <div id="visualMeta" class="visual-meta">等待视觉 Agent 输出</div>
+            <figure id="lesionFigure" class="lesion-figure" hidden></figure>
+          </section>
+
+          <section class="panel result-panel">
+            <div class="panel-title">
+              <h2>诊断报告</h2>
+              <span id="intentBadge">-</span>
+            </div>
+            <div id="reportView" class="report-empty">等待分析结果</div>
+          </section>
+        </div>
+
+        <div class="trace-layout">
+          <section id="alignmentPanel" class="panel trace-panel alignment-panel">
+            <div class="panel-title">
+              <h2>证据协调</h2>
+            </div>
+            <div id="alignmentView" class="trace-empty">等待 alignment plan</div>
+          </section>
+
+          <section id="evidencePanel" class="panel trace-panel">
+            <div class="panel-title">
+              <h2>证据充分性</h2>
+            </div>
+            <div id="evidenceView" class="trace-empty">等待 evidence bundle</div>
+          </section>
+
+          <section id="auditPanel" class="panel trace-panel">
+            <div class="panel-title">
+              <h2>Evidence Pipeline Trace</h2>
+            </div>
+            <div id="auditView" class="trace-empty">等待 memory audit</div>
+          </section>
+        </div>
+
+        <section class="panel qa-panel">
+          <div class="panel-title">
+            <h2>追问</h2>
+          </div>
+          <form id="qaForm" class="qa-form">
+            <input id="qaInput" placeholder="例如：为什么增强肿瘤没有结果？" />
+            <button id="qaSubmitButton" type="submit">发送</button>
+          </form>
+          <div id="qaLog" class="qa-log"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,209 @@
+{
+  "disease_name": "股骨头坏死",
+  "skill_id": "femoral_head_necrosis_v0.1",
+  "version": "0.1",
+  "source_type": "medical_guideline",
+  "skill_type": "guideline_based",
+  "evidence_level": "high",
+  "source": "ARCO 分期相关公开医学知识整理",
+  "source_documents": [
+    {
+      "source_id": "arco_onfh_review_2021",
+      "title": "ARCO classification and staging systems for osteonecrosis of the femoral head",
+      "publisher": "PMC open access review",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8216992/",
+      "source_kind": "peer_reviewed_review",
+      "evidence_note": "Summarizes ARCO staging concepts, including early radiograph-negative disease and collapse staging."
+    },
+    {
+      "source_id": "onfh_clinical_guideline_2020",
+      "title": "Guideline for Diagnostic and Treatment of Osteonecrosis of the Femoral Head",
+      "publisher": "PMC open access guideline",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7152793/",
+      "source_kind": "clinical_guideline",
+      "evidence_note": "Provides clinical diagnosis and treatment recommendations for osteonecrosis of the femoral head."
+    }
+  ],
+  "guideline_source": {
+    "source_catalog_path": "data/guidelines/guideline_sources.json"
+  },
+  "guideline_extraction": {
+    "tool": "static_skill_catalog_sync",
+    "citations": [
+      {
+        "source_id": "arco_onfh_review_2021",
+        "title": "ARCO classification and staging systems for osteonecrosis of the femoral head",
+        "publisher": "PMC open access review",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8216992/",
+        "source_kind": "peer_reviewed_review",
+        "evidence_note": "Summarizes ARCO staging concepts, including early radiograph-negative disease and collapse staging."
+      },
+      {
+        "source_id": "onfh_clinical_guideline_2020",
+        "title": "Guideline for Diagnostic and Treatment of Osteonecrosis of the Femoral Head",
+        "publisher": "PMC open access guideline",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7152793/",
+        "source_kind": "clinical_guideline",
+        "evidence_note": "Provides clinical diagnosis and treatment recommendations for osteonecrosis of the femoral head."
+      }
+    ]
+  },
+  "quality_control": {
+    "citation_status": "verified",
+    "citation_count": 2,
+    "missing_url_count": 0
+  },
+  "clinical_features": {
+    "common_symptoms": ["髋关节疼痛", "腹股沟区疼痛", "活动受限"],
+    "risk_factors": ["长期饮酒", "激素使用史", "外伤史"]
+  },
+  "required_image_views": ["双髋正位 X 光", "蛙式位 X 光", "MRI T1", "MRI T2"],
+  "visual_targets": {
+    "anatomy": ["股骨头", "髋臼", "关节间隙"],
+    "lesion_features": ["股骨头塌陷", "硬化带", "囊性变", "新月征", "骨小梁纹理异常"]
+  },
+  "staging_rules": {
+    "ARCO_I": {
+      "description": "X 光可无明显异常，MRI 可见异常信号",
+      "xray_features": ["无明显塌陷", "无明显关节间隙狭窄"],
+      "mri_features": ["T1 低信号", "T2 异常信号"]
+    },
+    "ARCO_II": {
+      "description": "X 光可见硬化或囊性变，但无股骨头塌陷",
+      "xray_features": ["硬化影", "囊性改变", "无明显塌陷"]
+    },
+    "ARCO_III": {
+      "description": "出现股骨头塌陷或新月征",
+      "xray_features": ["新月征", "股骨头塌陷"]
+    },
+    "ARCO_IV": {
+      "description": "继发骨关节炎改变",
+      "xray_features": ["关节间隙狭窄", "髋臼改变", "明显骨关节炎"]
+    }
+  },
+  "vision_agent_tasks": {
+    "segmentation_targets": ["股骨头区域", "疑似坏死区域", "关节间隙"],
+    "quantitative_features": [
+      "lesion_area_ratio",
+      "collapse_ratio",
+      "joint_space_width",
+      "texture_abnormality_score"
+    ]
+  },
+  "visual_protocol": {
+    "disease_target": "femoral_head_necrosis",
+    "clinical_focus": "股骨头坏死影像评估",
+    "imaging_modalities": ["X-ray", "MRI"],
+    "available_modalities": ["X-ray", "MRI"],
+    "alignment_tasks": [
+      {
+        "task": "assess_late_xray_findings",
+        "required_modalities": ["X-ray"],
+        "reason": "X 光可评估明显塌陷、新月征、硬化、囊变和关节间隙改变。"
+      },
+      {
+        "task": "assess_early_osteonecrosis",
+        "required_modalities": ["MRI T1", "MRI T2", "MRI STIR"],
+        "reason": "早期股骨头坏死可能 X 光阴性，指南路径需要 MRI 评估。"
+      },
+      {
+        "task": "assess_bone_marrow_edema",
+        "required_modalities": ["MRI T2", "MRI STIR"],
+        "reason": "骨髓水肿不能从普通 X 光可靠判断。"
+      }
+    ],
+    "required_modalities": {
+      "late_xray_findings": ["X-ray"],
+      "early_osteonecrosis": ["MRI T1", "MRI T2", "MRI STIR"],
+      "bone_marrow_edema": ["MRI T2", "MRI STIR"],
+      "collapse": ["X-ray", "MRI"]
+    },
+    "measurements": [
+      "lesion_area_ratio",
+      "collapse_ratio",
+      "joint_space_width",
+      "texture_abnormality_score"
+    ],
+    "anatomy_reference": {
+      "target": "femoral_head",
+      "display_name": "股骨头解剖区域",
+      "description": "髋关节 X 光中股骨头整体骨性解剖区域，用作硬化带、囊性变等病灶面积归一化参照。",
+      "required_modalities": ["X-ray"],
+      "output": "mask_or_region",
+      "normalizes": ["area_ratio_in_femoral_head"]
+    },
+    "finding_targets": [
+      {
+        "target": "sclerotic_band",
+        "display_name": "硬化带",
+        "description": "股骨头内带状或横颈线样密度增高候选区域。",
+        "required_modalities": ["X-ray"],
+        "output": "mask_or_region",
+        "measurements": ["area_ratio_in_femoral_head", "relative_density_score", "elongation"],
+        "diagnostic_role": "ARCO_II_supportive_xray_feature"
+      },
+      {
+        "target": "cystic_change",
+        "display_name": "囊性变",
+        "description": "股骨头内局灶透亮、小圆形或不规则囊样候选区域。",
+        "required_modalities": ["X-ray"],
+        "output": "mask_or_region",
+        "measurements": ["area_ratio_in_femoral_head", "relative_lucency_score", "roundness"],
+        "diagnostic_role": "ARCO_II_supportive_xray_feature"
+      },
+      {
+        "target": "trabecular_blurring",
+        "display_name": "骨小梁模糊或局灶性骨质疏松",
+        "description": "股骨头内骨小梁纹理不清或局部骨密度减低候选区域。",
+        "required_modalities": ["X-ray"],
+        "output": "region_or_score",
+        "measurements": ["texture_blur_score", "local_contrast", "relative_lucency_score"],
+        "diagnostic_role": "ARCO_II_supportive_xray_feature"
+      },
+      {
+        "target": "collapse",
+        "display_name": "股骨头塌陷",
+        "description": "股骨头轮廓变扁、塌陷或新月征候选征象。",
+        "required_modalities": ["X-ray", "MRI"],
+        "output": "measurement",
+        "measurements": ["collapse_ratio", "head_contour_irregularity_score"],
+        "diagnostic_role": "ARCO_III_or_later_boundary_feature"
+      }
+    ],
+    "insufficiency_rules": [
+      {
+        "condition": "suspected early disease with X-ray only",
+        "status": "insufficient_evidence",
+        "reason": "X 光不足以排除早期股骨头坏死，需要 MRI 评估骨髓信号和早期坏死改变。"
+      }
+    ],
+    "suspected_conditions": [
+      {
+        "disease": "股骨头坏死",
+        "reason": "患者症状/部位与股骨头坏死方向匹配，但当前影像不足以排除早期病变。"
+      }
+    ],
+    "required_next_images": [
+      {
+        "modality": "MRI",
+        "region": "双髋关节",
+        "reason": "早期股骨头坏死或 X 光阴性但症状持续时，需要 MRI T1/T2/STIR 评估。"
+      }
+    ],
+    "diagnosis_scope": {
+      "allowed": [
+        "说明当前图像能评估的结构性征象",
+        "提示 X 光不能排除早期股骨头坏死",
+        "给出下一步所需影像检查"
+      ],
+      "blocked": [
+        "不能将 X 光未见异常解释为无病",
+        "不能在缺少 MRI 时排除早期股骨头坏死",
+        "不能把 missing_input 当作阴性发现"
+      ]
+    }
+  },
+  "report_requirements": {
+    "include": ["诊断倾向", "影像依据", "分期判断", "不确定性说明", "建议进一步检查", "治疗建议"]
+  }
+}

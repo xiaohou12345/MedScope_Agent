@@ -1,0 +1,155 @@
+{
+  "disease_name": "成人弥漫性胶质瘤",
+  "skill_id": "diffuse_glioma_brats_v0.1",
+  "version": "0.1",
+  "source_type": "medical_guideline",
+  "skill_type": "guideline_based",
+  "evidence_level": "high",
+  "source": "EANO adult diffuse glioma guideline; ESTRO-EANO glioblastoma target delineation guideline; BraTS annotation convention",
+  "source_documents": [
+    {
+      "source_id": "eano_diffuse_glioma_2021",
+      "title": "EANO guidelines on the diagnosis and treatment of diffuse gliomas of adulthood",
+      "publisher": "EANO / Nature Reviews Clinical Oncology",
+      "url": "https://www.nature.com/articles/s41571-020-00447-z",
+      "source_kind": "official_guideline",
+      "evidence_note": "Defines adult diffuse glioma diagnosis and treatment principles, including integrated histomolecular diagnosis."
+    },
+    {
+      "source_id": "estro_eano_gbm_target_2023",
+      "title": "ESTRO-EANO guideline on target delineation and radiotherapy details for glioblastoma",
+      "publisher": "ESTRO / EANO",
+      "url": "https://www.eano.eu/publications/eano-guidelines/estro-eano-guideline-on-target-delineation-and-radiotherapy-details-for-glioblastoma-2023/",
+      "source_kind": "official_guideline",
+      "evidence_note": "Defines MRI target delineation concepts relevant to whole tumor, core, enhancement, and edema reporting."
+    }
+  ],
+  "guideline_source": {
+    "source_catalog_path": "data/guidelines/guideline_sources.json"
+  },
+  "guideline_extraction": {
+    "tool": "static_skill_catalog_sync",
+    "citations": [
+      {
+        "source_id": "eano_diffuse_glioma_2021",
+        "title": "EANO guidelines on the diagnosis and treatment of diffuse gliomas of adulthood",
+        "publisher": "EANO / Nature Reviews Clinical Oncology",
+        "url": "https://www.nature.com/articles/s41571-020-00447-z",
+        "source_kind": "official_guideline",
+        "evidence_note": "Defines adult diffuse glioma diagnosis and treatment principles, including integrated histomolecular diagnosis."
+      },
+      {
+        "source_id": "estro_eano_gbm_target_2023",
+        "title": "ESTRO-EANO guideline on target delineation and radiotherapy details for glioblastoma",
+        "publisher": "ESTRO / EANO",
+        "url": "https://www.eano.eu/publications/eano-guidelines/estro-eano-guideline-on-target-delineation-and-radiotherapy-details-for-glioblastoma-2023/",
+        "source_kind": "official_guideline",
+        "evidence_note": "Defines MRI target delineation concepts relevant to whole tumor, core, enhancement, and edema reporting."
+      }
+    ]
+  },
+  "quality_control": {
+    "citation_status": "verified",
+    "citation_count": 2,
+    "missing_url_count": 0
+  },
+  "clinical_features": {
+    "common_symptoms": ["头痛", "癫痫发作", "局灶性神经功能缺损", "认知改变"],
+    "risk_factors": ["既往颅脑放疗史", "遗传易感综合征"]
+  },
+  "required_image_views": ["MRI T1", "MRI T1ce", "MRI T2", "MRI FLAIR"],
+  "visual_targets": {
+    "anatomy": ["大脑半球", "脑室", "皮层和白质", "中线结构"],
+    "lesion_features": [
+      "whole tumor",
+      "tumor core",
+      "enhancing tumor",
+      "peritumoral edema",
+      "mass effect",
+      "midline shift"
+    ]
+  },
+  "staging_rules": {
+    "imaging_suspicion": {
+      "description": "MRI 可提示胶质瘤可能，但最终分型依赖组织病理和分子标志物",
+      "mri_features": ["T2/FLAIR 异常高信号", "强化成分", "坏死或非强化核心", "周围水肿"]
+    },
+    "integrated_diagnosis_required": {
+      "description": "EANO/WHO 体系强调组织学和分子诊断整合",
+      "required_non_imaging_evidence": ["IDH 状态", "1p/19q 共缺失", "MGMT 甲基化", "TERT/EGFR/+7-10 等标志物"]
+    }
+  },
+  "vision_agent_tasks": {
+    "segmentation_targets": ["whole tumor", "tumor core", "enhancing tumor"],
+    "image_outputs": ["original_image_path", "mask_path", "overlay_path"],
+    "quantitative_features": [
+      "whole_tumor_volume_ml",
+      "tumor_core_volume_ml",
+      "enhancing_tumor_volume_ml",
+      "edema_present",
+      "mass_effect",
+      "segmentation_quality"
+    ]
+  },
+  "visual_protocol": {
+    "disease_target": "diffuse_glioma_adult",
+    "clinical_focus": "成人弥漫性胶质瘤影像辅助评估",
+    "imaging_modalities": ["MRI"],
+    "segmentation_targets": ["whole_tumor", "tumor_core", "enhancing_tumor"],
+    "available_modalities": ["FLAIR"],
+    "alignment_tasks": [
+      {
+        "task": "segment_whole_tumor",
+        "required_modalities": ["FLAIR"],
+        "reason": "whole tumor 主要依赖 FLAIR 可见范围。"
+      },
+      {
+        "task": "measure_tumor_core",
+        "required_modalities": ["T1", "T1ce", "T2"],
+        "reason": "tumor core 需要 T1/T1ce/T2 序列支撑。"
+      },
+      {
+        "task": "measure_enhancing_tumor",
+        "required_modalities": ["T1ce"],
+        "reason": "enhancing tumor 需要增强 T1ce。"
+      }
+    ],
+    "required_modalities": {
+      "whole_tumor": ["FLAIR"],
+      "tumor_core": ["T1", "T1ce", "T2"],
+      "enhancing_tumor": ["T1ce"],
+      "edema": ["FLAIR"],
+      "mass_effect": ["T1", "T2", "FLAIR"]
+    },
+    "measurements": [
+      "whole_tumor_volume_ml",
+      "tumor_core_volume_ml",
+      "enhancing_tumor_volume_ml",
+      "edema_present",
+      "mass_effect"
+    ],
+    "suspected_conditions": [
+      {
+        "disease": "成人弥漫性胶质瘤",
+        "reason": "患者描述或图像路径匹配胶质瘤 skill。"
+      }
+    ],
+    "required_next_images": [
+      {
+        "modality": "MRI",
+        "region": "brain",
+        "reason": "建议补全 T1、T1ce、T2、FLAIR 以满足胶质瘤视觉协议。"
+      }
+    ],
+    "diagnosis_scope": {
+      "allowed": ["只分析已上传 MRI 序列支持的视觉证据"],
+      "blocked": [
+        "不能从缺失 T1ce 推断无强化",
+        "不能从非 MRI 图像执行胶质瘤 MRI 分割协议"
+      ]
+    }
+  },
+  "report_requirements": {
+    "include": ["诊断倾向", "影像依据", "不确定性说明", "建议进一步检查", "治疗建议"]
+  }
+}

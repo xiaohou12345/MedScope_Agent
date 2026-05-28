@@ -1,0 +1,206 @@
+{
+  "disease_name": "成人社区获得性肺炎胸片评估",
+  "skill_id": "pneumonia_chest_xray_v0.1",
+  "version": "0.1",
+  "source_type": "medical_guideline",
+  "skill_type": "guideline_based",
+  "evidence_level": "high",
+  "source": "2019 ATS/IDSA adult CAP guideline; ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
+  "source_documents": [
+    {
+      "source_id": "ats_idsa_cap_adults_2019",
+      "title": "Diagnosis and Treatment of Adults with Community-acquired Pneumonia. An Official Clinical Practice Guideline of the American Thoracic Society and Infectious Diseases Society of America",
+      "publisher": "ATS / IDSA",
+      "url": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
+      "source_kind": "official_guideline",
+      "publication_year": 2019,
+      "region": "US/global",
+      "source_priority": 10,
+      "evidence_note": "Adult CAP guideline emphasizing clinical diagnosis supported by radiographic criteria and treatment pathway constraints."
+    },
+    {
+      "source_id": "acr_acute_respiratory_illness_2018",
+      "title": "ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
+      "publisher": "American College of Radiology",
+      "url": "https://acsearch.acr.org/docs/69446/Narrative/",
+      "source_kind": "imaging_appropriateness_guideline",
+      "publication_year": 2018,
+      "region": "US",
+      "source_priority": 9,
+      "evidence_note": "Imaging appropriateness guidance for chest radiography and CT in suspected acute respiratory infection or pneumonia."
+    }
+  ],
+  "source_priority": [
+    {
+      "source_id": "ats_idsa_cap_adults_2019",
+      "title": "Diagnosis and Treatment of Adults with Community-acquired Pneumonia. An Official Clinical Practice Guideline of the American Thoracic Society and Infectious Diseases Society of America",
+      "publisher": "ATS / IDSA",
+      "url": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
+      "source_kind": "official_guideline",
+      "publication_year": 2019,
+      "region": "US/global",
+      "source_priority": 10
+    },
+    {
+      "source_id": "acr_acute_respiratory_illness_2018",
+      "title": "ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
+      "publisher": "American College of Radiology",
+      "url": "https://acsearch.acr.org/docs/69446/Narrative/",
+      "source_kind": "imaging_appropriateness_guideline",
+      "publication_year": 2018,
+      "region": "US",
+      "source_priority": 9
+    }
+  ],
+  "guideline_source": {
+    "source_catalog_path": "data/guidelines/guideline_sources.json"
+  },
+  "guideline_extraction": {
+    "tool": "static_skill_catalog_sync",
+    "citations": [
+      {
+        "source_id": "ats_idsa_cap_adults_2019",
+        "title": "Diagnosis and Treatment of Adults with Community-acquired Pneumonia. An Official Clinical Practice Guideline of the American Thoracic Society and Infectious Diseases Society of America",
+        "publisher": "ATS / IDSA",
+        "url": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
+        "source_kind": "official_guideline",
+        "evidence_note": "Adult CAP clinical guideline; imaging evidence must be interpreted with clinical syndrome and cannot alone confirm etiology."
+      },
+      {
+        "source_id": "acr_acute_respiratory_illness_2018",
+        "title": "ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
+        "publisher": "American College of Radiology",
+        "url": "https://acsearch.acr.org/docs/69446/Narrative/",
+        "source_kind": "imaging_appropriateness_guideline",
+        "evidence_note": "Chest radiography is usually appropriate when pneumonia is clinically suspected; CT is reserved for selected complicated or uncertain scenarios."
+      }
+    ]
+  },
+  "quality_control": {
+    "citation_status": "verified",
+    "citation_count": 2,
+    "missing_url_count": 0,
+    "visual_protocol_status": "valid",
+    "visual_protocol_errors": [],
+    "formal_skill_status": "formal_ready",
+    "can_enter_formal_guideline_skill": true
+  },
+  "clinical_features": {
+    "common_symptoms": ["咳嗽", "发热", "咳痰", "呼吸困难", "胸痛"],
+    "risk_factors": ["高龄", "慢性心肺疾病", "免疫抑制", "近期呼吸道感染", "吸烟史"]
+  },
+  "required_image_views": ["胸部 X 光正位", "胸部 X 光侧位", "必要时胸部 CT"],
+  "visual_targets": {
+    "anatomy": ["双肺野", "肺门", "胸膜腔", "心影和纵隔"],
+    "lesion_features": ["肺部浸润影", "实变影", "磨玻璃影候选", "胸腔积液", "多灶性阴影"]
+  },
+  "staging_rules": {
+    "imaging_supportive_finding": {
+      "description": "胸片可提供肺部浸润影、实变影或多灶阴影等支持性影像证据，但不能单独确定病原学或完整临床诊断。",
+      "xray_features": ["局灶或多灶肺部浸润影", "肺叶或肺段实变影", "伴随胸腔积液"]
+    },
+    "clinical_correlation_required": {
+      "description": "CAP 诊断需要结合症状、体征、实验室检查和影像表现；影像阴性或质量不足时不能直接排除。",
+      "required_non_imaging_evidence": ["体温", "血氧", "白细胞或炎症指标", "病原学检查", "临床查体"]
+    }
+  },
+  "vision_agent_tasks": {
+    "segmentation_targets": ["lung_opacity", "consolidation", "pleural_effusion"],
+    "image_outputs": ["original_image_path", "mask_path", "overlay_path"],
+    "quantitative_features": [
+      "opacity_area_ratio",
+      "lesion_bbox",
+      "lesion_centroid",
+      "laterality",
+      "lobe_or_zone",
+      "pleural_effusion_present",
+      "segmentation_quality"
+    ]
+  },
+  "visual_protocol": {
+    "disease_target": "community_acquired_pneumonia",
+    "clinical_focus": "成人社区获得性肺炎胸片影像证据评估",
+    "imaging_modalities": ["Chest X-ray", "Chest CT"],
+    "available_modalities": ["Chest X-ray"],
+    "segmentation_targets": ["lung_opacity", "consolidation", "pleural_effusion"],
+    "alignment_tasks": [
+      {
+        "task": "localize_lung_opacity",
+        "required_modalities": ["Chest X-ray"],
+        "reason": "胸片可用于定位疑似肺部浸润影或实变影候选区域。"
+      },
+      {
+        "task": "segment_lung_opacity",
+        "required_modalities": ["Chest X-ray"],
+        "reason": "对候选浸润影/实变影生成 mask 和面积、位置等结构化证据。"
+      },
+      {
+        "task": "assess_complicated_or_uncertain_pneumonia",
+        "required_modalities": ["Chest CT"],
+        "reason": "胸片不清楚、病变复杂或需排查并发症/替代诊断时需要 CT。"
+      }
+    ],
+    "required_modalities": {
+      "lung_opacity": ["Chest X-ray"],
+      "consolidation": ["Chest X-ray"],
+      "pleural_effusion": ["Chest X-ray"],
+      "complicated_pneumonia": ["Chest CT"],
+      "alternative_diagnosis": ["Chest CT"]
+    },
+    "measurements": [
+      "opacity_area_ratio",
+      "lesion_bbox",
+      "lesion_centroid",
+      "laterality",
+      "lobe_or_zone",
+      "pleural_effusion_present",
+      "segmentation_quality"
+    ],
+    "insufficiency_rules": [
+      {
+        "condition": "xray_negative_or_unclear_with_high_clinical_suspicion",
+        "status": "partial_evidence",
+        "reason": "胸片阴性或不清楚但临床高度怀疑时，不能排除肺炎，需要临床复核、复查或 CT。"
+      },
+      {
+        "condition": "non_chest_or_wrong_modality_image",
+        "status": "contraindicated_or_wrong_modality",
+        "reason": "非胸部影像不能执行肺炎胸片视觉协议。"
+      }
+    ],
+    "suspected_conditions": [
+      {
+        "disease": "成人社区获得性肺炎",
+        "reason": "患者主诉咳嗽、发热或胸部影像出现浸润影/实变影候选区域时进入该 skill。"
+      }
+    ],
+    "required_next_images": [
+      {
+        "modality": "Chest CT",
+        "region": "胸部",
+        "reason": "胸片结果不清、病情重、疑似并发症或需要排查替代诊断时建议 CT。"
+      },
+      {
+        "modality": "Chest X-ray PA/Lateral",
+        "region": "胸部",
+        "reason": "单张或低质量胸片不足时，建议补充标准正侧位胸片。"
+      }
+    ],
+    "diagnosis_scope": {
+      "allowed": [
+        "描述胸片支持的肺部浸润影、实变影、胸腔积液等候选视觉证据",
+        "输出 mask、overlay、面积比例、位置和证据充分性",
+        "在证据不足时建议 CT、复查胸片或临床/实验室结合"
+      ],
+      "blocked": [
+        "不能仅凭胸片 mask 确诊肺炎",
+        "不能从胸片阴性直接排除肺炎",
+        "不能根据影像外观推断具体病原体",
+        "不能在缺少临床信息时给出治疗决策"
+      ]
+    }
+  },
+  "report_requirements": {
+    "include": ["诊断倾向", "影像依据", "不确定性说明", "建议进一步检查", "治疗建议"]
+  }
+}

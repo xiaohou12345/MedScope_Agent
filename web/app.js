@@ -1,0 +1,2525 @@
+const state = {
+  caseId: "",
+  lastPayload: {},
+  sampleMaskPath: "data/external/brats2021_00030/BraTS2021_00030_seg.nii.gz",
+  useSampleMask: false,
+  sampleDiseaseKey: "",
+  sampleVisionMode: "",
+  demoCaseSlug: "",
+  realDemoMode: false,
+  casePending: false,
+  qaPending: false,
+};
+
+const elements = {
+  statusText: document.getElementById("statusText"),
+  healthButton: document.getElementById("healthButton"),
+  sampleGliomaButton: document.getElementById("sampleGliomaButton"),
+  realVlmMedSAM2Button: document.getElementById("realVlmMedSAM2Button"),
+  evidenceGatewaySnapshotButton: document.getElementById("evidenceGatewaySnapshotButton"),
+  xrayInsufficientButton: document.getElementById("xrayInsufficientButton"),
+  fhnNoMaskButton: document.getElementById("fhnNoMaskButton"),
+  caseForm: document.getElementById("caseForm"),
+  qaForm: document.getElementById("qaForm"),
+  submitButton: document.getElementById("submitButton"),
+  resetButton: document.getElementById("resetButton"),
+  dropZone: document.getElementById("dropZone"),
+  fileInput: document.getElementById("fileInput"),
+  uploadStatus: document.getElementById("uploadStatus"),
+  patientMessage: document.getElementById("patientMessage"),
+  imagePath: document.getElementById("imagePath"),
+  symptoms: document.getElementById("symptoms"),
+  qaInput: document.getElementById("qaInput"),
+  qaSubmitButton: document.getElementById("qaSubmitButton"),
+  reportView: document.getElementById("reportView"),
+  visualMeta: document.getElementById("visualMeta"),
+  lesionFigure: document.getElementById("lesionFigure"),
+  caseIdBadge: document.getElementById("caseIdBadge"),
+  intentBadge: document.getElementById("intentBadge"),
+  alignmentView: document.getElementById("alignmentView"),
+  evidenceView: document.getElementById("evidenceView"),
+  auditView: document.getElementById("auditView"),
+  qaLog: document.getElementById("qaLog"),
+};
+
+function setStatus(text, kind = "") {
+  elements.statusText.textContent = text;
+  elements.statusText.className = kind ? `status-${kind}` : "";
+}
+
+function splitList(value) {
+  return value
+    .split(/[，,;；\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function buildCasePayload() {
+  const payload = {
+    patient_message: elements.patientMessage.value.trim(),
+    image_path: elements.imagePath.value.trim() || null,
+    patient_info: {
+      symptoms: splitList(elements.symptoms.value),
+    },
+  };
+  if (state.useSampleMask) {
+    payload.mask_path = state.sampleMaskPath;
+  }
+  if (state.sampleDiseaseKey) {
+    payload.disease_key = state.sampleDiseaseKey;
+  }
+  if (state.sampleVisionMode) {
+    payload.vision_mode = state.sampleVisionMode;
+  }
+  return payload;
+}
+
+function buildQaPayload() {
+  return {
+    case_id: state.caseId,
+    patient_message: elements.qaInput.value.trim(),
+  };
+}
+
+async function postMedScope(payload) {
+  const response = await fetch("/v1/medscope", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  return body;
+}
+
+async function fetchMemoryReplay(caseId) {
+  const response = await fetch(`/v1/memory/cases/${encodeURIComponent(caseId)}/replay`);
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  return body;
+}
+
+async function fetchStandardDemoCase(caseSlug) {
+  const response = await fetch(`/v1/demo/standard/cases/${encodeURIComponent(caseSlug)}/response`);
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  return body;
+}
+
+async function fetchDemoJson(path) {
+  const response = await fetch(path);
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  return body;
+}
+
+async function fetchEvidenceGatewaySnapshot() {
+  return fetchDemoJson("/v1/demo/evidence-gateway-snapshot");
+}
+
+async function fetchRealVlmMedSAM2Demo() {
+  try {
+    return await fetchRealVlmMedSAM2Response();
+  } catch (error) {
+    setStatus("完整真实样例 response 不可用，改为读取分项 artifact...", "warn");
+  }
+  const [summary, report, evidenceBundle, segmentation, vlmPrompt] = await Promise.all([
+    fetchDemoJson("/v1/demo/real-vlm-medsam2"),
+    fetchDemoJson("/v1/demo/real-vlm-medsam2/report"),
+    fetchDemoJson("/v1/demo/real-vlm-medsam2/evidence-bundle"),
+    fetchDemoJson("/v1/demo/real-vlm-medsam2/segmentation"),
+    fetchDemoJson("/v1/demo/real-vlm-medsam2/vlm-prompt"),
+  ]);
+  return buildRealVlmMedSAM2Payload({
+    summary,
+    report,
+    evidenceBundle,
+    segmentation,
+    vlmPrompt,
+  });
+}
+
+async function fetchRealVlmMedSAM2Response() {
+  const payload = await fetchDemoJson("/v1/demo/real-vlm-medsam2/response");
+  payload.demo_source = payload.demo_source || "real_vlm_medsam2_artifact";
+  return payload;
+}
+
+function buildRealVlmMedSAM2Payload(parts) {
+  const summary = parts.summary || {};
+  const report = parts.report || {};
+  const evidenceBundle = parts.evidenceBundle || {};
+  const segmentation = parts.segmentation || {};
+  const vlmPrompt = parts.vlmPrompt || {};
+  const visualResult = evidenceBundle.visual_result || segmentation.result || {};
+  const visualEvidence = visualResult.visual_evidence || {};
+  const measurements = visualEvidence.measurements || {};
+  const completeness = visualEvidence.completeness || {};
+  const segmentationResults = Array.isArray(visualEvidence.segmentation_results)
+    ? visualEvidence.segmentation_results
+    : [];
+  const visualToolPlan = Array.isArray(visualEvidence.visual_tool_plan)
+    ? visualEvidence.visual_tool_plan
+    : [];
+  const rawImageOutputs = evidenceBundle.image_outputs || segmentation.image_outputs || visualResult.image_outputs || {};
+  const imageOutputs = {
+    ...rawImageOutputs,
+    original_preview_path: rawImageOutputs.original_preview_path || vlmPrompt.slice_png_path,
+    localization_overlay_path: rawImageOutputs.localization_overlay_path || vlmPrompt.bbox_overlay_path,
+  };
+  const evaluation = evidenceBundle.evaluation || segmentation.evaluation || {};
+  const usedSkill = report.used_skill || {};
+  const caseId = summary.case_id || evidenceBundle.case_id || segmentation.case_id || "brats2021_00030";
+  const diseaseKey = evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats";
+  const promptBoxes = Array.isArray(vlmPrompt.boxes)
+    ? vlmPrompt.boxes.map((box) => Array.isArray(box) ? box.join(",") : String(box)).join(" | ")
+    : "";
+  const imageEvidence = {
+    image_path: imageOutputs.original_image_path || visualResult.image_path || vlmPrompt.image_path,
+    modality: visualResult.modality || "MRI",
+    body_part: visualResult.body_part || "brain",
+    image_outputs: imageOutputs,
+    segmentation_quality: visualEvidence.segmentation_quality || "medsam2",
+    measurements: {
+      ...measurements,
+      whole_tumor_dice: evaluation.whole_tumor_dice,
+      tumor_core_dice: evaluation.tumor_core_dice,
+      enhancing_tumor_dice: evaluation.enhancing_tumor_dice,
+      prompt_source: summary.prompt_source || segmentation.prompt_source || vlmPrompt.prompt_source,
+      vlm_bbox: promptBoxes,
+    },
+    completeness,
+    segmentation_results: segmentationResults,
+    visual_tool_plan: visualToolPlan,
+  };
+  return {
+    case_id: caseId,
+    intent: "diagnosis",
+    demo_source: "real_vlm_medsam2_artifact",
+    reply_to_patient: summary.diagnostic_tendency || report.diagnostic_tendency || "",
+    report,
+    image_outputs: imageOutputs,
+    visual_input_contract: {
+      image_path: imageEvidence.image_path,
+      modality: imageEvidence.modality,
+      body_part: imageEvidence.body_part,
+      segmentation_quality: imageEvidence.segmentation_quality,
+      image_outputs: imageOutputs,
+      measurements,
+      completeness,
+      segmentation_results: segmentationResults,
+      visual_tool_plan: visualToolPlan,
+    },
+    alignment_plan: {
+      analysis_status: "partial_evidence",
+      clinical_focus: "adult diffuse glioma imaging evidence",
+      selected_skill: evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats",
+      image_context: {
+        modality: imageEvidence.modality,
+        body_part: imageEvidence.body_part,
+        available_sequences: ["FLAIR"],
+      },
+      suspected_conditions: [
+        {
+          disease: "adult diffuse glioma",
+          reason: "VLM generated candidate bbox and MedSAM2 produced a brain tumor mask; diagnosis still requires complete MRI and pathology.",
+        },
+      ],
+      visual_tasks: [
+        {
+          task: "vlm_candidate_localization",
+          status: vlmPrompt.status === "ok" ? "runnable" : "unassessed",
+          required_input: "FLAIR slice PNG",
+          reason: `prompt_source=${vlmPrompt.prompt_source || summary.prompt_source || "-"}`,
+        },
+        {
+          task: "medsam2_candidate_segmentation",
+          status: segmentation.status === "ok" ? "runnable" : "unassessed",
+          required_input: "VLM bbox prompt",
+          reason: `whole_tumor_dice=${formatValue(evaluation.whole_tumor_dice)}`,
+        },
+      ],
+      required_next_images: [
+        {region: "brain", modality: "T1", reason: "Required for tumor core assessment."},
+        {region: "brain", modality: "T1ce", reason: "Required for enhancing tumor assessment."},
+        {region: "brain", modality: "T2", reason: "Required for broader edema/core assessment."},
+      ],
+      insufficiency_reasons: [
+        "This is an auditable demo artifact, not a live clinical-grade segmentation run.",
+        "Missing T1/T1ce/T2 fields must not be interpreted as negative or zero.",
+      ],
+    },
+    evidence_bundle: {
+      patient_context: {
+        case_id: caseId,
+        disease_key: evidenceBundle.disease_key || summary.disease_key,
+        prompt_source: summary.prompt_source || segmentation.prompt_source || vlmPrompt.prompt_source,
+      },
+      image_evidence: imageEvidence,
+      skill_evidence: {
+        selected_skill: evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats",
+        selected_vision_mode: "medsam2",
+        skill_type: usedSkill.skill_type || "guideline_based",
+        guideline_evidence: {
+          citations: usedSkill.source_documents || usedSkill.guideline_extraction?.citations || [],
+        },
+        quality_control: {
+          formal_skill_status: usedSkill.skill_type ? "loaded" : "not_reported",
+          visual_protocol_status: "used_by_demo",
+        },
+      },
+      missing_or_unassessed: {
+        image_memory: completeness,
+      },
+      quality_warnings: [
+        "reference_mask was used only for post-hoc Dice/QC, not for prompt generation.",
+        "enhancing_tumor Dice is 0.0 in this demo and should not be treated as a reliable absence claim.",
+      ],
+    },
+    memory_audit: {
+      memory_completeness: {
+        patient_memory: {status: "demo_artifact", reason: "pre-generated demo sample"},
+        image_memory: {status: "supported", reason: "real VLM prompt and MedSAM2 artifact available"},
+        skill_memory: {status: "supported", reason: evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats"},
+        reasoning_memory: {status: "supported", reason: "diagnosis report artifact available"},
+      },
+      memory_type_details: {
+        patient_memory: {
+          patient_id: caseId,
+          intent: "diagnosis",
+          symptom_count: Array.isArray(summary.symptoms) ? summary.symptoms.length : 0,
+          qa_history_count: 0,
+        },
+        image_memory: {
+          original_preview_path: imageOutputs.original_preview_path,
+          localization_overlay_path: imageOutputs.localization_overlay_path,
+          overlay_path: imageOutputs.overlay_path,
+          mask_path: imageOutputs.mask_path,
+          mask_preview_path: imageOutputs.mask_preview_path,
+          segmentation_quality: imageEvidence.segmentation_quality,
+        },
+        skill_memory: {
+          selected_skill: diseaseKey,
+          used_skill: diseaseKey,
+          skill_type: usedSkill.skill_type || "guideline_based",
+          analysis_status: "partial_evidence",
+          required_next_images: [
+            {region: "brain", modality: "T1/T1ce/T2", reason: "Complete MRI sequences are required."},
+          ],
+          visual_protocol_status: "used_by_demo",
+        },
+        reasoning_memory: {
+          llm_attempted: summary.llm_attempted,
+          llm_fallback_reason: summary.llm_fallback_reason,
+          model: summary.model,
+        },
+      },
+      alignment_summary: {
+        analysis_status: "partial_evidence",
+        clinical_focus: "adult diffuse glioma imaging evidence",
+        visual_task_status_counts: {runnable: 2},
+        required_next_images: [
+          {region: "brain", modality: "T1/T1ce/T2", reason: "Complete MRI sequences are required."},
+        ],
+      },
+      skill_quality: {
+        formal_skill_status: usedSkill.skill_type ? "loaded" : "not_reported",
+        visual_protocol_status: "used_by_demo",
+        citation_status: usedSkill.source_documents?.length ? "present" : "not_reported",
+      },
+      qa_safety: {
+        evidence_bundle_required: true,
+        evidence_bundle_used: false,
+        evidence_bundle_used_count: 0,
+        qa_history_count: 0,
+        llm_used_count: summary.llm_attempted ? 1 : 0,
+        fallback_count: summary.llm_fallback_reason ? 1 : 0,
+        missing_or_unassessed_count: Object.keys(completeness).filter((key) => completeness[key]?.status !== "supported").length,
+      },
+      agents_traced: [
+        "GaoDoctorAgent",
+        "SkillBuilderAgent",
+        "VisionAgent",
+        "DiagnosisDoctorAgent",
+        "MemoryManager",
+      ],
+      trace_consistency: {
+        agent_io_matches_trace: true,
+        required_agents_present: true,
+        missing_required_agents: [],
+        qa_extension_present: false,
+        agent_count: 5,
+        agent_io_count: 5,
+      },
+      agent_io_summary: {
+        GaoDoctorAgent: {
+          input: Array.isArray(summary.symptoms) ? summary.symptoms : [],
+          output: "diagnosis",
+          routing_decision: {
+            selected_skill: diseaseKey,
+            selected_vision_mode: "medsam2",
+            source: "auto",
+            agent_scope: "orchestrator_api",
+            skill_builder_action: "load_existing_skill",
+          },
+        },
+        SkillBuilderAgent: {
+          input: {selected_skill: diseaseKey},
+          output: diseaseKey,
+        },
+        VisionAgent: {
+          input: imageEvidence.image_path,
+          output: imageOutputs,
+          selected_vision_mode: "medsam2",
+          tool: "MedSAM2",
+          prompt_tool: "VLM Prompt",
+        },
+        DiagnosisDoctorAgent: {
+          input: {measurements, completeness},
+          output: report.diagnostic_tendency || report["诊断倾向"],
+        },
+        MemoryManager: {
+          input: {
+            case_id: caseId,
+            memory_types: ["patient_memory", "image_memory", "skill_memory", "reasoning_memory"],
+          },
+          output: {
+            audit_status: "available",
+            evidence_bundle_status: "available",
+          },
+        },
+      },
+      missing_or_unassessed: {image_memory: completeness},
+    },
+    memory_replay: {
+      case_id: caseId,
+      replay_consistency: {
+        required_events_present: true,
+        missing_required_events: [],
+        memory_scope_complete: true,
+        steps_missing_memory_scope: [],
+        qa_extension_present: false,
+        step_count: 7,
+      },
+      steps: [
+        {
+          agent: "GaoDoctorAgent",
+          event: "patient_intake",
+          memory_scope: "patient_memory",
+          intent: "diagnosis",
+          patient_id: caseId,
+          symptoms: Array.isArray(summary.symptoms) ? summary.symptoms : [],
+        },
+        {
+          agent: "GaoDoctorAgent",
+          event: "skill_routing",
+          memory_scope: "skill_memory",
+          decision_owner: "orchestrator_api",
+          routing_decision: {
+            selected_skill: diseaseKey,
+            selected_vision_mode: "medsam2",
+            source: "auto",
+            agent_scope: "orchestrator_api",
+            skill_builder_action: "load_existing_skill",
+          },
+          selected_skill: diseaseKey,
+          selected_vision_mode: "medsam2",
+          skill_type: usedSkill.skill_type,
+          skill_builder_action: "load_existing_skill",
+        },
+        {
+          agent: "SkillBuilderAgent",
+          event: "skill_loading",
+          memory_scope: "skill_memory",
+          action: "load_existing_skill",
+          selected_skill: diseaseKey,
+          used_skill: diseaseKey,
+          skill_type: usedSkill.skill_type,
+          evidence_level: usedSkill.evidence_level,
+          formal_skill_status: usedSkill.skill_type ? "loaded" : "not_reported",
+          visual_protocol_status: "used_by_demo",
+        },
+        {agent: "VisionAgent", event: "vlm_prompt_generation", memory_scope: "image_memory", tool: "VLM Prompt", segmentation_quality: "vision_model_bbox", measurements: {bbox: promptBoxes}},
+        {
+          agent: "VisionAgent",
+          event: "visual_evidence",
+          memory_scope: "image_memory",
+          tool: "MedSAM2",
+          selected_vision_mode: "medsam2",
+          segmentation_quality: imageEvidence.segmentation_quality,
+          measurements: imageEvidence.measurements,
+        },
+        {agent: "DiagnosisDoctorAgent", event: "diagnosis_report", memory_scope: "reasoning_memory", diagnostic_tendency: report.diagnostic_tendency || report["诊断倾向"]},
+        {
+          agent: "MemoryManager",
+          event: "memory_audit",
+          memory_scope: "patient_memory,image_memory,skill_memory,reasoning_memory",
+          evidence_bundle_status: "available",
+          audit_status: "available",
+          quality_warnings: [
+            "reference_mask was used only for post-hoc Dice/QC, not for prompt generation.",
+            "missing MRI sequences must not be interpreted as negative findings.",
+          ],
+        },
+      ],
+    },
+  };
+}
+
+async function postDemoQa(caseSlug, payload) {
+  const response = await fetch(`/v1/demo/standard/cases/${encodeURIComponent(caseSlug)}/qa`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  return body;
+}
+
+async function postRealVlmMedSAM2Qa(payload) {
+  const response = await fetch("/v1/demo/real-vlm-medsam2/qa", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  body.demo_source = "real_vlm_medsam2_artifact";
+  return body;
+}
+
+async function fetchStandardDemoCaseOrRun(caseSlug, livePayload) {
+  try {
+    const payload = await fetchStandardDemoCase(caseSlug);
+    payload.demo_case_slug = caseSlug;
+    return payload;
+  } catch (error) {
+    setStatus("预生成样例不可用，改为实时分析...", "warn");
+    state.demoCaseSlug = "";
+    return postMedScope(livePayload);
+  }
+}
+
+function formatApiError(body, status) {
+  const parts = [];
+  if (body.error_type) {
+    parts.push(body.error_type);
+  }
+  parts.push(body.error || `HTTP ${status}`);
+  if (Array.isArray(body.action_items) && body.action_items.length) {
+    parts.push(body.action_items.join(" "));
+  }
+  return parts.join("：");
+}
+
+async function uploadFile(file) {
+  if (!file) {
+    return;
+  }
+  elements.uploadStatus.textContent = `上传中：${file.name}`;
+  const response = await fetch(`/v1/upload?filename=${encodeURIComponent(file.name)}`, {
+    method: "POST",
+    headers: {"Content-Type": "application/octet-stream"},
+    body: file,
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body.error || `HTTP ${response.status}`);
+  }
+  elements.imagePath.value = body.image_path;
+  state.useSampleMask = false;
+  state.sampleDiseaseKey = "";
+  state.sampleVisionMode = "";
+  state.demoCaseSlug = "";
+  state.realDemoMode = false;
+  elements.uploadStatus.textContent = `已上传：${body.filename}`;
+}
+
+async function checkHealth() {
+  setStatus("检查中...");
+  try {
+    const response = await fetch("/health");
+    const body = await response.json();
+    setStatus(body.status === "ok" ? "API 已连接" : "API 状态异常", body.status === "ok" ? "ok" : "warn");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+}
+
+function renderList(items) {
+  if (!Array.isArray(items)) {
+    return `<p>${escapeHtml(String(items || "-"))}</p>`;
+  }
+  if (!items.length) {
+    return "<p>-</p>";
+  }
+  return `<ul>${items.map((item) => `<li>${escapeHtml(String(item))}</li>`).join("")}</ul>`;
+}
+
+function renderMetricGrid(items) {
+  const rows = Object.entries(items || {});
+  if (!rows.length) {
+    return '<div class="trace-empty">-</div>';
+  }
+  return `
+    <dl class="metric-grid">
+      ${rows.map(([key, value]) => `
+        <div>
+          <dt>${escapeHtml(String(key))}</dt>
+          <dd>${escapeHtml(formatValue(value))}</dd>
+        </div>
+      `).join("")}
+    </dl>
+  `;
+}
+
+function formatValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function renderStatusPills(statusMap) {
+  const entries = Object.entries(statusMap || {});
+  if (!entries.length) {
+    return '<div class="trace-empty">-</div>';
+  }
+  return `
+    <div class="pill-list">
+      ${entries.map(([key, value]) => {
+        const status = typeof value === "object" && value ? value.status || value.reason || value : value;
+        return `<span class="status-pill">${escapeHtml(String(key))}: ${escapeHtml(formatValue(status))}</span>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function getVisualEvidenceBundle(payload) {
+  return payload.visual_evidence_bundle
+    || payload.evidence_bundle?.image_evidence?.visual_evidence_bundle
+    || {};
+}
+
+function getSegmentationResults(payload) {
+  const fromContract = payload.visual_input_contract?.segmentation_results;
+  const fromBundle = payload.evidence_bundle?.image_evidence?.segmentation_results;
+  const fromReport = payload.report?.visual_input_contract?.segmentation_results;
+  if (Array.isArray(fromContract)) {
+    return fromContract;
+  }
+  if (Array.isArray(fromBundle)) {
+    return fromBundle;
+  }
+  if (Array.isArray(fromReport)) {
+    return fromReport;
+  }
+  return [];
+}
+
+function getVisualToolPlan(payload) {
+  const fromContract = payload.visual_input_contract?.visual_tool_plan;
+  const fromBundle = payload.evidence_bundle?.image_evidence?.visual_tool_plan;
+  const fromReport = payload.report?.visual_input_contract?.visual_tool_plan;
+  if (Array.isArray(fromContract)) {
+    return fromContract;
+  }
+  if (Array.isArray(fromBundle)) {
+    return fromBundle;
+  }
+  if (Array.isArray(fromReport)) {
+    return fromReport;
+  }
+  return [];
+}
+
+function renderGuidelineEvidence(payload) {
+  const bundle = payload.evidence_bundle || {};
+  const report = payload.report || {};
+  const evidence = bundle.skill_evidence?.guideline_evidence || payload.guideline_evidence || report.guideline_evidence || {};
+  const citations = Array.isArray(evidence.citations) ? evidence.citations : [];
+  const sourceDocuments = Array.isArray(evidence.source_documents) ? evidence.source_documents : [];
+  const references = citations.length ? citations : sourceDocuments;
+  const conflictsHtml = renderGuidelineConflicts(evidence);
+  const sourcePriorityHtml = renderSourcePriority(evidence);
+  if (!references.length && !conflictsHtml && !sourcePriorityHtml) {
+    return "";
+  }
+  return `
+    <div class="report-section guideline-evidence">
+      <h3>指南依据</h3>
+      ${sourcePriorityHtml}
+      ${conflictsHtml}
+      ${references.length ? `<div class="citation-list">${references.map(renderCitation).join("")}</div>` : ""}
+    </div>
+  `;
+}
+
+function getAlignmentPlan(payload) {
+  return payload.alignment_plan
+    || payload.evidence_bundle?.skill_evidence?.alignment_plan
+    || payload.report?.alignment_plan
+    || {};
+}
+
+function renderAlignmentPlan(payload) {
+  const plan = getAlignmentPlan(payload);
+  if (!Object.keys(plan).length) {
+    elements.alignmentView.innerHTML = '<div class="trace-empty">本次响应未返回 alignment plan</div>';
+    return;
+  }
+  const imageContext = plan.image_context || {};
+  const tasks = Array.isArray(plan.visual_tasks) ? plan.visual_tasks : [];
+  const suspected = Array.isArray(plan.suspected_conditions) ? plan.suspected_conditions : [];
+  const nextImages = Array.isArray(plan.required_next_images) ? plan.required_next_images : [];
+  const insufficiencyReasons = Array.isArray(plan.insufficiency_reasons) ? plan.insufficiency_reasons : [];
+  elements.alignmentView.innerHTML = `
+    <div class="alignment-summary">
+      <span class="alignment-status alignment-status-${escapeClassName(plan.analysis_status)}">
+        ${escapeHtml(statusLabel(plan.analysis_status))}
+      </span>
+      <span>${escapeHtml(plan.clinical_focus || "-")}</span>
+    </div>
+    <div class="trace-block">
+      <h3>图像与 Skill</h3>
+      ${renderMetricGrid({
+        selected_skill: plan.selected_skill,
+        modality: imageContext.modality,
+        body_part: imageContext.body_part,
+        available_sequences: Array.isArray(imageContext.available_sequences)
+          ? imageContext.available_sequences.join(", ")
+          : imageContext.available_sequences,
+      })}
+    </div>
+    <div class="trace-block">
+      <h3>视觉任务</h3>
+      ${renderAlignmentTasks(tasks)}
+    </div>
+    <div class="trace-block">
+      <h3>疑似方向</h3>
+      ${renderConditionList(suspected)}
+    </div>
+    <div class="trace-block">
+      <h3>建议补充影像</h3>
+      ${renderNextImageList(nextImages)}
+    </div>
+    <div class="trace-block">
+      <h3>证据限制</h3>
+      ${renderList(insufficiencyReasons)}
+    </div>
+  `;
+}
+
+function statusLabel(status) {
+  const labels = {
+    evidence_sufficient: "证据充分",
+    partial_evidence: "部分证据",
+    insufficient_evidence: "证据不足",
+    contraindicated_or_wrong_modality: "图像不匹配",
+  };
+  return labels[status] || status || "-";
+}
+
+function renderAlignmentTasks(tasks) {
+  if (!tasks.length) {
+    return '<div class="trace-empty">-</div>';
+  }
+  return `
+    <div class="alignment-task-list">
+      ${tasks.map((task) => `
+        <div class="alignment-task">
+          <strong>${escapeHtml(task.task || "-")}</strong>
+          <span>${escapeHtml(taskStatusLabel(task.status))}</span>
+          <p>${escapeHtml(task.required_input || "-")}</p>
+          <p>${escapeHtml(task.reason || "-")}</p>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function taskStatusLabel(status) {
+  const labels = {
+    runnable: "可执行",
+    missing_input: "缺少输入",
+    unassessed: "未评估",
+  };
+  return labels[status] || status || "-";
+}
+
+function renderConditionList(items) {
+  if (!items.length) {
+    return '<div class="trace-empty">-</div>';
+  }
+  return `
+    <div class="detail-list">
+      ${items.map((item) => `
+        <div>
+          <strong>${escapeHtml(item.disease || "-")}</strong>
+          <p>${escapeHtml(item.reason || "-")}</p>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderNextImageList(items) {
+  if (!items.length) {
+    return '<div class="trace-empty">-</div>';
+  }
+  return `
+    <div class="detail-list">
+      ${items.map((item) => `
+        <div>
+          <strong>${escapeHtml([item.region, item.modality].filter(Boolean).join(" ") || "-")}</strong>
+          <p>${escapeHtml(item.reason || "-")}</p>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function escapeClassName(value) {
+  return String(value || "unknown").replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
+function renderSourcePriority(evidence) {
+  const sources = Array.isArray(evidence.source_priority) ? evidence.source_priority : [];
+  if (!sources.length) {
+    return "";
+  }
+  return `
+    <div class="source-priority">
+      <strong>来源优先级</strong>
+      ${sources.map((source) => {
+        const title = source.title || source.source_id || "未命名来源";
+        const meta = [source.publication_year, source.region, source.source_priority ? `priority ${source.source_priority}` : ""]
+          .filter(Boolean)
+          .join(" · ");
+        return `<span>${escapeHtml(String(title))}${meta ? ` (${escapeHtml(meta)})` : ""}</span>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderGuidelineConflicts(evidence) {
+  const conflicts = Array.isArray(evidence.conflicts) ? evidence.conflicts : [];
+  if (!conflicts.length) {
+    return "";
+  }
+  return `
+    <div class="guideline-conflicts">
+      <strong>指南冲突需复核</strong>
+      ${conflicts.map((conflict) => {
+        const field = conflict.field || "unknown_field";
+        const resolution = conflict.resolution || "review_required";
+        const severity = conflict.severity ? `[${conflict.severity}] ` : "";
+        return `<span>${escapeHtml(severity + String(field))}: ${escapeHtml(String(resolution))}</span>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderCitation(citation) {
+  const title = citation.title || citation.source_id || "未命名来源";
+  const publisher = citation.publisher || citation.source_kind || "";
+  const evidenceNote = citation.evidence_note || "";
+  const sectionId = citation.section_id ? `#${citation.section_id}` : "";
+  const url = citation.url || "";
+  const urlHtml = url
+    ? `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">打开来源</a>`
+    : "";
+  const meta = [publisher, sectionId].filter(Boolean).join(" · ");
+  return `
+    <div class="citation-item">
+      <strong>${escapeHtml(String(title))}</strong>
+      ${meta ? `<span class="citation-meta">${escapeHtml(meta)}</span>` : ""}
+      ${evidenceNote ? `<p>${escapeHtml(String(evidenceNote))}</p>` : ""}
+      ${urlHtml}
+    </div>
+  `;
+}
+
+function renderReport(payload) {
+  const report = payload.report || {};
+  if (!Object.keys(report).length && payload.reply_to_patient) {
+    elements.reportView.innerHTML = `<div class="report-section"><p>${escapeHtml(payload.reply_to_patient)}</p></div>`;
+    return;
+  }
+  const sections = [
+    ["诊断倾向", report["诊断倾向"] || report.diagnostic_tendency],
+    ["影像依据", report["影像依据"]],
+    ["不确定性说明", report["不确定性说明"]],
+    ["建议进一步检查", report["建议进一步检查"]],
+    ["治疗建议", report["治疗建议"]],
+  ];
+  const reportHtml = sections
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([title, value]) => {
+      const body = Array.isArray(value) ? renderList(value) : `<p>${escapeHtml(String(value))}</p>`;
+      return `<div class="report-section"><h3>${escapeHtml(title)}</h3>${body}</div>`;
+    })
+    .join("");
+  const guidelineEvidenceHtml = renderGuidelineEvidence(payload);
+  elements.reportView.innerHTML =
+    reportHtml || guidelineEvidenceHtml
+      ? `${reportHtml}${guidelineEvidenceHtml}`
+      : '<div class="report-empty">无报告字段</div>';
+}
+
+function renderVisualOutput(payload) {
+  const bundleImage = payload.evidence_bundle?.image_evidence || {};
+  const visualBundle = getVisualEvidenceBundle(payload);
+  const numeric = visualBundle.numeric_evidence || {};
+  const outputs = payload.image_outputs || bundleImage.image_outputs || {};
+  const overlayPath = outputs.overlay_path;
+  const originalPath = outputs.original_image_path || bundleImage.image_path || payload.visual_input_contract?.image_path || "-";
+  const modality = bundleImage.modality || payload.visual_input_contract?.modality || "-";
+  const bodyPart = bundleImage.body_part || payload.visual_input_contract?.body_part || "-";
+  const quality = bundleImage.segmentation_quality || payload.visual_input_contract?.segmentation_quality || "-";
+  elements.visualMeta.innerHTML = `
+    ${renderMetricGrid({
+      original_image: originalPath,
+      modality: modality,
+      body_part: bodyPart,
+      segmentation_quality: quality,
+      finding_count: numeric.finding_count,
+      total_area_px: numeric.total_area_px,
+    })}
+    ${renderVisualEvidenceBundle(visualBundle, {compact: true})}
+  `;
+  const comparisonHtml = renderLesionComparison({
+    original_path: originalPath,
+    original_preview_path: outputs.original_preview_path,
+    mask_path: outputs.mask_path,
+    mask_preview_path: outputs.mask_preview_path,
+    overlay_path: overlayPath,
+    comparison_path: outputs.comparison_path,
+  });
+  const candidateGalleryHtml = renderCandidateLesionGallery(payload);
+  if (!comparisonHtml && !candidateGalleryHtml) {
+    elements.lesionFigure.hidden = true;
+    elements.lesionFigure.innerHTML = "";
+    return;
+  }
+  elements.lesionFigure.innerHTML = `${comparisonHtml}${candidateGalleryHtml}`;
+  elements.lesionFigure.hidden = false;
+}
+
+function renderLesionComparison(paths) {
+  const items = buildVisualComparisonItems(paths);
+  if (!items.some((item) => item.url)) {
+    return "";
+  }
+  return `
+    <div class="lesion-comparison" aria-label="视觉 Agent 病灶图对比">
+      ${items.map((item) => `
+        <div class="lesion-comparison-item">
+          <strong>${escapeHtml(item.label)}</strong>
+          ${item.url
+            ? `<img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.alt)}" />`
+            : '<div class="lesion-comparison-empty">未生成可预览图</div>'}
+        </div>
+      `).join("")}
+    </div>
+    <figcaption>原图、分割病灶与对比叠加结果</figcaption>
+  `;
+}
+
+function buildVisualComparisonItems(paths) {
+  return [
+    {
+      label: "原图+分割对照",
+      alt: "原图与视觉 Agent 分割结果的并排对照图",
+      url: outputImageUrl(paths.comparison_path),
+    },
+    {
+      label: "原图",
+      alt: "原始医疗图像",
+      url: outputImageUrl(paths.original_preview_path || paths.original_path),
+    },
+    {
+      label: "分割病灶",
+      alt: "视觉 Agent 分割出的病灶区域",
+      url: outputImageUrl(paths.mask_preview_path || paths.mask_path),
+    },
+    {
+      label: "对比叠加",
+      alt: "原图叠加病灶轮廓的对比结果",
+      url: outputImageUrl(paths.overlay_path),
+    },
+  ];
+}
+
+function renderCandidateLesionGallery(payload) {
+  const candidates = buildCandidateLesionItems(payload);
+  if (!candidates.length) {
+    return "";
+  }
+  return `
+    <div class="candidate-lesion-gallery" aria-label="候选病灶证据图库">
+      <div class="candidate-lesion-gallery-head">
+        <strong>候选病灶证据</strong>
+        <span>按诊断采用状态区分</span>
+      </div>
+      <div class="candidate-lesion-grid">
+        ${candidates.map((candidate) => `
+          <article class="candidate-lesion-card candidate-lesion-${escapeClassName(candidate.usageKind)}">
+            <div class="candidate-lesion-image">
+              ${candidate.previewUrl
+                ? `<img src="${escapeHtml(candidate.previewUrl)}" alt="${escapeHtml(candidate.alt)}" />`
+                : '<div class="lesion-comparison-empty">未生成可预览图</div>'}
+            </div>
+            <div class="candidate-lesion-body">
+              <div class="candidate-lesion-title">
+                <strong>${escapeHtml(candidate.title)}</strong>
+                <span>${escapeHtml(candidate.usageLabel)}</span>
+              </div>
+              <p>${escapeHtml(candidate.reason)}</p>
+              ${renderMetricGrid({
+                finding_id: candidate.findingId,
+                laterality: candidate.laterality,
+                status: candidate.status,
+                area_px: candidate.areaPx,
+                area_ratio_in_image: candidate.areaRatioInImage,
+                area_ratio_in_anatomy: candidate.areaRatioInAnatomy,
+                alignment_status: candidate.alignmentStatus,
+              })}
+            </div>
+          </article>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function buildCandidateLesionItems(payload) {
+  const galleryItems = getLesionGalleryItems(payload);
+  if (galleryItems.length) {
+    return galleryItems.map((item, index) => {
+      const usage = item.usage || {};
+      const imagePaths = item.image_paths || {};
+      const measurements = item.measurements || {};
+      const quality = item.quality || {};
+      const previewUrl = outputImageUrl(imagePaths.comparison_path)
+        || outputImageUrl(imagePaths.overlay_path)
+        || outputImageUrl(imagePaths.mask_path);
+      const usageKind = usage.status || "candidate";
+      return {
+        findingId: item.finding_id || `finding_${index + 1}`,
+        title: item.display_name || item.target || "候选病灶",
+        alt: `${item.display_name || item.target || "候选病灶"}分割对照图`,
+        previewUrl,
+        usageKind,
+        usageLabel: visualFactUsageLabel(usageKind),
+        reason: usage.reason || "候选视觉证据，需结合 evidence bundle 和诊断审计解释。",
+        laterality: item.laterality || measurements.laterality,
+        status: item.status,
+        areaPx: measurements.area_px,
+        areaRatioInImage: measurements.area_ratio_in_image,
+        areaRatioInAnatomy: measurements.area_ratio_in_anatomy,
+        alignmentStatus: quality.alignment_status,
+      };
+    }).filter((candidate) => candidate.previewUrl || candidate.findingId);
+  }
+  const visualBundle = getVisualEvidenceBundle(payload);
+  const findings = Array.isArray(visualBundle.findings) ? visualBundle.findings : [];
+  const usageMap = buildVisualFactUsageMap(payload);
+  return findings.flatMap((finding, findingIndex) => {
+    const regions = Array.isArray(finding.regions) && finding.regions.length
+      ? finding.regions
+      : [finding.measurements || {}];
+    return regions.map((region, regionIndex) => {
+      const usage = usageMap.get(finding.finding_id) || {};
+      const measurements = region.measurements || finding.measurements || {};
+      const comparisonPath = region.comparison_path || finding.comparison_path || measurements.comparison_path;
+      const overlayPath = region.overlay_path || finding.overlay_path || measurements.overlay_path;
+      const maskPath = region.mask_path || finding.mask_path || measurements.mask_path;
+      const previewUrl = outputImageUrl(comparisonPath) || outputImageUrl(overlayPath) || outputImageUrl(maskPath);
+      const usageKind = usage.kind || "candidate";
+      return {
+        findingId: finding.finding_id || `finding_${findingIndex + 1}`,
+        title: `${finding.display_name || finding.target || "候选病灶"}${regions.length > 1 ? ` #${regionIndex + 1}` : ""}`,
+        alt: `${finding.display_name || finding.target || "候选病灶"}分割对照图`,
+        previewUrl,
+        usageKind,
+        usageLabel: visualFactUsageLabel(usageKind),
+        reason: usage.reason || finding.evidence_text || finding.description || "候选视觉证据，需结合 evidence bundle 和诊断审计解释。",
+        laterality: region.laterality || measurements.laterality || usage.laterality,
+        status: finding.status || usage.status,
+        areaPx: region.area_px ?? measurements.area_px ?? usage.area_px,
+        areaRatioInImage: region.area_ratio_in_image ?? measurements.area_ratio_in_image ?? usage.area_ratio_in_image,
+        areaRatioInAnatomy: region.area_ratio_in_anatomy ?? measurements.area_ratio_in_anatomy ?? usage.area_ratio_in_anatomy,
+        alignmentStatus: measurements.box_mask_alignment?.status || usage.alignment_status,
+      };
+    });
+  }).filter((candidate) => candidate.previewUrl || candidate.findingId);
+}
+
+function getLesionGalleryItems(payload) {
+  const topLevelItems = payload.lesion_gallery?.items;
+  if (Array.isArray(topLevelItems)) {
+    return topLevelItems;
+  }
+  const bundleItems = payload.evidence_bundle?.lesion_gallery?.items;
+  if (Array.isArray(bundleItems)) {
+    return bundleItems;
+  }
+  return [];
+}
+
+function buildVisualFactUsageMap(payload) {
+  const usage = getVisualFactUsage(payload);
+  const map = new Map();
+  const used = Array.isArray(usage.used) ? usage.used : [];
+  const excluded = Array.isArray(usage.excluded) ? usage.excluded : [];
+  used.forEach((fact) => {
+    if (fact.finding_id) {
+      map.set(fact.finding_id, {
+        ...fact,
+        kind: "used",
+        reason: fact.summary_text || "诊断 Agent 已采用该视觉证据。",
+      });
+    }
+  });
+  excluded.forEach((fact) => {
+    if (fact.finding_id) {
+      map.set(fact.finding_id, {
+        ...fact,
+        kind: "excluded",
+        reason: fact.exclusion_reason || fact.summary_text || "诊断 Agent 未采用该视觉证据。",
+      });
+    }
+  });
+  return map;
+}
+
+function visualFactUsageLabel(kind) {
+  if (kind === "used") {
+    return "诊断采用";
+  }
+  if (kind === "excluded") {
+    return "排除";
+  }
+  return "候选";
+}
+
+function outputImageUrl(path) {
+  if (typeof path !== "string" || !path.startsWith("output/")) {
+    return "";
+  }
+  if (!/\.(png|jpg|jpeg|webp|gif)$/i.test(path)) {
+    return "";
+  }
+  return `/${path}`;
+}
+
+function renderVisualEvidenceBundle(bundle, options = {}) {
+  if (!bundle || !Object.keys(bundle).length) {
+    return options.compact ? "" : '<div class="trace-empty">暂无多征象视觉证据</div>';
+  }
+  const findings = Array.isArray(bundle.findings) ? bundle.findings : [];
+  const numeric = bundle.numeric_evidence || {};
+  const present = Array.isArray(bundle.present_findings) ? bundle.present_findings : [];
+  return `
+    <div class="${options.compact ? "visual-finding-summary" : "trace-subblock"}">
+      ${options.compact ? "" : "<strong>多征象视觉证据</strong>"}
+      ${renderMetricGrid({
+        present_findings: present.join(", "),
+        finding_count: numeric.finding_count,
+        region_count: numeric.region_count,
+        total_area_px: numeric.total_area_px,
+        sum_area_ratio_in_image: numeric.sum_area_ratio_in_image,
+        max_area_ratio_in_anatomy: numeric.max_area_ratio_in_anatomy,
+      })}
+      ${renderFindingList(findings)}
+    </div>
+  `;
+}
+
+function renderFindingList(findings) {
+  if (!Array.isArray(findings) || !findings.length) {
+    return '<div class="trace-empty">暂无 finding</div>';
+  }
+  return `
+    <div class="finding-list">
+      ${findings.map((finding) => {
+        const measurements = finding.measurements || {};
+        const anatomyMatch = measurements.anatomy_match || {};
+        const regions = Array.isArray(finding.regions) ? finding.regions : [];
+        return `
+          <div class="finding-item">
+            <strong>${escapeHtml(finding.display_name || finding.target || "-")}</strong>
+            <span>${escapeHtml(finding.status || "-")}</span>
+            ${renderMetricGrid({
+              target: finding.target,
+              confidence: finding.confidence,
+              area_px: measurements.area_px,
+              area_ratio_in_image: measurements.area_ratio_in_image,
+              area_ratio_in_anatomy: measurements.area_ratio_in_anatomy,
+              matched_anatomy: anatomyMatch.anatomy_name || measurements.anatomy_name,
+              overlap_anatomy_px: anatomyMatch.overlap_anatomy_px || measurements.overlap_anatomy_px,
+              anatomy_selection_rule: anatomyMatch.selection_rule,
+              region_count: regions.length,
+            })}
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderSegmentationResults(results) {
+  if (!Array.isArray(results) || !results.length) {
+    return '<div class="trace-empty">暂无分割任务结果</div>';
+  }
+  return `
+    <div class="segmentation-result-list">
+      ${results.map((result) => {
+        const quality = result.quality || {};
+        const selectedTool = result.selected_tool || {};
+        const warnings = Array.isArray(quality.warnings) ? quality.warnings.join("; ") : quality.warnings;
+        return `
+          <article class="segmentation-result-item segmentation-status-${escapeClassName(result.status)}">
+            <div class="segmentation-result-head">
+              <strong>${escapeHtml(result.task_name || result.target || "-")}</strong>
+              <span>${escapeHtml(taskStatusLabel(result.status))}</span>
+            </div>
+            ${renderMetricGrid({
+              target: result.target,
+              diagnosis_usable: result.diagnosis_usable ? "诊断可用" : "不用于诊断",
+              selected_tool: selectedTool.tool_name,
+              quality_level: quality.level,
+              quality_score: quality.score,
+              mask_path: result.mask_path,
+              overlay_path: result.overlay_path,
+              warnings,
+            })}
+            ${renderMetricGrid(result.measurements || {})}
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderVisualToolPlan(plan) {
+  if (!Array.isArray(plan) || !plan.length) {
+    return '<div class="trace-empty">暂无视觉工具计划</div>';
+  }
+  return `
+    <div class="visual-tool-plan-list">
+      ${plan.map((item) => {
+        const task = item.task || {};
+        const selectedTool = item.selected_tool || {};
+        const required = Array.isArray(task.required_modalities)
+          ? task.required_modalities.join(", ")
+          : task.required_modalities;
+        return `
+          <article class="visual-tool-plan-item">
+            <strong>${escapeHtml(task.task_name || item.task_name || task.target || "-")}</strong>
+            <span>${escapeHtml(taskStatusLabel(item.status))}</span>
+            ${renderMetricGrid({
+              target: task.target,
+              selected_tool: selectedTool.tool_name,
+              tool_role: selectedTool.role,
+              required_modalities: required,
+              diagnosis_usable_without_qc: item.diagnosis_usable_without_qc,
+            })}
+            <p>${escapeHtml(item.reason || task.reason || "-")}</p>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function getVisualFactUsage(payload) {
+  return payload.report?.visual_fact_usage
+    || payload.memory_audit?.visual_fact_usage
+    || payload.evidence_bundle?.reasoning_evidence?.visual_fact_usage
+    || {};
+}
+
+function renderVisualFactUsage(payload) {
+  const usage = getVisualFactUsage(payload);
+  const used = Array.isArray(usage.used) ? usage.used : [];
+  const excluded = Array.isArray(usage.excluded) ? usage.excluded : [];
+  if (!used.length && !excluded.length) {
+    return '<div class="trace-empty">暂无视觉证据使用审计</div>';
+  }
+  return `
+    ${renderMetricGrid({
+      used_count: usage.used_count ?? used.length,
+      excluded_count: usage.excluded_count ?? excluded.length,
+    })}
+    <div class="visual-fact-usage">
+      <section>
+        <h4>诊断采用证据</h4>
+        ${renderVisualFactList(used, "used")}
+      </section>
+      <section>
+        <h4>排除证据</h4>
+        ${renderVisualFactList(excluded, "excluded")}
+      </section>
+    </div>
+  `;
+}
+
+function renderVisualFactList(facts, kind) {
+  if (!Array.isArray(facts) || !facts.length) {
+    return '<div class="trace-empty">无</div>';
+  }
+  return `
+    <div class="visual-fact-list">
+      ${facts.map((fact) => `
+        <article class="visual-fact-item visual-fact-${escapeClassName(kind)}">
+          <strong>${escapeHtml(fact.display_name || fact.target || fact.finding_id || "-")}</strong>
+          <span>${escapeHtml(fact.laterality || "-")}</span>
+          <p>${escapeHtml(fact.summary_text || fact.exclusion_reason || "-")}</p>
+          ${renderMetricGrid({
+            finding_id: fact.finding_id,
+            target: fact.target,
+            status: fact.status,
+            exclusion_reason: fact.exclusion_reason,
+            area_px: fact.area_px,
+            area_ratio_in_anatomy: fact.area_ratio_in_anatomy,
+            alignment_status: fact.alignment_status,
+            independent_evidence: fact.independent_evidence,
+          })}
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderEvidenceBundle(payload) {
+  const bundle = payload.evidence_bundle || {};
+  if (!Object.keys(bundle).length) {
+    elements.evidenceView.innerHTML = '<div class="trace-empty">本次响应未返回 evidence bundle</div>';
+    return;
+  }
+  const image = bundle.image_evidence || {};
+  const skill = bundle.skill_evidence || {};
+  const visualBundle = getVisualEvidenceBundle(payload);
+  const segmentationResults = getSegmentationResults(payload);
+  const visualToolPlan = getVisualToolPlan(payload);
+  const missing = bundle.missing_or_unassessed?.image_memory || {};
+  const warnings = Array.isArray(bundle.quality_warnings) ? bundle.quality_warnings : [];
+  elements.evidenceView.innerHTML = `
+    <div class="trace-block">
+      <h3>多征象视觉证据</h3>
+      ${renderVisualEvidenceBundle(visualBundle)}
+    </div>
+    <div class="trace-block">
+      <h3>视觉证据使用审计</h3>
+      ${renderVisualFactUsage(payload)}
+    </div>
+    <div class="trace-block">
+      <h3>患者上下文</h3>
+      ${renderMetricGrid(bundle.patient_context || {})}
+    </div>
+    <div class="trace-block">
+      <h3>视觉测量</h3>
+      ${renderMetricGrid(image.measurements || {})}
+    </div>
+    <div class="trace-block">
+      <h3>分割任务结果</h3>
+      ${renderSegmentationResults(segmentationResults)}
+    </div>
+    <div class="trace-block">
+      <h3>视觉工具计划</h3>
+      ${renderVisualToolPlan(visualToolPlan)}
+    </div>
+    <div class="trace-block">
+      <h3>证据充分性</h3>
+      ${renderStatusPills(image.completeness || {})}
+    </div>
+    <div class="trace-block">
+      <h3>缺失/未评估</h3>
+      ${renderStatusPills(missing)}
+    </div>
+    <div class="trace-block">
+      <h3>Quality Warnings</h3>
+      ${renderList(warnings)}
+    </div>
+    <div class="trace-block">
+      <h3>Skill</h3>
+      ${renderMetricGrid({
+        selected_skill: skill.selected_skill,
+        selected_vision_mode: skill.selected_vision_mode,
+        skill_type: skill.skill_type,
+        formal_skill_status: skill.quality_control?.formal_skill_status,
+        visual_protocol_status: skill.quality_control?.visual_protocol_status,
+      })}
+    </div>
+  `;
+}
+
+function renderMemoryAudit(payload) {
+  const audit = payload.memory_audit || {};
+  if (!Object.keys(audit).length) {
+    elements.auditView.innerHTML = '<div class="trace-empty">本次响应未返回 memory audit</div>';
+    return;
+  }
+  elements.auditView.innerHTML = `
+    <div class="trace-block">
+      <h3>四类 Memory</h3>
+      ${renderMemoryRoleSummary()}
+      ${renderStatusPills(audit.memory_completeness || {})}
+    </div>
+    <div class="trace-block">
+      <h3>Memory Details</h3>
+      ${renderMemoryTypeDetails(audit.memory_type_details || {})}
+    </div>
+    <div class="trace-block">
+      <h3>Alignment Summary</h3>
+      ${renderAlignmentAuditSummary(audit.alignment_summary || {})}
+    </div>
+    <div class="trace-block">
+      <h3>Skill Quality</h3>
+      ${renderSkillQuality(audit.skill_quality || {})}
+    </div>
+    <div class="trace-block">
+      <h3>QA Safety</h3>
+      ${renderQaSafety(audit.qa_safety || {})}
+    </div>
+    <div class="trace-block">
+      <h3>Trace Consistency</h3>
+      ${renderTraceConsistency(audit.trace_consistency || {})}
+    </div>
+    <div class="trace-block">
+      <h3>Runtime Gateway Trace</h3>
+      ${renderRuntimeGatewayTrace(payload.runtime_gateway_trace || {}, payload.runtime_gateway_trace_path)}
+    </div>
+    <div class="trace-block">
+      <h3>Runtime Manifest</h3>
+      ${renderRuntimeManifest(payload.runtime_manifest || {}, payload.runtime_manifest_path)}
+    </div>
+    <div class="trace-block">
+      <h3>Stop Hook Gate</h3>
+      ${renderStopHookGate(payload.stop_hook_gate || {}, payload.stop_hook_gate_path)}
+    </div>
+    <div class="trace-block">
+      <h3>Self-evolving Queue</h3>
+      ${renderSelfEvolvingQueue(payload.self_evolving_queue || {}, payload.self_evolving_queue_path)}
+    </div>
+    <div class="trace-block">
+      <h3>Candidate Validation Gate</h3>
+      ${renderCandidateValidationGate(payload.candidate_validation_gate || {}, payload.candidate_validation_gate_path)}
+    </div>
+    <div class="trace-block">
+      <h3>视觉证据使用审计</h3>
+      ${renderVisualFactUsage(payload)}
+    </div>
+    <div class="trace-block">
+      <h3>临床证据流水线</h3>
+      ${renderAgentFlowSummary(audit)}
+    </div>
+    <div class="trace-block">
+      <h3>Memory Replay</h3>
+      ${renderMemoryReplay(payload.memory_replay || {})}
+    </div>
+    <div class="trace-block">
+      <h3>实现节点 Trace</h3>
+      ${renderList(audit.agents_traced || [])}
+    </div>
+    <div class="trace-block">
+      <h3>Agent / Layer I/O</h3>
+      ${renderMemoryTypeDetails(audit.agent_io_summary || {})}
+    </div>
+    <div class="trace-block">
+      <h3>Missing / Unassessed</h3>
+      ${renderStatusPills(audit.missing_or_unassessed?.image_memory || {})}
+    </div>
+    <div class="trace-block">
+      <h3>Guideline Conflicts</h3>
+      ${renderGuidelineConflicts({conflicts: audit.guideline_conflicts || []}) || '<div class="trace-empty">无冲突</div>'}
+    </div>
+    <div class="trace-block">
+      <h3>Audit Path</h3>
+      <p>${escapeHtml(payload.memory_audit_path || "-")}</p>
+    </div>
+  `;
+}
+
+function renderRuntimeGatewayTrace(trace, runtimeGatewayTracePath) {
+  if (!Object.keys(trace).length) {
+    return '<div class="trace-empty">暂无 runtime gateway trace</div>';
+  }
+  const stages = Array.isArray(trace.stages) ? trace.stages : [];
+  const safety = trace.safety_invariants || {};
+  const consistency = trace.trace_consistency || {};
+  return `
+    <p class="pipeline-note">Runtime Gateway Trace 汇总底层 gateway 的四段执行轨迹：skill 分发、stop hook、自我候选沉淀和正式升级验证门。</p>
+    ${renderMetricGrid({
+      schema_version: trace.schema_version,
+      trace_path: runtimeGatewayTracePath || trace.trace_path,
+      promotion_status: trace.promotion_status,
+      formal_update_allowed: trace.formal_update_allowed,
+      stage_count: stages.length,
+    })}
+    <div class="trace-subblock">
+      <strong>Gateway Stages</strong>
+      ${renderList(stages.map((stage) => {
+        const name = stage.stage || "-";
+        const status = stage.status || "-";
+        const path = stage.artifact_path || "-";
+        return `${name}: ${status} · ${path}`;
+      }))}
+    </div>
+    <div class="trace-subblock">
+      <strong>Trace Consistency</strong>
+      ${renderMetricGrid({
+        all_stage_artifacts_available: consistency.all_stage_artifacts_available,
+        all_stage_schemas_present: consistency.all_stage_schemas_present,
+        stage_count: consistency.stage_count,
+        missing_artifact_paths: Array.isArray(consistency.missing_artifact_paths) ? consistency.missing_artifact_paths.join(", ") : consistency.missing_artifact_paths,
+        missing_schema_stages: Array.isArray(consistency.missing_schema_stages) ? consistency.missing_schema_stages.join(", ") : consistency.missing_schema_stages,
+      })}
+    </div>
+    <div class="trace-subblock">
+      <strong>Safety Invariants</strong>
+      ${renderMetricGrid({
+        formal_skill_updated: safety.formal_skill_updated,
+        formal_guideline_updated: safety.formal_guideline_updated,
+        diagnosis_report_updated: safety.diagnosis_report_updated,
+        candidate_artifacts_only: safety.candidate_artifacts_only,
+      })}
+    </div>
+  `;
+}
+
+function renderCandidateValidationGate(gate, candidateValidationGatePath) {
+  if (!Object.keys(gate).length) {
+    return '<div class="trace-empty">暂无 candidate validation gate</div>';
+  }
+  const decision = gate.promotion_decision || {};
+  const safety = gate.runtime_safety || {};
+  const validations = Array.isArray(gate.item_validations) ? gate.item_validations : [];
+  return `
+    <p class="pipeline-note">Candidate Validation Gate 是正式升级前的验证门：未通过人工、指南来源或数据集验证时，候选项只能停留在 output/fake。</p>
+    ${renderMetricGrid({
+      schema_version: gate.schema_version,
+      gate_path: candidateValidationGatePath || gate.gate_path,
+      source_queue_path: gate.source_queue_path,
+      promotion_status: decision.status,
+      formal_update_allowed: decision.formal_update_allowed,
+      reason: decision.reason,
+    })}
+    <div class="trace-subblock">
+      <strong>Item Validations</strong>
+      ${renderList(validations.map((item) => {
+        const id = item.item_id || "-";
+        const status = item.validation_status || "-";
+        const decisionText = item.decision || "-";
+        const failed = Array.isArray(item.failed_checks) ? item.failed_checks.join(", ") : "";
+        return `${id}: ${status} · ${decisionText}${failed ? ` · failed: ${failed}` : ""}`;
+      }))}
+    </div>
+    <div class="trace-subblock">
+      <strong>Review Requirements</strong>
+      ${renderList(gate.review_requirements || [])}
+    </div>
+    <div class="trace-subblock">
+      <strong>Runtime Safety</strong>
+      ${renderMetricGrid({
+        validation_gate_executed: safety.validation_gate_executed,
+        read_only: safety.read_only,
+        formal_skill_updated: safety.formal_skill_updated,
+        formal_guideline_updated: safety.formal_guideline_updated,
+        diagnosis_report_updated: safety.diagnosis_report_updated,
+      })}
+    </div>
+  `;
+}
+
+function renderSelfEvolvingQueue(queue, selfEvolvingQueuePath) {
+  if (!Object.keys(queue).length) {
+    return '<div class="trace-empty">暂无 self-evolving queue</div>';
+  }
+  const safety = queue.runtime_safety || {};
+  const items = Array.isArray(queue.queue_items) ? queue.queue_items : [];
+  const policy = queue.review_policy || {};
+  return `
+    <p class="pipeline-note">Self-evolving Queue 只沉淀候选记忆、候选规则或 candidate skill patch；验证前不更新正式医疗 skill。</p>
+    ${renderMetricGrid({
+      schema_version: queue.schema_version,
+      status: queue.status,
+      queue_path: selfEvolvingQueuePath || queue.queue_path,
+      item_count: items.length,
+      required_review: policy.required_review,
+    })}
+    <div class="trace-subblock">
+      <strong>Queue Items</strong>
+      ${renderList(items.map((item) => {
+        const type = item.candidate_type || "-";
+        const code = item.source_warning_code || "-";
+        const status = item.validation_status || "-";
+        const proposal = item.proposal || "";
+        return `${type}: ${code} · ${status}${proposal ? ` · ${proposal}` : ""}`;
+      }))}
+    </div>
+    <div class="trace-subblock">
+      <strong>Review Policy</strong>
+      ${renderMetricGrid({
+        promotion_rule: policy.promotion_rule,
+        allowed_outputs: Array.isArray(policy.allowed_outputs) ? policy.allowed_outputs.join(", ") : policy.allowed_outputs,
+      })}
+    </div>
+    <div class="trace-subblock">
+      <strong>Runtime Safety</strong>
+      ${renderMetricGrid({
+        queue_written: safety.queue_written,
+        candidate_only: safety.candidate_only,
+        formal_skill_updated: safety.formal_skill_updated,
+        formal_guideline_updated: safety.formal_guideline_updated,
+        diagnosis_report_updated: safety.diagnosis_report_updated,
+      })}
+    </div>
+  `;
+}
+
+function renderStopHookGate(gate, stopHookGatePath) {
+  if (!Object.keys(gate).length) {
+    return '<div class="trace-empty">暂无 stop hook gate</div>';
+  }
+  const safety = gate.runtime_safety || {};
+  const warnings = Array.isArray(gate.runtime_warnings) ? gate.runtime_warnings : [];
+  return `
+    <p class="pipeline-note">Stop Hook Gate 是只读自检：发现风险并给出 next actions，不自动修改报告或正式 skill。</p>
+    ${renderMetricGrid({
+      schema_version: gate.schema_version,
+      gate_path: stopHookGatePath || gate.gate_path,
+      source_runtime_manifest_path: gate.source_runtime_manifest_path,
+      warning_count: warnings.length,
+    })}
+    <div class="trace-subblock">
+      <strong>Runtime Warnings</strong>
+      ${renderList(warnings.map((warning) => {
+        const severity = warning.severity || "-";
+        const code = warning.code || "-";
+        const message = warning.message || "";
+        return `${severity}: ${code}${message ? ` · ${message}` : ""}`;
+      }))}
+    </div>
+    <div class="trace-subblock">
+      <strong>Next Actions</strong>
+      ${renderList(gate.next_actions || [])}
+    </div>
+    <div class="trace-subblock">
+      <strong>Candidate Skill Patch</strong>
+      ${renderMetricGrid(gate.candidate_skill_patch || {})}
+    </div>
+    <div class="trace-subblock">
+      <strong>Runtime Safety</strong>
+      ${renderMetricGrid({
+        stop_hook_executed: safety.stop_hook_executed,
+        read_only: safety.read_only,
+        formal_skill_updated: safety.formal_skill_updated,
+        diagnosis_report_updated: safety.diagnosis_report_updated,
+        self_evolving_queue_updated: safety.self_evolving_queue_updated,
+      })}
+    </div>
+  `;
+}
+
+function renderRuntimeManifest(manifest, runtimeManifestPath) {
+  if (!Object.keys(manifest).length) {
+    return '<div class="trace-empty">暂无 Evidence Gateway runtime manifest</div>';
+  }
+  const safety = manifest.runtime_safety || {};
+  const blocked = manifest.blocked_or_missing_evidence || {};
+  const generated = manifest.generated_artifacts || {};
+  return `
+    <p class="pipeline-note">Evidence Gateway 记录本轮 skill 分发、文件 artifact、工具调用、contract guards 和只读 safety 状态。</p>
+    ${renderMetricGrid({
+      schema_version: manifest.schema_version,
+      selected_skill: manifest.selected_skill,
+      skill_version: manifest.skill_version,
+      skill_type: manifest.skill_type,
+      analysis_status: blocked.analysis_status,
+      manifest_path: runtimeManifestPath || manifest.manifest_path,
+    })}
+    <div class="trace-subblock">
+      <strong>Input Artifacts</strong>
+      ${renderMetricGrid(manifest.input_artifacts || {})}
+    </div>
+    <div class="trace-subblock">
+      <strong>Generated Artifacts</strong>
+      ${renderMetricGrid({
+        evidence_bundle_status: generated.evidence_bundle_status,
+        memory_audit_path: generated.memory_audit_path,
+        case_memory_path: generated.case_memory_path,
+        lesion_gallery_summary: generated.lesion_gallery_summary,
+      })}
+    </div>
+    <div class="trace-subblock">
+      <strong>Tool Calls</strong>
+      ${renderList((manifest.tool_calls || []).map((call) => {
+        const stage = call.stage || "-";
+        const tool = call.tool || "-";
+        const action = call.action ? ` · ${call.action}` : "";
+        return `${stage}: ${tool}${action}`;
+      }))}
+    </div>
+    <div class="trace-subblock">
+      <strong>Contract Guards</strong>
+      ${renderStatusPills(manifest.contracts_checked || {})}
+    </div>
+    <div class="trace-subblock">
+      <strong>Memory Written</strong>
+      ${renderStatusPills(manifest.memory_written || {})}
+    </div>
+    <div class="trace-subblock">
+      <strong>Runtime Safety</strong>
+      ${renderMetricGrid({
+        manifest_only: safety.manifest_only,
+        stop_hook_executed: safety.stop_hook_executed,
+        formal_skill_updated: safety.formal_skill_updated,
+        self_evolving_action: safety.self_evolving_action,
+      })}
+    </div>
+  `;
+}
+
+function renderMemoryRoleSummary() {
+  const roles = [
+    {
+      name: "patient_memory",
+      title: "患者输入",
+      description: "记录患者主诉、症状、病例入口和追问历史。",
+    },
+    {
+      name: "image_memory",
+      title: "图像与视觉证据",
+      description: "记录图像模态、病灶图、结构化视觉证据、测量值和证据充分性。",
+    },
+    {
+      name: "skill_memory",
+      title: "Skill / 指南 / 路由",
+      description: "记录选择了哪个 skill、路由依据、指南来源、质量控制和 alignment plan。",
+    },
+    {
+      name: "reasoning_memory",
+      title: "诊断推理与报告",
+      description: "记录诊断 Agent 使用/排除的证据、诊断倾向、不确定性和后续建议。",
+    },
+  ];
+  return `
+    <div class="memory-role-list">
+      ${roles.map((role) => `
+        <div class="memory-role-item">
+          <strong>${escapeHtml(role.title)}</strong>
+          <span>${escapeHtml(role.name)}</span>
+          <p>${escapeHtml(role.description)}</p>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderAgentFlowSummary(audit) {
+  const summary = audit.agent_io_summary || {};
+  const stages = [
+    {
+      agent: "GaoDoctorAgent",
+      title: "临床编排 / 入口分诊",
+      memory: "patient_memory / skill_memory",
+      description: "核心 Agent。读取患者描述和图像上下文，决定 intent、目标 skill、视觉模式和下游调用顺序。",
+      metrics: {
+        selected_skill: summary.GaoDoctorAgent?.routing_decision?.selected_skill,
+        selected_vision_mode: summary.GaoDoctorAgent?.routing_decision?.selected_vision_mode,
+        skill_builder_action: summary.GaoDoctorAgent?.routing_decision?.skill_builder_action,
+      },
+    },
+    {
+      agent: "SkillBuilderAgent",
+      title: "条件 Skill 构建 / 加载",
+      memory: "skill_memory",
+      description: "条件组件。有现成 skill 时只加载/校验；缺失时才进入指南检索、skill 生成和 visual protocol 构建。",
+      metrics: {
+        input: summary.SkillBuilderAgent?.input,
+        output: summary.SkillBuilderAgent?.output,
+      },
+    },
+    {
+      agent: "VisionAgent",
+      title: "视觉证据提取",
+      memory: "image_memory",
+      description: "核心 Agent。按 skill 视觉协议调用 VLM prompt、MedSAM2 和测量工具，返回病灶图与结构化数值。",
+      metrics: {
+        tool: summary.VisionAgent?.tool,
+        prompt_tool: summary.VisionAgent?.prompt_tool,
+        selected_vision_mode: summary.VisionAgent?.selected_vision_mode,
+        lesion_gallery_items: summary.VisionAgent?.lesion_gallery_summary?.item_count,
+        lesion_gallery_used: summary.VisionAgent?.lesion_gallery_summary?.used_count,
+        lesion_gallery_excluded: summary.VisionAgent?.lesion_gallery_summary?.excluded_count,
+      },
+    },
+    {
+      agent: "DiagnosisDoctorAgent",
+      title: "证据约束诊断推理",
+      memory: "reasoning_memory",
+      description: "核心 Agent。不看原图，只消费 evidence bundle，区分可用证据、排除证据和缺失证据。",
+      metrics: {
+        output: summary.DiagnosisDoctorAgent?.output,
+        used_count: summary.DiagnosisDoctorAgent?.visual_fact_usage?.used_count,
+        excluded_count: summary.DiagnosisDoctorAgent?.visual_fact_usage?.excluded_count,
+      },
+    },
+    {
+      agent: "MemoryManager",
+      title: "Memory / Audit Layer",
+      memory: "patient/image/skill/reasoning",
+      description: "基础设施层，不作为诊断 Agent。保存四类 memory、agent I/O、evidence bundle 与可回放审计链。",
+      metrics: {
+        audit_status: summary.MemoryManager?.output?.audit_status,
+        evidence_bundle_status: summary.MemoryManager?.output?.evidence_bundle_status,
+        lesion_gallery_status: summary.MemoryManager?.output?.lesion_gallery_status,
+        lesion_gallery_items: summary.MemoryManager?.output?.lesion_gallery_summary?.item_count,
+      },
+    },
+  ];
+  if (summary["GaoDoctorAgent QA"]) {
+    stages.push({
+      agent: "GaoDoctorAgent QA",
+      title: "追问回答",
+      memory: "patient_memory.qa_history",
+      description: "基于已有 evidence bundle 回答追问，不重新解释缺失证据，也不脱离病例记忆。",
+      metrics: {
+        question: summary["GaoDoctorAgent QA"]?.input,
+        evidence_bundle_used: summary["GaoDoctorAgent QA"]?.output?.evidence_bundle_used,
+        llm_used: summary["GaoDoctorAgent QA"]?.output?.llm_used,
+        llm_fallback_reason: summary["GaoDoctorAgent QA"]?.output?.llm_fallback_reason,
+        qa_source: summary["GaoDoctorAgent QA"]?.output?.qa_source,
+      },
+    });
+  }
+  return `
+    <p class="pipeline-note">架构按医疗安全边界拆分为 3 个核心 Agent、1 个条件 Skill 组件和 1 个 Memory/Audit 基础设施层；下方实现节点 trace 保留内部类名用于审计。</p>
+    <div class="agent-flow-list">
+      ${stages.map((stage, index) => `
+        <article class="agent-flow-item">
+          <span>${index + 1}</span>
+          <div>
+            <strong>${escapeHtml(stage.title)}</strong>
+            <em>${escapeHtml(stage.agent)} · ${escapeHtml(stage.memory)}</em>
+            <p>${escapeHtml(stage.description)}</p>
+            ${renderMetricGrid(stage.metrics)}
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderMemoryReplay(replay) {
+  const steps = Array.isArray(replay.steps) ? replay.steps : [];
+  if (!steps.length) {
+    return '<div class="trace-empty">暂无回放步骤</div>';
+  }
+  const consistency = replay.replay_consistency || {};
+  return `
+    <div class="trace-subsection">
+      <h3>Replay Consistency</h3>
+      ${renderMetricGrid({
+        required_events_present: consistency.required_events_present,
+        memory_scope_complete: consistency.memory_scope_complete,
+        qa_extension_present: consistency.qa_extension_present,
+        step_count: consistency.step_count,
+        missing_required_events: Array.isArray(consistency.missing_required_events)
+          ? consistency.missing_required_events.join(", ")
+          : consistency.missing_required_events,
+        steps_missing_memory_scope: Array.isArray(consistency.steps_missing_memory_scope)
+          ? consistency.steps_missing_memory_scope.join(", ")
+          : consistency.steps_missing_memory_scope,
+      })}
+    </div>
+    <div class="memory-replay-list">
+      ${steps.map((step, index) => `
+        <div class="memory-replay-step">
+          <span>${index + 1}</span>
+          <div>
+            <strong>${escapeHtml(step.agent || "-")}</strong>
+            <p>${escapeHtml(replayStepLabel(step.event))}</p>
+            ${renderMetricGrid(replayStepSummary(step))}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function replayStepLabel(eventName) {
+  const labels = {
+    patient_intake: "患者入口",
+    skill_routing: "Skill 路由",
+    skill_loading: "Skill 加载",
+    vlm_prompt_generation: "视觉提示生成",
+    visual_evidence: "视觉证据",
+    diagnosis_report: "诊断推理",
+    memory_audit: "记忆审计",
+    follow_up_qa: "追问回答",
+  };
+  return labels[eventName] || eventName || "-";
+}
+
+function replayStepSummary(step) {
+  if (step.event === "patient_intake") {
+    return {
+      memory_scope: step.memory_scope,
+      intent: step.intent,
+      patient_id: step.patient_id,
+      symptoms: Array.isArray(step.symptoms) ? step.symptoms.join(", ") : step.symptoms,
+    };
+  }
+  if (step.event === "skill_routing") {
+    const routingDecision = step.routing_decision || {};
+    return {
+      memory_scope: step.memory_scope,
+      decision_owner: step.decision_owner || routingDecision.agent_scope,
+      selected_skill: step.selected_skill,
+      skill_type: step.skill_type,
+      routing_source: routingDecision.source,
+      skill_builder_action: step.skill_builder_action || routingDecision.skill_builder_action,
+      analysis_status: step.analysis_status,
+    };
+  }
+  if (step.event === "skill_loading") {
+    return {
+      memory_scope: step.memory_scope,
+      action: step.action,
+      selected_skill: step.selected_skill,
+      skill_type: step.skill_type,
+      evidence_level: step.evidence_level,
+      formal_skill_status: step.formal_skill_status,
+      visual_protocol_status: step.visual_protocol_status,
+    };
+  }
+  if (step.event === "vlm_prompt_generation") {
+    return {
+      memory_scope: step.memory_scope,
+      tool: step.tool,
+      segmentation_quality: step.segmentation_quality,
+      measurements: step.measurements,
+    };
+  }
+  if (step.event === "visual_evidence") {
+    return {
+      memory_scope: step.memory_scope,
+      tool: step.tool,
+      selected_vision_mode: step.selected_vision_mode,
+      modality: step.modality,
+      body_part: step.body_part,
+      segmentation_quality: step.segmentation_quality,
+      lesion_gallery_summary: step.lesion_gallery_summary,
+      measurements: step.measurements,
+    };
+  }
+  if (step.event === "diagnosis_report") {
+    return {
+      memory_scope: step.memory_scope,
+      diagnostic_tendency: step.diagnostic_tendency,
+      uncertainty: step.uncertainty,
+      visual_fact_usage_summary: step.visual_fact_usage_summary,
+      used_visual_targets: Array.isArray(step.used_visual_targets)
+        ? step.used_visual_targets.join(", ")
+        : step.used_visual_targets,
+      excluded_visual_targets: Array.isArray(step.excluded_visual_targets)
+        ? step.excluded_visual_targets.join(", ")
+        : step.excluded_visual_targets,
+    };
+  }
+  if (step.event === "memory_audit") {
+    return {
+      memory_scope: step.memory_scope,
+      evidence_bundle_status: step.evidence_bundle_status,
+      audit_status: step.audit_status,
+      lesion_gallery_summary: step.lesion_gallery_summary,
+      quality_warnings: step.quality_warnings,
+    };
+  }
+  if (step.event === "follow_up_qa") {
+    return {
+      memory_scope: step.memory_scope,
+      question: step.question,
+      evidence_bundle_used: step.evidence_bundle_used,
+      qa_evidence_scope: step.qa_evidence_scope,
+      visual_fact_usage_summary: step.visual_fact_usage_summary,
+      used_visual_targets: Array.isArray(step.used_visual_targets)
+        ? step.used_visual_targets.join(", ")
+        : step.used_visual_targets,
+      excluded_visual_targets: Array.isArray(step.excluded_visual_targets)
+        ? step.excluded_visual_targets.join(", ")
+        : step.excluded_visual_targets,
+      llm_used: step.llm_used,
+      llm_fallback_reason: step.llm_fallback_reason,
+    };
+  }
+  return step;
+}
+
+function renderMemoryTypeDetails(details) {
+  if (!Object.keys(details).length) {
+    return '<div class="trace-empty">-</div>';
+  }
+  return `
+    <div class="memory-detail-list">
+      ${Object.entries(details).map(([memoryType, summary]) => `
+        <div class="memory-detail-item">
+          <strong>${escapeHtml(memoryType)}</strong>
+          ${renderMetricGrid(summary || {})}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderAlignmentAuditSummary(summary) {
+  if (!Object.keys(summary).length) {
+    return '<div class="trace-empty">-</div>';
+  }
+  return `
+    ${renderMetricGrid({
+      analysis_status: summary.analysis_status,
+      clinical_focus: summary.clinical_focus,
+      visual_task_status_counts: summary.visual_task_status_counts,
+    })}
+    <div class="trace-subblock">
+      <strong>Blocked Scopes</strong>
+      ${renderList(summary.blocked_scopes || [])}
+    </div>
+    <div class="trace-subblock">
+      <strong>Required Next Images</strong>
+      ${renderNextImageList(summary.required_next_images || [])}
+    </div>
+  `;
+}
+
+function renderSkillQuality(quality) {
+  if (!Object.keys(quality).length) {
+    return '<div class="trace-empty">-</div>';
+  }
+  return `
+    ${renderMetricGrid({
+      formal_skill_status: quality.formal_skill_status,
+      visual_protocol_status: quality.visual_protocol_status,
+      citation_status: quality.citation_status,
+      conflict_status: quality.conflict_status,
+    })}
+    <div class="trace-subblock">
+      <strong>Visual Protocol Errors</strong>
+      ${renderList(quality.visual_protocol_errors || [])}
+    </div>
+    <div class="trace-subblock">
+      <strong>Visual Protocol Warnings</strong>
+      ${renderList(quality.visual_protocol_warnings || [])}
+    </div>
+  `;
+}
+
+function renderQaSafety(safety) {
+  if (!Object.keys(safety).length) {
+    return '<div class="trace-empty">-</div>';
+  }
+  return `
+    ${renderMetricGrid({
+      evidence_bundle_required: safety.evidence_bundle_required,
+      evidence_bundle_used: safety.evidence_bundle_used,
+      evidence_bundle_used_count: safety.evidence_bundle_used_count,
+      qa_history_count: safety.qa_history_count,
+      llm_used_count: safety.llm_used_count,
+      fallback_count: safety.fallback_count,
+      missing_or_unassessed_count: safety.missing_or_unassessed_count,
+    })}
+    <div class="trace-subblock">
+      <strong>Blocked Scopes</strong>
+      ${renderList(safety.blocked_scopes || [])}
+    </div>
+  `;
+}
+
+function renderTraceConsistency(consistency) {
+  if (!Object.keys(consistency).length) {
+    return '<div class="trace-empty">-</div>';
+  }
+  return renderMetricGrid({
+    agent_io_matches_trace: consistency.agent_io_matches_trace,
+    required_agents_present: consistency.required_agents_present,
+    qa_extension_present: consistency.qa_extension_present,
+    agent_count: consistency.agent_count,
+    agent_io_count: consistency.agent_io_count,
+    missing_required_agents: Array.isArray(consistency.missing_required_agents)
+      ? consistency.missing_required_agents.join(", ")
+      : consistency.missing_required_agents,
+  });
+}
+
+function renderEvidenceGatewaySnapshot(snapshot) {
+  const architecture = snapshot.architecture_model || {};
+  const visual = snapshot.phase_b_visual_evidence || {};
+  const metrics = visual.key_metrics || {};
+  const gate = snapshot.candidate_gate || {};
+  const claims = snapshot.claims || {};
+  state.lastPayload = {demo_source: "evidence_gateway_snapshot", snapshot};
+  state.caseId = visual.case_id || "";
+  state.demoCaseSlug = "";
+  state.realDemoMode = false;
+  elements.caseIdBadge.textContent = state.caseId || "Gateway Snapshot";
+  elements.intentBadge.textContent = "gateway_snapshot";
+  elements.lesionFigure.hidden = true;
+  elements.lesionFigure.innerHTML = "";
+  elements.visualMeta.innerHTML = `
+    <p class="pipeline-note">真实 VLM + MedSAM2 视觉链路已跑通，但当前结果只进入 Evidence Gateway 的 candidate-only review。</p>
+    ${renderMetricGrid({
+      prompt_source: visual.prompt_source,
+      auto_eval_status: visual.auto_eval_status,
+      medsam2_ready: visual.medsam2_ready,
+      reference_mask_used: visual.reference_mask_used,
+      reference_mask_role: visual.reference_mask_role,
+      failure_types: visual.failure_types,
+      mask_path: visual.artifacts?.mask_path,
+      overlay_path: visual.artifacts?.overlay_path,
+    })}
+  `;
+  elements.reportView.innerHTML = `
+    <div class="report-section">
+      <h3>当前验证结论</h3>
+      ${renderMetricGrid({
+        overall_status: snapshot.overall_status,
+        recommended_narrative: architecture.recommended_narrative,
+        not_five_parallel_agents: architecture.not_five_parallel_agents,
+      })}
+    </div>
+    <div class="report-section">
+      <h3>可以宣称</h3>
+      ${renderList(claims.can_claim || [])}
+    </div>
+    <div class="report-section">
+      <h3>不能宣称</h3>
+      ${renderList(claims.cannot_claim || [])}
+    </div>
+  `;
+  elements.alignmentView.innerHTML = `
+    <p class="pipeline-note">上层是临床证据流水线，下层是 Agentic Runtime / Evidence Gateway；这不是五个并列 Agent 的堆叠。</p>
+    <div class="trace-subblock">
+      <strong>Top Layer</strong>
+      ${renderList(architecture.top_layer || [])}
+    </div>
+    <div class="trace-subblock">
+      <strong>Runtime Gateway</strong>
+      ${renderList(architecture.runtime_gateway || [])}
+    </div>
+  `;
+  elements.evidenceView.innerHTML = `
+    <div class="trace-subblock">
+      <strong>Key Metrics</strong>
+      ${renderMetricGrid(metrics)}
+    </div>
+    <div class="trace-subblock">
+      <strong>Artifacts</strong>
+      ${renderMetricGrid(visual.artifacts || {})}
+    </div>
+  `;
+  elements.auditView.innerHTML = `
+    <p class="pipeline-note">Candidate gate 默认阻断未验证视觉失败项，不允许自动修改正式 guideline skill 或诊断报告。</p>
+    ${renderMetricGrid({
+      candidate_count: gate.candidate_count,
+      non_reference_metric_review_count: gate.non_reference_metric_review_count,
+      pending_review_count: gate.pending_review_count,
+      promotion_status: gate.promotion_status,
+      formal_update_allowed: gate.formal_update_allowed,
+      candidate_only: gate.candidate_only,
+      formal_skill_updated: gate.formal_skill_updated,
+      formal_guideline_updated: gate.formal_guideline_updated,
+      diagnosis_report_updated: gate.diagnosis_report_updated,
+    })}
+    <div class="trace-subblock">
+      <strong>Candidate Type Counts</strong>
+      ${renderMetricGrid(gate.candidate_type_counts || {})}
+    </div>
+  `;
+}
+
+function renderPayload(payload) {
+  state.lastPayload = payload;
+  state.caseId = payload.case_id || state.caseId || "";
+  state.demoCaseSlug = payload.demo_case_slug || state.demoCaseSlug || "";
+  state.realDemoMode = payload.demo_source === "real_vlm_medsam2_artifact" || state.realDemoMode;
+  elements.caseIdBadge.textContent = state.caseId || "无病例";
+  elements.intentBadge.textContent = payload.intent || "-";
+  renderVisualOutput(payload);
+  renderReport(payload);
+  renderAlignmentPlan(payload);
+  renderEvidenceBundle(payload);
+  renderMemoryAudit(payload);
+  if (state.caseId && !payload.memory_replay) {
+    refreshMemoryReplay(state.caseId);
+  }
+}
+
+async function refreshMemoryReplay(caseId) {
+  try {
+    const replay = await fetchMemoryReplay(caseId);
+    if (state.caseId !== caseId) {
+      return;
+    }
+    state.lastPayload.memory_replay = replay;
+    renderMemoryAudit(state.lastPayload);
+  } catch (error) {
+    return;
+  }
+}
+
+function setQaPending(isPending) {
+  state.qaPending = isPending;
+  elements.qaInput.disabled = isPending;
+  elements.qaSubmitButton.disabled = isPending;
+  elements.qaSubmitButton.textContent = isPending ? "Thinking..." : "发送";
+}
+
+function setCasePending(isPending, label = "运行分析") {
+  state.casePending = isPending;
+  elements.submitButton.disabled = isPending;
+  elements.sampleGliomaButton.disabled = isPending;
+  elements.realVlmMedSAM2Button.disabled = isPending;
+  elements.evidenceGatewaySnapshotButton.disabled = isPending;
+  elements.xrayInsufficientButton.disabled = isPending;
+  elements.fhnNoMaskButton.disabled = isPending;
+  elements.submitButton.textContent = isPending ? "Thinking..." : label;
+}
+
+function showCaseThinking(label) {
+  elements.visualMeta.innerHTML = `
+    <div class="trace-empty" aria-busy="true">
+      Thinking... ${escapeHtml(label || "视觉 Agent 正在分析")}
+    </div>
+  `;
+  elements.reportView.innerHTML = `
+    <div class="report-empty" aria-busy="true">
+      Thinking... 等待诊断报告
+    </div>
+  `;
+  elements.evidenceView.innerHTML = `
+    <div class="trace-empty" aria-busy="true">
+      Thinking... 等待 evidence bundle
+    </div>
+  `;
+  elements.auditView.innerHTML = `
+    <div class="trace-empty" aria-busy="true">
+      Thinking... 等待 memory audit
+    </div>
+  `;
+}
+
+function showQaThinking(question) {
+  const item = document.createElement("div");
+  item.className = "qa-item qa-pending";
+  item.setAttribute("aria-busy", "true");
+  item.innerHTML = `<strong>${escapeHtml(question)}</strong><p>Thinking...</p>`;
+  elements.qaLog.prepend(item);
+  return item;
+}
+
+function updateQaItem(item, question, answer, kind = "") {
+  item.className = kind ? `qa-item qa-${kind}` : "qa-item";
+  item.removeAttribute("aria-busy");
+  item.innerHTML = `<strong>${escapeHtml(question)}</strong><p>${escapeHtml(answer || "-")}</p>`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function loadStandardSample() {
+  elements.patientMessage.value = "请基于这次 FLAIR MRI 做胶质瘤辅助分析";
+  elements.imagePath.value = "data/external/brats2021_00030/BraTS2021_00030_flair.nii.gz";
+  state.useSampleMask = true;
+  state.sampleDiseaseKey = "";
+  state.sampleVisionMode = "";
+  state.demoCaseSlug = "";
+  state.realDemoMode = false;
+  elements.symptoms.value = "头痛";
+  elements.uploadStatus.textContent = "已载入内置 BraTS FLAIR 样例；将自动使用参考 mask 稳定生成病灶图。";
+}
+
+function loadRealVlmMedSAM2Sample() {
+  elements.patientMessage.value = "请展示真实 VLM bbox + MedSAM2 分割 + 诊断 Agent 的 BraTS 胶质瘤样例";
+  elements.imagePath.value = "data/external/brats2021_00030/BraTS2021_00030_flair.nii.gz";
+  state.useSampleMask = false;
+  state.sampleDiseaseKey = "diffuse_glioma_brats";
+  state.sampleVisionMode = "medsam2";
+  state.demoCaseSlug = "";
+  state.realDemoMode = true;
+  elements.symptoms.value = "头痛";
+  elements.uploadStatus.textContent = "已载入真实 VLM+MedSAM2 样例 artifact；将展示候选框、分割图、Dice/QC 和诊断报告。";
+}
+
+function loadXrayInsufficientSample() {
+  elements.patientMessage.value = "左髋疼痛，X光能不能判断有没有早期股骨头坏死？";
+  elements.imagePath.value = "output/fake/uploads/hip_xray.png";
+  state.useSampleMask = false;
+  state.sampleDiseaseKey = "";
+  state.sampleVisionMode = "";
+  state.demoCaseSlug = "";
+  state.realDemoMode = false;
+  elements.symptoms.value = "髋关节疼痛";
+  elements.uploadStatus.textContent = "已载入髋部 X 光证据不足样例；该样例会触发指南影像不足门控，不生成 mask。";
+}
+
+function loadFhnNoMaskSample() {
+  elements.patientMessage.value = "右髋疼痛，上传 X 光，请根据股骨头坏死 skill 自动圈出候选征象";
+  elements.imagePath.value = "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png";
+  state.useSampleMask = false;
+  state.sampleDiseaseKey = "femoral_head_necrosis";
+  state.sampleVisionMode = "no_mask_skill";
+  state.demoCaseSlug = "";
+  state.realDemoMode = false;
+  elements.symptoms.value = "髋关节疼痛";
+  elements.uploadStatus.textContent = "已载入 FHN no-mask 多征象样例；将调用 VLM 生成 box prompt，再由 MedSAM2 分割候选病灶。";
+}
+
+function setSampleButtonsDisabled(isDisabled) {
+  setCasePending(isDisabled);
+}
+
+async function runStandardSample() {
+  if (state.casePending) {
+    setStatus("上一个病例仍在分析中", "warn");
+    return;
+  }
+  loadStandardSample();
+  setCasePending(true);
+  showCaseThinking("标准样例分析中");
+  setStatus("标准样例分析中...");
+  try {
+    const payload = await fetchStandardDemoCaseOrRun("glioma_ground_truth", buildCasePayload());
+    renderPayload(payload);
+    setStatus("标准样例完成", "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setCasePending(false);
+  }
+}
+
+async function runRealVlmMedSAM2Sample() {
+  if (state.casePending) {
+    setStatus("上一个病例仍在分析中", "warn");
+    return;
+  }
+  loadRealVlmMedSAM2Sample();
+  setCasePending(true);
+  showCaseThinking("真实 VLM+MedSAM2 样例读取中");
+  setStatus("真实 VLM+MedSAM2 样例读取中...");
+  try {
+    const payload = await fetchRealVlmMedSAM2Demo();
+    renderPayload(payload);
+    setStatus("真实 VLM+MedSAM2 样例完成", "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setCasePending(false);
+  }
+}
+
+async function runEvidenceGatewaySnapshot() {
+  if (state.casePending) {
+    setStatus("上一个病例仍在分析中", "warn");
+    return;
+  }
+  setCasePending(true);
+  showCaseThinking("Evidence Gateway 快照读取中");
+  setStatus("Evidence Gateway 快照读取中...");
+  try {
+    const snapshot = await fetchEvidenceGatewaySnapshot();
+    renderEvidenceGatewaySnapshot(snapshot);
+    setStatus("Evidence Gateway 快照完成", "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setCasePending(false);
+  }
+}
+
+async function runXrayInsufficientSample() {
+  if (state.casePending) {
+    setStatus("上一个病例仍在分析中", "warn");
+    return;
+  }
+  loadXrayInsufficientSample();
+  setCasePending(true);
+  showCaseThinking("X 光证据协调中");
+  setStatus("X 光证据不足样例分析中...");
+  try {
+    const payload = await fetchStandardDemoCaseOrRun("xray_insufficient_evidence", buildCasePayload());
+    renderPayload(payload);
+    setStatus("X 光证据不足样例完成", "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setCasePending(false);
+  }
+}
+
+async function runFhnNoMaskSample() {
+  if (state.casePending) {
+    setStatus("上一个病例仍在分析中", "warn");
+    return;
+  }
+  loadFhnNoMaskSample();
+  setCasePending(true);
+  showCaseThinking("FHN no-mask VLM + MedSAM2 分析中");
+  setStatus("FHN no-mask 多征象样例分析中...");
+  try {
+    const payload = await fetchStandardDemoCaseOrRun("fhn_no_mask_multifinding", buildCasePayload());
+    renderPayload(payload);
+    setStatus("FHN no-mask 多征象样例完成", "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setCasePending(false);
+  }
+}
+
+function resetViews() {
+  setCasePending(false);
+  setQaPending(false);
+  elements.qaLog.innerHTML = "";
+  elements.reportView.innerHTML = '<div class="report-empty">等待分析结果</div>';
+  elements.visualMeta.textContent = "等待视觉 Agent 输出";
+  elements.alignmentView.innerHTML = '<div class="trace-empty">等待 alignment plan</div>';
+  elements.evidenceView.innerHTML = '<div class="trace-empty">等待 evidence bundle</div>';
+  elements.auditView.innerHTML = '<div class="trace-empty">等待 memory audit</div>';
+  elements.lesionFigure.hidden = true;
+  elements.lesionFigure.innerHTML = "";
+  elements.caseIdBadge.textContent = "无病例";
+  elements.intentBadge.textContent = "-";
+}
+
+elements.healthButton.addEventListener("click", checkHealth);
+elements.sampleGliomaButton.addEventListener("click", runStandardSample);
+elements.realVlmMedSAM2Button.addEventListener("click", runRealVlmMedSAM2Sample);
+elements.evidenceGatewaySnapshotButton.addEventListener("click", runEvidenceGatewaySnapshot);
+elements.xrayInsufficientButton.addEventListener("click", runXrayInsufficientSample);
+elements.fhnNoMaskButton.addEventListener("click", runFhnNoMaskSample);
+elements.fileInput.addEventListener("change", async () => {
+  try {
+    await uploadFile(elements.fileInput.files[0]);
+    setStatus("上传完成", "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+["dragenter", "dragover"].forEach((name) => {
+  elements.dropZone.addEventListener(name, (event) => {
+    event.preventDefault();
+    elements.dropZone.classList.add("dragging");
+  });
+});
+
+["dragleave", "drop"].forEach((name) => {
+  elements.dropZone.addEventListener(name, (event) => {
+    event.preventDefault();
+    elements.dropZone.classList.remove("dragging");
+  });
+});
+
+elements.dropZone.addEventListener("drop", async (event) => {
+  try {
+    await uploadFile(event.dataTransfer.files[0]);
+    setStatus("上传完成", "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+elements.caseForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.casePending) {
+    setStatus("上一个病例仍在分析中", "warn");
+    return;
+  }
+  setCasePending(true);
+  showCaseThinking("病例分析中");
+  setStatus("分析中...");
+  try {
+    const payload = await postMedScope(buildCasePayload());
+    renderPayload(payload);
+    setStatus("分析完成", "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setCasePending(false);
+  }
+});
+
+elements.qaForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.qaPending) {
+    setStatus("上一条追问仍在回答中", "warn");
+    return;
+  }
+  const question = elements.qaInput.value.trim();
+  if (!question || !state.caseId) {
+    setStatus(state.caseId ? "请输入追问" : "需要先完成一个病例", "warn");
+    return;
+  }
+  const thinkingItem = showQaThinking(question);
+  setQaPending(true);
+  setStatus("发送中...");
+  try {
+    const payload = state.realDemoMode
+      ? await postRealVlmMedSAM2Qa(buildQaPayload())
+      : state.demoCaseSlug
+        ? await postDemoQa(state.demoCaseSlug, buildQaPayload())
+        : await postMedScope(buildQaPayload());
+    renderPayload(payload);
+    updateQaItem(thinkingItem, question, payload.reply_to_patient);
+    elements.qaInput.value = "";
+    setStatus("已回答", "ok");
+  } catch (error) {
+    updateQaItem(thinkingItem, question, error.message, "error");
+    setStatus(error.message, "error");
+  } finally {
+    setQaPending(false);
+  }
+});
+
+elements.resetButton.addEventListener("click", () => {
+  state.caseId = "";
+  state.lastPayload = {};
+  state.useSampleMask = false;
+  state.sampleDiseaseKey = "";
+  state.sampleVisionMode = "";
+  state.demoCaseSlug = "";
+  state.realDemoMode = false;
+  elements.caseForm.reset();
+  resetViews();
+  setStatus("已清空");
+});
+
+checkHealth();

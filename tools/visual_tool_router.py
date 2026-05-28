@@ -1,0 +1,159 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from contracts.medical_contracts import VisualTask, VisualToolCapability
+
+
+class VisualToolRegistry:
+    """Loads and queries visual tool capabilities."""
+
+    def __init__(self, tools: list[VisualToolCapability] | None = None) -> None:
+        self.tools = tools or []
+
+    @classmethod
+    def from_file(cls, path: Path | str) -> "VisualToolRegistry":
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls.from_dict(payload)
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "VisualToolRegistry":
+        raw_tools = payload.get("tools") or []
+        if isinstance(raw_tools, dict):
+            raw_tools = [
+                {"tool_name": tool_name, **tool_payload}
+                for tool_name, tool_payload in raw_tools.items()
+            ]
+        return cls([VisualToolCapability.from_dict(tool) for tool in raw_tools])
+
+    def get(self, tool_name: str) -> VisualToolCapability:
+        for tool in self.tools:
+            if tool.tool_name == tool_name:
+                return tool
+        raise KeyError(tool_name)
+
+    def find_best_tool(
+        self,
+        task: VisualTask,
+        available_modalities: list[str],
+    ) -> VisualToolCapability | None:
+        candidates: list[VisualToolCapability] = []
+        for tool in self.tools:
+            if any(
+                tool.supports(
+                    modality=modality,
+                    task_name=task.task_name,
+                    target=task.target,
+                )
+                for modality in available_modalities
+            ):
+                candidates.append(tool)
+        if not candidates:
+            return None
+        return sorted(
+            candidates,
+            key=lambda tool: (
+                tool.role != "candidate_segmenter",
+                tool.priority,
+            ),
+            reverse=True,
+        )[0]
+
+
+class VisualToolRouter:
+    """Routes skill visual_protocol tasks to capable visual tools."""
+
+    def __init__(self, registry: VisualToolRegistry | None = None) -> None:
+        self.registry = registry or VisualToolRegistry.from_file(
+            Path("tools/visual_tool_registry.yaml")
+        )
+
+    def plan_from_protocol(self, visual_protocol: dict[str, Any]) -> list[dict[str, Any]]:
+        available_modalities = [
+            str(modality) for modality in visual_protocol.get("available_modalities") or []
+        ]
+        measurements = list(visual_protocol.get("measurements") or [])
+        plan = []
+        for raw_task in visual_protocol.get("alignment_tasks") or []:
+            task = VisualTask.from_protocol_task(
+                raw_task,
+                measurements=self._measurements_for_task(
+                    target=VisualTask.from_protocol_task(raw_task).target,
+                    measurements=measurements,
+                ),
+            )
+            missing = self._missing_modalities(task.required_modalities, available_modalities)
+            if missing:
+                plan.append(
+                    {
+                        "task": task.to_dict(),
+                        "status": "missing_input",
+                        "selected_tool": None,
+                        "reason": self._requires_modality_reason(missing),
+                        "diagnosis_usable_without_qc": False,
+                    }
+                )
+                continue
+            tool = self.registry.find_best_tool(task, available_modalities)
+            if tool is None:
+                plan.append(
+                    {
+                        "task": task.to_dict(),
+                        "status": "no_capable_tool",
+                        "selected_tool": None,
+                        "reason": "No registered visual tool can satisfy this task.",
+                        "diagnosis_usable_without_qc": False,
+                    }
+                )
+                continue
+            plan.append(
+                {
+                    "task": task.to_dict(),
+                    "status": "runnable",
+                    "selected_tool": tool.to_dict(),
+                    "reason": f"Selected {tool.tool_name} for {task.task_name}.",
+                    "diagnosis_usable_without_qc": tool.role != "candidate_segmenter",
+                }
+            )
+        return plan
+
+    def _missing_modalities(
+        self,
+        required_modalities: list[str],
+        available_modalities: list[str],
+    ) -> list[str]:
+        available = {self._normalize_modality(modality) for modality in available_modalities}
+        return [
+            modality
+            for modality in required_modalities
+            if self._normalize_modality(modality) not in available
+        ]
+
+    def _measurements_for_task(self, target: str, measurements: list[str]) -> list[str]:
+        if not measurements:
+            return []
+        return [
+            measurement
+            for measurement in measurements
+            if self._target_for_measurement(measurement) == target
+        ]
+
+    def _target_for_measurement(self, measurement: str) -> str:
+        mapping = {
+            "whole_tumor_volume_ml": "whole_tumor",
+            "tumor_core_volume_ml": "tumor_core",
+            "enhancing_tumor_volume_ml": "enhancing_tumor",
+            "edema_present": "edema",
+            "mass_effect": "mass_effect",
+        }
+        return mapping.get(measurement, measurement)
+
+    def _normalize_modality(self, modality: str) -> str:
+        return str(modality).strip().upper()
+
+    def _requires_modality_reason(self, modalities: list[str]) -> str:
+        if len(modalities) == 1:
+            return f"Requires {modalities[0]} modality"
+        return f"Requires {', '.join(modalities)} modalities"
