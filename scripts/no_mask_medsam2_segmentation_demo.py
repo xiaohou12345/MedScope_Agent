@@ -133,6 +133,12 @@ def _target_regions_from_prompt_result(
                 "bbox": list(region["bbox"]),
                 "confidence": float(region.get("confidence") or 0.0),
                 "rationale": str(region.get("rationale") or ""),
+                "execution_mode": str(region.get("execution_mode") or "vlm_plus_segmenter"),
+                "localization_mode": str(region.get("localization_mode") or "bbox"),
+                "segmentation_mode": str(region.get("segmentation_mode") or "candidate_mask"),
+                "diagnosis_usable_level": str(
+                    region.get("diagnosis_usable_level") or "candidate_support"
+                ),
                 "prompt": {
                     "source": segmentation_prompt.get("source", "vision_model_bbox"),
                     "boxes": [list(region["bbox"])],
@@ -151,6 +157,10 @@ def _target_regions_from_prompt_result(
             "bbox": list(box),
             "confidence": 0.0,
             "rationale": "",
+            "execution_mode": "vlm_plus_segmenter",
+            "localization_mode": "bbox",
+            "segmentation_mode": "candidate_mask",
+            "diagnosis_usable_level": "candidate_support",
             "prompt": {
                 "source": segmentation_prompt.get("source", "vision_model_bbox"),
                 "boxes": [list(box)],
@@ -404,6 +414,12 @@ def _finding_from_segmentation(
         "overlap_qc": {"status": "independent_candidate"},
         "confidence": float(target_region.get("confidence") or 0.0),
         "evidence_basis": str(target_region.get("rationale") or ""),
+        "execution_mode": str(target_region.get("execution_mode") or "vlm_plus_segmenter"),
+        "localization_mode": str(target_region.get("localization_mode") or "bbox"),
+        "segmentation_mode": str(target_region.get("segmentation_mode") or "candidate_mask"),
+        "diagnosis_usable_level": str(
+            target_region.get("diagnosis_usable_level") or "candidate_support"
+        ),
         "measurements": {
             "area_px": int(measurements.get("lesion_area_px") or 0),
             "area_ratio_in_image": float(measurements.get("lesion_area_ratio") or 0.0),

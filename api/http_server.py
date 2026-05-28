@@ -4,7 +4,8 @@ import argparse
 import mimetypes
 import json
 import re
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
@@ -182,6 +183,278 @@ def _safe_upload_filename(filename: str) -> str:
     return name or "upload.bin"
 
 
+def dispatch_skill_request(
+    method: str,
+    path: str,
+    body: bytes = b"",
+    skills_dir: Path | str = PROJECT_ROOT / "skills",
+    output_root: Path | str = DEFAULT_OUTPUT_ROOT,
+) -> tuple[int | None, dict]:
+    route_path = urlparse(path).path
+    if route_path != "/v1/skills" and not route_path.startswith("/v1/skills/"):
+        return None, {}
+    skills_root = Path(skills_dir)
+    output = Path(output_root)
+    if method == "GET" and route_path == "/v1/skills":
+        skills = [
+            _doctor_skill_summary(skill_key=skill_path.stem, skill=skill, output_root=output)
+            for skill_path, skill in _iter_skill_files(skills_root)
+        ]
+        skills.sort(key=lambda item: item["disease_name"])
+        return 200, {"skills": skills, "count": len(skills)}
+
+    prefix = "/v1/skills/"
+    remainder = route_path.removeprefix(prefix).strip("/")
+    parts = remainder.split("/") if remainder else []
+    if not parts or not _is_safe_skill_key(parts[0]):
+        return 404, {"error": "not found"}
+    skill_key = parts[0]
+    try:
+        skill_path, skill = _load_skill_file(skill_key=skill_key, skills_dir=skills_root)
+    except FileNotFoundError:
+        return 404, {"error": f"skill not found: {skill_key}"}
+
+    if method == "GET" and len(parts) == 1:
+        return 200, {
+            "skill_key": skill_key,
+            "skill_path": str(skill_path),
+            "doctor_view": _doctor_skill_view(skill),
+            "draft": _latest_skill_review_draft(skill_key=skill_key, output_root=output),
+            "raw_skill_available": True,
+        }
+    if method == "POST" and len(parts) == 2 and parts[1] == "review-draft":
+        try:
+            payload = json.loads(body.decode("utf-8")) if body else {}
+        except json.JSONDecodeError as exc:
+            return 400, {"error": f"invalid json: {exc}"}
+        return 200, _save_skill_review_draft(
+            skill_key=skill_key,
+            skill=skill,
+            payload=payload,
+            output_root=output,
+        )
+    return 404, {"error": "not found"}
+
+
+def _iter_skill_files(skills_dir: Path) -> list[tuple[Path, dict]]:
+    if not skills_dir.exists():
+        return []
+    loaded: list[tuple[Path, dict]] = []
+    for skill_path in sorted(skills_dir.glob("*.yaml")):
+        try:
+            loaded.append((skill_path, json.loads(skill_path.read_text(encoding="utf-8"))))
+        except json.JSONDecodeError:
+            continue
+    return loaded
+
+
+def _load_skill_file(*, skill_key: str, skills_dir: Path) -> tuple[Path, dict]:
+    skill_path = skills_dir / f"{skill_key}.yaml"
+    if not skill_path.exists():
+        raise FileNotFoundError(skill_path)
+    return skill_path, json.loads(skill_path.read_text(encoding="utf-8"))
+
+
+def _is_safe_skill_key(skill_key: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]+", skill_key or ""))
+
+
+def _doctor_skill_summary(*, skill_key: str, skill: dict, output_root: Path) -> dict:
+    clinical = skill.get("clinical_features") or {}
+    protocol = skill.get("visual_protocol") or {}
+    return {
+        "skill_key": skill_key,
+        "disease_name": skill.get("disease_name") or skill_key,
+        "skill_id": skill.get("skill_id"),
+        "skill_type": skill.get("skill_type"),
+        "evidence_level": skill.get("evidence_level"),
+        "source": skill.get("source"),
+        "doctor_summary": {
+            "symptom_count": len(clinical.get("common_symptoms") or []),
+            "risk_factor_count": len(clinical.get("risk_factors") or []),
+            "image_requirement_count": len(skill.get("required_image_views") or []),
+            "visual_finding_count": len(protocol.get("finding_targets") or []),
+            "source_count": len(skill.get("source_documents") or []),
+        },
+        "review_status": "draft_saved"
+        if _latest_skill_review_draft(skill_key=skill_key, output_root=output_root)["exists"]
+        else "no_draft",
+    }
+
+
+def _doctor_skill_view(skill: dict) -> dict:
+    clinical = skill.get("clinical_features") or {}
+    protocol = skill.get("visual_protocol") or {}
+    return {
+        "identity": {
+            "disease_name": skill.get("disease_name"),
+            "skill_id": skill.get("skill_id"),
+            "skill_type": _skill_type_label(skill.get("skill_type")),
+            "evidence_level": _evidence_level_label(skill.get("evidence_level")),
+            "source": skill.get("source"),
+        },
+        "clinical_profile": {
+            "common_symptoms": list(clinical.get("common_symptoms") or []),
+            "risk_factors": list(clinical.get("risk_factors") or []),
+        },
+        "imaging_requirements": [
+            {"label": str(item), "review_prompt": "这个检查是否是诊断该病必须或推荐的影像？"}
+            for item in skill.get("required_image_views") or []
+        ],
+        "visual_findings": _doctor_visual_findings(protocol),
+        "staging_rules": _doctor_staging_rules(skill.get("staging_rules") or {}),
+        "safety_notes": _doctor_safety_notes(protocol),
+        "report_requirements": list((skill.get("report_requirements") or {}).get("include") or []),
+        "source_documents": [
+            {
+                "title": document.get("title") or document.get("source_id") or "未命名来源",
+                "publisher": document.get("publisher") or document.get("source_kind"),
+                "url": document.get("url"),
+                "evidence_note": document.get("evidence_note"),
+            }
+            for document in skill.get("source_documents") or []
+            if isinstance(document, dict)
+        ],
+    }
+
+
+def _doctor_visual_findings(protocol: dict) -> list[dict]:
+    findings = []
+    for target in protocol.get("finding_targets") or []:
+        if not isinstance(target, dict):
+            continue
+        findings.append(
+            {
+                "target": target.get("target"),
+                "display_name": target.get("display_name") or target.get("target"),
+                "description": target.get("description"),
+                "required_modalities": list(target.get("required_modalities") or []),
+                "measurements": list(target.get("measurements") or []),
+                "diagnostic_role": target.get("diagnostic_role"),
+                "execution_mode": target.get("execution_mode"),
+                "doctor_execution_label": _execution_mode_label(target.get("execution_mode")),
+            }
+        )
+    return findings
+
+
+def _doctor_staging_rules(staging_rules: dict) -> list[dict]:
+    stages = []
+    for stage, rule in staging_rules.items():
+        if isinstance(rule, dict):
+            features = []
+            for key, value in rule.items():
+                if key == "description":
+                    continue
+                if isinstance(value, list):
+                    features.extend(str(item) for item in value)
+                else:
+                    features.append(str(value))
+            stages.append(
+                {
+                    "stage": str(stage),
+                    "description": str(rule.get("description") or ""),
+                    "features": features,
+                }
+            )
+        else:
+            stages.append({"stage": str(stage), "description": str(rule), "features": []})
+    return stages
+
+
+def _doctor_safety_notes(protocol: dict) -> list[dict]:
+    notes = []
+    for rule in protocol.get("insufficiency_rules") or []:
+        if isinstance(rule, dict):
+            notes.append(
+                {
+                    "condition": rule.get("condition"),
+                    "status": rule.get("status") or "insufficient_evidence",
+                    "reason": rule.get("reason"),
+                }
+            )
+    for item in protocol.get("required_next_images") or []:
+        if isinstance(item, dict):
+            notes.append(
+                {
+                    "condition": "需要补充影像",
+                    "status": "required_next_image",
+                    "reason": item.get("reason"),
+                    "modality": item.get("modality"),
+                    "region": item.get("region"),
+                }
+            )
+    return notes
+
+
+def _skill_type_label(value: object) -> str:
+    labels = {
+        "guideline_based": "正式指南 Skill",
+        "data_mined_hypothesis": "数据挖掘假设 Skill",
+    }
+    return labels.get(str(value), str(value or "未标注"))
+
+
+def _evidence_level_label(value: object) -> str:
+    labels = {"high": "高", "medium": "中", "low": "低"}
+    return labels.get(str(value), str(value or "未标注"))
+
+
+def _execution_mode_label(value: object) -> str:
+    labels = {
+        "vlm_only": "只做视觉观察，不生成分割 mask",
+        "vlm_plus_segmenter": "先定位候选区域，再生成候选分割",
+        "specialist_segmenter": "使用专病分割模型",
+        "measurement_only": "只做形态或数值测量",
+        "insufficient_input": "当前影像不足，不能执行",
+    }
+    return labels.get(str(value), "按当前工具计划处理")
+
+
+def _latest_skill_review_draft(*, skill_key: str, output_root: Path) -> dict:
+    draft_dir = output_root / "fake" / "skill_review_drafts"
+    drafts = sorted(draft_dir.glob(f"{skill_key}_*.json")) if draft_dir.exists() else []
+    if not drafts:
+        return {"exists": False}
+    latest = drafts[-1]
+    return {"exists": True, "draft_path": str(latest), "updated_at": latest.stem.removeprefix(f"{skill_key}_")}
+
+
+def _save_skill_review_draft(
+    *,
+    skill_key: str,
+    skill: dict,
+    payload: dict,
+    output_root: Path,
+) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("review draft payload must be an object")
+    draft_dir = output_root / "fake" / "skill_review_drafts"
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    draft_path = draft_dir / f"{skill_key}_{timestamp}.json"
+    draft = {
+        "schema_version": "skill_review_draft.v1",
+        "status": "draft_saved",
+        "skill_key": skill_key,
+        "skill_id": skill.get("skill_id"),
+        "disease_name": skill.get("disease_name"),
+        "reviewer_name": str(payload.get("reviewer_name") or ""),
+        "sections": dict(payload.get("sections") or {}),
+        "created_at": timestamp,
+        "formal_skill_updated": False,
+        "safety_note": "Draft only. Formal skills/*.yaml files are not modified by this route.",
+    }
+    draft_path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "status": "draft_saved",
+        "skill_key": skill_key,
+        "draft_path": str(draft_path),
+        "formal_skill_updated": False,
+        "next_step": "Human review gate must approve before updating formal skill files.",
+    }
+
+
 def dispatch_http_request(
     method: str,
     path: str,
@@ -193,6 +466,9 @@ def dispatch_http_request(
     demo_status, demo_payload = dispatch_demo_request(method=method, path=path, body=body)
     if demo_status is not None:
         return demo_status, demo_payload
+    skill_status, skill_payload = dispatch_skill_request(method=method, path=path, body=body)
+    if skill_status is not None:
+        return skill_status, skill_payload
     memory_status, memory_payload = dispatch_memory_request(
         method=method,
         path=path,
@@ -1342,6 +1618,7 @@ def create_handler(service_factory: Callable[[], MedScopeService] | None = None)
             self.send_response(status_code)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
@@ -1349,7 +1626,7 @@ def create_handler(service_factory: Callable[[], MedScopeService] | None = None)
 
 
 def run_http_server(host: str = "127.0.0.1", port: int = 8000) -> None:
-    server = HTTPServer((host, port), create_handler())
+    server = ThreadingHTTPServer((host, port), create_handler())
     print(f"MedScope HTTP API listening on http://{host}:{port}")
     server.serve_forever()
 

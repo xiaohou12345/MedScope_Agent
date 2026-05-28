@@ -144,6 +144,51 @@ class SingleLeftFindingVisionClient:
         )
 
 
+class MixedExecutionModeVisionClient:
+    def __init__(self):
+        self.calls = []
+
+    def chat_with_image(self, *, image_path, system_prompt, user_payload, task):
+        self.calls.append(
+            {
+                "image_path": image_path,
+                "user_payload": user_payload,
+                "task": task,
+            }
+        )
+        targets = [
+            item["target"]
+            for item in user_payload.get("requested_finding_targets") or []
+        ]
+        regions = []
+        if "sclerotic_band" in targets:
+            regions.append(
+                {
+                    "target": "sclerotic_band",
+                    "bbox": [2, 2, 8, 8],
+                    "confidence": 0.82,
+                    "rationale": "band-like density increase candidate",
+                }
+            )
+        if "trabecular_blurring" in targets:
+            regions.append(
+                {
+                    "target": "trabecular_blurring",
+                    "bbox": [10, 2, 18, 8],
+                    "confidence": 0.67,
+                    "rationale": "texture is visually blurred but not reliably maskable",
+                }
+            )
+        return json.dumps(
+            {
+                "modality": "xray",
+                "body_part": "hip",
+                "suspected_regions": regions,
+                "limitations": ["single frontal radiograph only"],
+            }
+        )
+
+
 class FakeSegmentationTool:
     def __init__(self):
         self.calls = []
@@ -474,6 +519,69 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             self.assertEqual(bundle["numeric_evidence"]["diagnosis_usable_finding_count"], 0)
             self.assertEqual(bundle["numeric_evidence"]["diagnosis_unusable_finding_count"], 1)
             self.assertEqual(bundle["numeric_evidence"]["independent_finding_count"], 0)
+
+    def test_pipeline_keeps_vlm_only_findings_without_calling_segmentation(self):
+        with TemporaryDirectory() as tmpdir:
+            workdir = Path(tmpdir)
+            image_path = workdir / "hip.png"
+            Image.new("RGB", (20, 10), "black").save(image_path)
+            skill = {
+                "disease_name": "股骨头坏死",
+                "visual_protocol": {
+                    "disease_target": "femoral_head_necrosis",
+                    "finding_targets": [
+                        {
+                            "target": "sclerotic_band",
+                            "display_name": "硬化带",
+                            "required_modalities": ["X-ray"],
+                            "execution_mode": "vlm_plus_segmenter",
+                            "segmentation_mode": "candidate_mask",
+                            "diagnosis_usable_level": "candidate_support",
+                            "measurements": ["area_px"],
+                        },
+                        {
+                            "target": "trabecular_blurring",
+                            "display_name": "骨小梁模糊",
+                            "required_modalities": ["X-ray"],
+                            "execution_mode": "vlm_only",
+                            "segmentation_mode": "none",
+                            "diagnosis_usable_level": "observation_only",
+                        },
+                    ],
+                },
+            }
+            client = MixedExecutionModeVisionClient()
+            segmentation_tool = PromptBoxSegmentationTool()
+
+            result = run_no_mask_skill_visual_pipeline_demo(
+                image_path=image_path,
+                output_dir=workdir / "out",
+                disease_skill=skill,
+                patient_message="右髋疼痛，上传髋关节X光",
+                client=client,
+                segmentation_tool=segmentation_tool,
+            )
+
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(len(segmentation_tool.calls), 1)
+            self.assertEqual(
+                segmentation_tool.calls[0]["prompt"]["boxes"],
+                [[2, 2, 8, 8]],
+            )
+            bundle = result["visual_evidence_bundle"]
+            by_target = {finding["target"]: finding for finding in bundle["findings"]}
+            self.assertEqual(by_target["sclerotic_band"]["execution_mode"], "vlm_plus_segmenter")
+            self.assertTrue(by_target["sclerotic_band"]["diagnosis_usable"])
+            self.assertEqual(by_target["trabecular_blurring"]["execution_mode"], "vlm_only")
+            self.assertEqual(by_target["trabecular_blurring"]["segmentation_ref"]["status"], "not_run")
+            self.assertFalse(by_target["trabecular_blurring"]["diagnosis_usable"])
+            self.assertEqual(
+                by_target["trabecular_blurring"]["diagnosis_usable_level"],
+                "observation_only",
+            )
+            self.assertEqual(bundle["present_findings"], ["sclerotic_band"])
+            self.assertEqual(bundle["numeric_evidence"]["diagnosis_usable_finding_count"], 1)
+            self.assertEqual(bundle["numeric_evidence"]["diagnosis_unusable_finding_count"], 1)
 
 
 if __name__ == "__main__":

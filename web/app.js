@@ -9,6 +9,8 @@ const state = {
   realDemoMode: false,
   casePending: false,
   qaPending: false,
+  selectedSkillKey: "",
+  selectedSkillDetail: {},
 };
 
 const elements = {
@@ -40,6 +42,11 @@ const elements = {
   evidenceView: document.getElementById("evidenceView"),
   auditView: document.getElementById("auditView"),
   qaLog: document.getElementById("qaLog"),
+  refreshSkillsButton: document.getElementById("refreshSkillsButton"),
+  saveSkillDraftButton: document.getElementById("saveSkillDraftButton"),
+  skillListView: document.getElementById("skillListView"),
+  skillDetailView: document.getElementById("skillDetailView"),
+  skillReviewStatus: document.getElementById("skillReviewStatus"),
 };
 
 function setStatus(text, kind = "") {
@@ -92,6 +99,44 @@ async function postMedScope(payload) {
     throw new Error(formatApiError(body, response.status));
   }
   return body;
+}
+
+async function fetchSkillList() {
+  const response = await fetch("/v1/skills");
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  return body;
+}
+
+async function fetchSkillDetail(skillKey) {
+  const response = await fetch(`/v1/skills/${encodeURIComponent(skillKey)}`);
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  return body;
+}
+
+async function saveSkillReviewDraft() {
+  if (!state.selectedSkillKey) {
+    setStatus("请先选择一个 Skill", "warn");
+    return;
+  }
+  const payload = buildSkillDraftPayload();
+  const response = await fetch(`/v1/skills/${encodeURIComponent(state.selectedSkillKey)}/review-draft`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  elements.skillReviewStatus.textContent = `草稿已保存：${body.draft_path}`;
+  setStatus("Skill 审核：保存草稿完成", "ok");
+  await loadSkillDetail(state.selectedSkillKey);
 }
 
 async function fetchMemoryReplay(caseId) {
@@ -647,6 +692,204 @@ function getVisualToolPlan(payload) {
     return fromReport;
   }
   return [];
+}
+
+function renderSkillList(payload) {
+  const skills = Array.isArray(payload.skills) ? payload.skills : [];
+  if (!skills.length) {
+    elements.skillListView.innerHTML = '<div class="trace-empty">暂无可审核 Skill</div>';
+    return;
+  }
+  elements.skillListView.innerHTML = `
+    <div class="doctor-skill-list">
+      ${skills.map((skill) => {
+        const summary = skill.doctor_summary || {};
+        const selectedClass = skill.skill_key === state.selectedSkillKey ? " selected" : "";
+        return `
+          <button class="doctor-skill-item${selectedClass}" type="button" data-skill-key="${escapeHtml(skill.skill_key)}">
+            <strong>${escapeHtml(skill.disease_name || skill.skill_key)}</strong>
+            <span>${escapeHtml(skill.evidence_level || "未标注")} · ${escapeHtml(skill.skill_type || "skill")}</span>
+            <small>症状 ${formatValue(summary.symptom_count)} / 影像 ${formatValue(summary.image_requirement_count)} / 征象 ${formatValue(summary.visual_finding_count)}</small>
+            <em>${skill.review_status === "draft_saved" ? "已有医生草稿" : "未审核"}</em>
+          </button>
+        `;
+      }).join("")}
+    </div>
+  `;
+  elements.skillListView.querySelectorAll("[data-skill-key]").forEach((button) => {
+    button.addEventListener("click", () => loadSkillDetail(button.dataset.skillKey));
+  });
+}
+
+async function loadSkillList() {
+  elements.skillListView.innerHTML = '<div class="trace-empty">Skill 加载中...</div>';
+  try {
+    const payload = await fetchSkillList();
+    renderSkillList(payload);
+    if (!state.selectedSkillKey && payload.skills && payload.skills.length) {
+      await loadSkillDetail(payload.skills[0].skill_key);
+    }
+  } catch (error) {
+    elements.skillListView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+async function loadSkillDetail(skillKey) {
+  state.selectedSkillKey = skillKey;
+  elements.skillDetailView.innerHTML = '<div class="trace-empty">Skill 详情加载中...</div>';
+  try {
+    const detail = await fetchSkillDetail(skillKey);
+    state.selectedSkillDetail = detail;
+    renderSkillReviewWorkspace(detail);
+    const listPayload = await fetchSkillList();
+    renderSkillList(listPayload);
+  } catch (error) {
+    elements.skillDetailView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderSkillReviewWorkspace(detail) {
+  const view = detail.doctor_view || {};
+  const identity = view.identity || {};
+  const clinical = view.clinical_profile || {};
+  const imaging = Array.isArray(view.imaging_requirements) ? view.imaging_requirements : [];
+  const findings = Array.isArray(view.visual_findings) ? view.visual_findings : [];
+  const stages = Array.isArray(view.staging_rules) ? view.staging_rules : [];
+  const safety = Array.isArray(view.safety_notes) ? view.safety_notes : [];
+  const sources = Array.isArray(view.source_documents) ? view.source_documents : [];
+  const draft = detail.draft || {};
+  elements.skillReviewStatus.textContent = draft.exists
+    ? `已有医生草稿：${draft.draft_path}`
+    : "医生审核模式：草稿只保存到 output/fake，不直接覆盖正式 skill。";
+  elements.skillDetailView.innerHTML = `
+    <div class="doctor-skill-workspace">
+      <section class="doctor-skill-section">
+        <h3>${escapeHtml(identity.disease_name || detail.skill_key || "未命名 Skill")}</h3>
+        ${renderMetricGrid({
+          skill_id: identity.skill_id,
+          skill_type: identity.skill_type,
+          evidence_level: identity.evidence_level,
+          source: identity.source,
+        })}
+      </section>
+      <section class="doctor-skill-section doctor-edit-grid">
+        <label>常见症状
+          <textarea id="skillCommonSymptoms" rows="4">${escapeHtml((clinical.common_symptoms || []).join("\n"))}</textarea>
+        </label>
+        <label>危险因素
+          <textarea id="skillRiskFactors" rows="4">${escapeHtml((clinical.risk_factors || []).join("\n"))}</textarea>
+        </label>
+        <label>需要的影像检查
+          <textarea id="skillImageRequirements" rows="4">${escapeHtml(imaging.map((item) => item.label).join("\n"))}</textarea>
+        </label>
+        <label>医生审核备注
+          <textarea id="skillReviewNotes" rows="4" placeholder="写下需要修改、删除或补充的医学意见"></textarea>
+        </label>
+      </section>
+      <section class="doctor-skill-section">
+        <h3>影像征象</h3>
+        <div class="doctor-finding-list">
+          ${findings.map((finding, index) => renderDoctorFindingEditor(finding, index)).join("") || '<div class="trace-empty">暂无影像征象</div>'}
+        </div>
+      </section>
+      <section class="doctor-skill-section">
+        <h3>分期 / 判断规则</h3>
+        ${renderDoctorStageCards(stages)}
+      </section>
+      <section class="doctor-skill-section">
+        <h3>证据不足和下一步检查</h3>
+        ${renderDoctorSafetyNotes(safety)}
+      </section>
+      <section class="doctor-skill-section">
+        <h3>指南来源</h3>
+        ${sources.length ? `<div class="citation-list">${sources.map(renderCitation).join("")}</div>` : '<div class="trace-empty">暂无来源</div>'}
+      </section>
+    </div>
+  `;
+}
+
+function renderDoctorFindingEditor(finding, index) {
+  return `
+    <article class="doctor-finding-card" data-finding-index="${index}">
+      <div>
+        <strong>${escapeHtml(finding.display_name || finding.target || "影像征象")}</strong>
+        <span>${escapeHtml(finding.doctor_execution_label || "按当前工具计划处理")}</span>
+      </div>
+      <p>${escapeHtml(finding.description || "暂无描述")}</p>
+      ${renderMetricGrid({
+        target: finding.target,
+        required_modalities: Array.isArray(finding.required_modalities) ? finding.required_modalities.join(", ") : finding.required_modalities,
+        measurements: Array.isArray(finding.measurements) ? finding.measurements.join(", ") : finding.measurements,
+        diagnostic_role: finding.diagnostic_role,
+      })}
+      <label>医生对该征象的修改意见
+        <textarea class="skillFindingComment" rows="2" data-target="${escapeHtml(finding.target || "")}" data-display-name="${escapeHtml(finding.display_name || finding.target || "")}" placeholder="例如：描述不准确 / 需要补充典型表现 / 不建议分割"></textarea>
+      </label>
+    </article>
+  `;
+}
+
+function renderDoctorStageCards(stages) {
+  if (!stages.length) {
+    return '<div class="trace-empty">暂无分期规则</div>';
+  }
+  return `
+    <div class="doctor-stage-list">
+      ${stages.map((stage) => `
+        <article class="doctor-stage-card">
+          <strong>${escapeHtml(stage.stage || "分期")}</strong>
+          <p>${escapeHtml(stage.description || "-")}</p>
+          ${renderList(stage.features || [])}
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderDoctorSafetyNotes(notes) {
+  if (!notes.length) {
+    return '<div class="trace-empty">暂无证据不足规则</div>';
+  }
+  return `
+    <div class="doctor-safety-list">
+      ${notes.map((note) => `
+        <article class="doctor-safety-card">
+          <strong>${escapeHtml(note.status || "提示")}</strong>
+          <p>${escapeHtml(note.reason || "-")}</p>
+          ${renderMetricGrid({condition: note.condition, modality: note.modality, region: note.region})}
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function buildSkillDraftPayload() {
+  const comments = Array.from(elements.skillDetailView.querySelectorAll(".skillFindingComment"))
+    .map((input) => ({
+      target: input.dataset.target,
+      display_name: input.dataset.displayName,
+      doctor_comment: input.value.trim(),
+    }))
+    .filter((item) => item.doctor_comment);
+  return {
+    reviewer_name: "doctor_reviewer",
+    sections: {
+      clinical_profile: {
+        common_symptoms: splitListByLine(document.getElementById("skillCommonSymptoms")?.value || ""),
+        risk_factors: splitListByLine(document.getElementById("skillRiskFactors")?.value || ""),
+      },
+      imaging_requirements: splitListByLine(document.getElementById("skillImageRequirements")?.value || ""),
+      visual_findings_review: comments,
+      review_notes: document.getElementById("skillReviewNotes")?.value.trim() || "",
+    },
+  };
+}
+
+function splitListByLine(value) {
+  return value
+    .split(/[\n，,;；]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function renderGuidelineEvidence(payload) {
@@ -2425,6 +2668,14 @@ elements.realVlmMedSAM2Button.addEventListener("click", runRealVlmMedSAM2Sample)
 elements.evidenceGatewaySnapshotButton.addEventListener("click", runEvidenceGatewaySnapshot);
 elements.xrayInsufficientButton.addEventListener("click", runXrayInsufficientSample);
 elements.fhnNoMaskButton.addEventListener("click", runFhnNoMaskSample);
+elements.refreshSkillsButton.addEventListener("click", loadSkillList);
+elements.saveSkillDraftButton.addEventListener("click", async () => {
+  try {
+    await saveSkillReviewDraft();
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
 elements.fileInput.addEventListener("change", async () => {
   try {
     await uploadFile(elements.fileInput.files[0]);
@@ -2523,3 +2774,4 @@ elements.resetButton.addEventListener("click", () => {
 });
 
 checkHealth();
+loadSkillList();

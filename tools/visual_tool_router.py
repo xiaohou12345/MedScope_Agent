@@ -46,6 +46,7 @@ class VisualToolRegistry:
                     modality=modality,
                     task_name=task.task_name,
                     target=task.target,
+                    execution_mode=task.execution_mode,
                 )
                 for modality in available_modalities
             ):
@@ -76,7 +77,7 @@ class VisualToolRouter:
         ]
         measurements = list(visual_protocol.get("measurements") or [])
         plan = []
-        for raw_task in visual_protocol.get("alignment_tasks") or []:
+        for raw_task in self._protocol_tasks(visual_protocol):
             task = VisualTask.from_protocol_task(
                 raw_task,
                 measurements=self._measurements_for_task(
@@ -90,6 +91,9 @@ class VisualToolRouter:
                     {
                         "task": task.to_dict(),
                         "status": "missing_input",
+                        "execution_mode": "insufficient_input"
+                        if task.execution_mode == "insufficient_input"
+                        else task.execution_mode,
                         "selected_tool": None,
                         "reason": self._requires_modality_reason(missing),
                         "diagnosis_usable_without_qc": False,
@@ -102,6 +106,7 @@ class VisualToolRouter:
                     {
                         "task": task.to_dict(),
                         "status": "no_capable_tool",
+                        "execution_mode": task.execution_mode,
                         "selected_tool": None,
                         "reason": "No registered visual tool can satisfy this task.",
                         "diagnosis_usable_without_qc": False,
@@ -112,12 +117,51 @@ class VisualToolRouter:
                 {
                     "task": task.to_dict(),
                     "status": "runnable",
+                    "execution_mode": task.execution_mode,
                     "selected_tool": tool.to_dict(),
-                    "reason": f"Selected {tool.tool_name} for {task.task_name}.",
+                    "reason": self._selected_tool_reason(task, tool),
                     "diagnosis_usable_without_qc": tool.role != "candidate_segmenter",
                 }
             )
         return plan
+
+    def _protocol_tasks(self, visual_protocol: dict[str, Any]) -> list[dict[str, Any]]:
+        tasks = [
+            dict(task)
+            for task in visual_protocol.get("alignment_tasks") or []
+            if isinstance(task, dict)
+        ]
+        tasks.extend(
+            self._task_from_finding_target(target)
+            for target in visual_protocol.get("finding_targets") or []
+            if isinstance(target, dict)
+        )
+        return tasks
+
+    def _task_from_finding_target(self, finding_target: dict[str, Any]) -> dict[str, Any]:
+        execution_mode = str(finding_target.get("execution_mode") or "vlm_plus_segmenter")
+        segmentation_mode = str(finding_target.get("segmentation_mode") or "")
+        if not segmentation_mode:
+            segmentation_mode = "none" if execution_mode in {"vlm_only", "measurement_only"} else "candidate_mask"
+        localization_mode = str(finding_target.get("localization_mode") or "")
+        if not localization_mode:
+            localization_mode = "measurement" if execution_mode == "measurement_only" else "bbox"
+        diagnosis_level = str(finding_target.get("diagnosis_usable_level") or "")
+        if not diagnosis_level:
+            diagnosis_level = (
+                "observation_only"
+                if execution_mode == "vlm_only"
+                else "measurement_support"
+                if execution_mode == "measurement_only"
+                else "candidate_support"
+            )
+        return {
+            **finding_target,
+            "execution_mode": execution_mode,
+            "segmentation_mode": segmentation_mode,
+            "localization_mode": localization_mode,
+            "diagnosis_usable_level": diagnosis_level,
+        }
 
     def _missing_modalities(
         self,
@@ -151,9 +195,46 @@ class VisualToolRouter:
         return mapping.get(measurement, measurement)
 
     def _normalize_modality(self, modality: str) -> str:
-        return str(modality).strip().upper()
+        normalized = str(modality).strip().upper().replace("_", " ").replace("-", "")
+        aliases = {
+            "XRAY": "XRAY",
+            "X RAY": "XRAY",
+            "X光": "XRAY",
+            "X 光": "XRAY",
+            "T1CE": "T1CE",
+            "T1 CE": "T1CE",
+        }
+        return aliases.get(normalized, normalized)
 
     def _requires_modality_reason(self, modalities: list[str]) -> str:
         if len(modalities) == 1:
             return f"Requires {modalities[0]} modality"
         return f"Requires {', '.join(modalities)} modalities"
+
+    def _selected_tool_reason(
+        self,
+        task: VisualTask,
+        tool: VisualToolCapability,
+    ) -> str:
+        mode_reasons = {
+            "vlm_only": (
+                f"Selected {tool.tool_name} for VLM observation; no lesion mask will be treated "
+                "as measurement-grade evidence."
+            ),
+            "vlm_plus_segmenter": (
+                f"Selected {tool.tool_name}; VLM localizes a candidate box and segmentation "
+                "requires QC before diagnosis use."
+            ),
+            "specialist_segmenter": (
+                f"Selected {tool.tool_name} as a specialist segmenter for this modality/task."
+            ),
+            "measurement_only": (
+                f"Selected {tool.tool_name} for measurement/score extraction without forcing "
+                "a lesion mask."
+            ),
+            "insufficient_input": "Required input is missing; visual execution is blocked.",
+        }
+        return mode_reasons.get(
+            task.execution_mode,
+            f"Selected {tool.tool_name} for {task.task_name}.",
+        )

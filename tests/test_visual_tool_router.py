@@ -105,6 +105,85 @@ class VisualToolRouterTest(unittest.TestCase):
         self.assertIsNone(plan[0]["selected_tool"])
         self.assertFalse(plan[0]["diagnosis_usable_without_qc"])
 
+    def test_router_derives_execution_modes_from_skill_finding_targets(self):
+        registry = VisualToolRegistry.from_dict(
+            {
+                "tools": [
+                    {
+                        "tool_name": "medsam2",
+                        "supported_modalities": ["MRI", "CT", "X-ray", "PNG"],
+                        "supported_tasks": ["generic_lesion_candidate"],
+                        "supported_execution_modes": ["vlm_plus_segmenter"],
+                        "output": "binary_mask",
+                        "priority": 50,
+                        "role": "candidate_segmenter",
+                    },
+                    {
+                        "tool_name": "xray_fhn_detector",
+                        "supported_modalities": ["X-ray"],
+                        "supported_tasks": ["trabecular_blurring", "collapse"],
+                        "supported_execution_modes": ["vlm_only", "measurement_only"],
+                        "output": "boxes_or_findings",
+                        "priority": 80,
+                        "role": "rule_detector",
+                    },
+                ]
+            }
+        )
+        protocol = {
+            "disease_target": "femoral_head_necrosis",
+            "available_modalities": ["X-ray"],
+            "finding_targets": [
+                {
+                    "target": "sclerotic_band",
+                    "required_modalities": ["X-ray"],
+                    "execution_mode": "vlm_plus_segmenter",
+                    "localization_mode": "bbox",
+                    "segmentation_mode": "candidate_mask",
+                    "diagnosis_usable_level": "candidate_support",
+                },
+                {
+                    "target": "trabecular_blurring",
+                    "required_modalities": ["X-ray"],
+                    "execution_mode": "vlm_only",
+                    "localization_mode": "score",
+                    "segmentation_mode": "none",
+                    "diagnosis_usable_level": "observation_only",
+                },
+                {
+                    "target": "collapse",
+                    "required_modalities": ["X-ray"],
+                    "execution_mode": "measurement_only",
+                    "localization_mode": "measurement",
+                    "segmentation_mode": "none",
+                    "diagnosis_usable_level": "measurement_support",
+                },
+            ],
+            "alignment_tasks": [
+                {
+                    "task": "assess_early_osteonecrosis",
+                    "target": "early_osteonecrosis",
+                    "required_modalities": ["MRI T1", "MRI T2", "MRI STIR"],
+                    "execution_mode": "insufficient_input",
+                }
+            ],
+        }
+
+        plan = VisualToolRouter(registry=registry).plan_from_protocol(protocol)
+        by_target = {item["task"]["target"]: item for item in plan}
+
+        self.assertEqual(by_target["sclerotic_band"]["execution_mode"], "vlm_plus_segmenter")
+        self.assertEqual(by_target["sclerotic_band"]["selected_tool"]["tool_name"], "medsam2")
+        self.assertFalse(by_target["sclerotic_band"]["diagnosis_usable_without_qc"])
+        self.assertEqual(by_target["trabecular_blurring"]["execution_mode"], "vlm_only")
+        self.assertEqual(by_target["trabecular_blurring"]["selected_tool"]["tool_name"], "xray_fhn_detector")
+        self.assertTrue(by_target["trabecular_blurring"]["diagnosis_usable_without_qc"])
+        self.assertEqual(by_target["collapse"]["execution_mode"], "measurement_only")
+        self.assertEqual(by_target["collapse"]["selected_tool"]["tool_name"], "xray_fhn_detector")
+        self.assertEqual(by_target["early_osteonecrosis"]["execution_mode"], "insufficient_input")
+        self.assertEqual(by_target["early_osteonecrosis"]["status"], "missing_input")
+        self.assertIn("Requires MRI T1", by_target["early_osteonecrosis"]["reason"])
+
     def test_quality_gate_marks_empty_or_unstable_mask_as_not_diagnosis_usable(self):
         result = VisualQualityGate().evaluate(
             task_name="segment_whole_tumor",

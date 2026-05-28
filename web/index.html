@@ -106,9 +106,28 @@
           </form>
           <div id="qaLog" class="qa-log"></div>
         </section>
+
+        <section id="skillReviewPanel" class="panel skill-review-panel">
+          <div class="panel-title">
+            <h2>Skill 审核</h2>
+            <div class="sample-actions">
+              <button id="refreshSkillsButton" type="button">刷新 Skill</button>
+              <button id="saveSkillDraftButton" type="button">保存草稿</button>
+            </div>
+          </div>
+          <div class="skill-review-layout">
+            <aside class="skill-list-pane">
+              <div id="skillListView" class="trace-empty">等待加载 skill</div>
+            </aside>
+            <section class="skill-detail-pane">
+              <div id="skillReviewStatus" class="skill-review-status">医生审核模式：草稿只保存到 output/fake，不直接覆盖正式 skill。</div>
+              <div id="skillDetailView" class="trace-empty">请选择一个 Skill 查看</div>
+            </section>
+          </div>
+        </section>
       </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=skill-review-20260528"></script>
   </body>
 </html>

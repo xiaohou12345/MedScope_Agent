@@ -1019,3 +1019,144 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.skill-review-panel {
+  min-height: 420px;
+}
+
+.skill-review-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.36fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.skill-list-pane,
+.skill-detail-pane {
+  min-width: 0;
+}
+
+.skill-review-status {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f7fbfc;
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.doctor-skill-list,
+.doctor-skill-workspace,
+.doctor-finding-list,
+.doctor-stage-list,
+.doctor-safety-list {
+  display: grid;
+  gap: 10px;
+}
+
+.doctor-skill-item {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 10px;
+  text-align: left;
+  white-space: normal;
+}
+
+.doctor-skill-item:hover,
+.doctor-skill-item.selected {
+  border-color: var(--accent);
+  background: #eef6f8;
+}
+
+.doctor-skill-item strong {
+  font-size: 14px;
+}
+
+.doctor-skill-item span,
+.doctor-skill-item small,
+.doctor-skill-item em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.doctor-skill-item em {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.doctor-skill-section {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.doctor-skill-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.doctor-skill-section h3 {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.doctor-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.doctor-finding-card,
+.doctor-stage-card,
+.doctor-safety-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.doctor-finding-card > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.doctor-finding-card strong,
+.doctor-stage-card strong,
+.doctor-safety-card strong {
+  font-size: 13px;
+}
+
+.doctor-finding-card span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.doctor-finding-card p,
+.doctor-stage-card p,
+.doctor-safety-card p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+@media (max-width: 980px) {
+  .skill-review-layout,
+  .doctor-edit-grid {
+    grid-template-columns: 1fr;
+  }
+}

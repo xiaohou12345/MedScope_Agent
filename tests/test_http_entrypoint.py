@@ -10,6 +10,7 @@ from api.http_server import (
     dispatch_binary_request,
     dispatch_demo_request,
     dispatch_http_request,
+    dispatch_skill_request,
     dispatch_static_request,
     handle_file_upload,
     resolve_public_output_path,
@@ -249,6 +250,12 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn(b"showQaThinking", body)
         self.assertIn(b"showCaseThinking", body)
         self.assertIn(b"Thinking", body)
+        self.assertIn(b"fetchSkillList", body)
+        self.assertIn(b"renderSkillReviewWorkspace", body)
+        self.assertIn(b"saveSkillReviewDraft", body)
+        self.assertIn("Skill 审核".encode("utf-8"), body)
+        self.assertIn("医生审核".encode("utf-8"), body)
+        self.assertIn("保存草稿".encode("utf-8"), body)
         self.assertNotIn(b"rawJson", body)
 
     def test_static_frontend_rejects_unknown_asset(self):
@@ -280,6 +287,163 @@ class HttpEntrypointTest(unittest.TestCase):
 
         self.assertEqual(status, 400)
         self.assertIn("empty", payload["error"])
+
+    def test_skill_list_returns_doctor_friendly_summaries(self):
+        with TemporaryDirectory() as tmpdir:
+            skills_dir = Path(tmpdir) / "skills"
+            skills_dir.mkdir()
+            (skills_dir / "fhn.yaml").write_text(
+                json.dumps(
+                    {
+                        "disease_name": "股骨头坏死",
+                        "skill_id": "fhn_v0.1",
+                        "skill_type": "guideline_based",
+                        "evidence_level": "high",
+                        "source": "临床指南",
+                        "clinical_features": {"common_symptoms": ["髋痛"]},
+                        "required_image_views": ["双髋 X 光", "MRI"],
+                        "visual_protocol": {
+                            "finding_targets": [
+                                {"target": "sclerotic_band", "display_name": "硬化带"},
+                                {"target": "collapse", "display_name": "股骨头塌陷"},
+                            ]
+                        },
+                        "source_documents": [{"title": "ONFH guideline", "url": "https://example.test"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            status, payload = dispatch_skill_request(
+                method="GET",
+                path="/v1/skills",
+                skills_dir=skills_dir,
+                output_root=Path(tmpdir) / "output",
+            )
+
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["count"], 1)
+            summary = payload["skills"][0]
+            self.assertEqual(summary["skill_key"], "fhn")
+            self.assertEqual(summary["disease_name"], "股骨头坏死")
+            self.assertEqual(summary["doctor_summary"]["symptom_count"], 1)
+            self.assertEqual(summary["doctor_summary"]["image_requirement_count"], 2)
+            self.assertEqual(summary["doctor_summary"]["visual_finding_count"], 2)
+            self.assertEqual(summary["review_status"], "no_draft")
+
+    def test_skill_detail_translates_skill_to_doctor_review_sections(self):
+        with TemporaryDirectory() as tmpdir:
+            skills_dir = Path(tmpdir) / "skills"
+            skills_dir.mkdir()
+            (skills_dir / "fhn.yaml").write_text(
+                json.dumps(
+                    {
+                        "disease_name": "股骨头坏死",
+                        "skill_id": "fhn_v0.1",
+                        "skill_type": "guideline_based",
+                        "evidence_level": "high",
+                        "source": "临床指南",
+                        "clinical_features": {
+                            "common_symptoms": ["髋痛", "活动受限"],
+                            "risk_factors": ["激素使用史"],
+                        },
+                        "required_image_views": ["双髋正位 X 光", "MRI T1/T2/STIR"],
+                        "staging_rules": {
+                            "ARCO_II": {
+                                "description": "X 光硬化或囊变，无塌陷",
+                                "xray_features": ["硬化影", "囊性改变"],
+                            }
+                        },
+                        "visual_protocol": {
+                            "finding_targets": [
+                                {
+                                    "target": "sclerotic_band",
+                                    "display_name": "硬化带",
+                                    "description": "股骨头内带状密度增高",
+                                    "execution_mode": "vlm_plus_segmenter",
+                                    "required_modalities": ["X-ray"],
+                                }
+                            ],
+                            "insufficiency_rules": [
+                                {"reason": "X 光不能排除早期病变"}
+                            ],
+                            "required_next_images": [
+                                {"modality": "MRI", "region": "双髋", "reason": "评估早期坏死"}
+                            ],
+                        },
+                        "source_documents": [{"title": "ONFH guideline", "url": "https://example.test"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            status, payload = dispatch_skill_request(
+                method="GET",
+                path="/v1/skills/fhn",
+                skills_dir=skills_dir,
+                output_root=Path(tmpdir) / "output",
+            )
+
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["skill_key"], "fhn")
+            self.assertEqual(payload["doctor_view"]["identity"]["disease_name"], "股骨头坏死")
+            self.assertEqual(payload["doctor_view"]["clinical_profile"]["common_symptoms"], ["髋痛", "活动受限"])
+            self.assertEqual(payload["doctor_view"]["imaging_requirements"][0]["label"], "双髋正位 X 光")
+            self.assertEqual(payload["doctor_view"]["visual_findings"][0]["display_name"], "硬化带")
+            self.assertEqual(payload["doctor_view"]["visual_findings"][0]["doctor_execution_label"], "先定位候选区域，再生成候选分割")
+            self.assertEqual(payload["doctor_view"]["staging_rules"][0]["stage"], "ARCO_II")
+            self.assertEqual(payload["doctor_view"]["safety_notes"][0]["reason"], "X 光不能排除早期病变")
+            self.assertEqual(payload["doctor_view"]["source_documents"][0]["title"], "ONFH guideline")
+            self.assertFalse(payload["draft"]["exists"])
+
+    def test_skill_review_draft_is_saved_under_output_fake_without_overwriting_formal_skill(self):
+        with TemporaryDirectory() as tmpdir:
+            skills_dir = Path(tmpdir) / "skills"
+            output_root = Path(tmpdir) / "output"
+            skills_dir.mkdir()
+            skill_path = skills_dir / "fhn.yaml"
+            formal_skill = {
+                "disease_name": "股骨头坏死",
+                "skill_id": "fhn_v0.1",
+                "skill_type": "guideline_based",
+                "evidence_level": "high",
+                "source": "临床指南",
+                "clinical_features": {"common_symptoms": ["髋痛"]},
+                "visual_protocol": {"finding_targets": []},
+            }
+            skill_path.write_text(json.dumps(formal_skill, ensure_ascii=False), encoding="utf-8")
+
+            status, payload = dispatch_skill_request(
+                method="POST",
+                path="/v1/skills/fhn/review-draft",
+                body=json.dumps(
+                    {
+                        "reviewer_name": "张医生",
+                        "sections": {
+                            "clinical_profile": {
+                                "common_symptoms": ["髋痛", "跛行"]
+                            },
+                            "review_notes": "建议补充 MRI 阴性不能排除早期病变的说明",
+                        },
+                    },
+                    ensure_ascii=False,
+                ).encode("utf-8"),
+                skills_dir=skills_dir,
+                output_root=output_root,
+            )
+
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["status"], "draft_saved")
+            self.assertEqual(payload["formal_skill_updated"], False)
+            draft_path = Path(payload["draft_path"])
+            self.assertIn("output/fake/skill_review_drafts", payload["draft_path"])
+            self.assertTrue(draft_path.exists())
+            draft = json.loads(draft_path.read_text(encoding="utf-8"))
+            self.assertEqual(draft["reviewer_name"], "张医生")
+            self.assertEqual(draft["sections"]["clinical_profile"]["common_symptoms"], ["髋痛", "跛行"])
+            self.assertEqual(json.loads(skill_path.read_text(encoding="utf-8")), formal_skill)
 
     def test_public_output_route_serves_only_output_files(self):
         with TemporaryDirectory() as tmpdir:

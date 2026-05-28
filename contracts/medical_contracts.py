@@ -278,6 +278,35 @@ class VisualTask:
     output: str = "mask"
     measurements: list[str] = field(default_factory=list)
     reason: str = ""
+    execution_mode: str = "vlm_plus_segmenter"
+    localization_mode: str = "bbox"
+    segmentation_mode: str = "candidate_mask"
+    diagnosis_usable_level: str = "candidate_support"
+
+    ALLOWED_EXECUTION_MODES: ClassVar[set[str]] = {
+        "vlm_only",
+        "vlm_plus_segmenter",
+        "specialist_segmenter",
+        "measurement_only",
+        "insufficient_input",
+    }
+    ALLOWED_LOCALIZATION_MODES: ClassVar[set[str]] = {
+        "bbox",
+        "region",
+        "score",
+        "measurement",
+    }
+    ALLOWED_SEGMENTATION_MODES: ClassVar[set[str]] = {
+        "none",
+        "candidate_mask",
+        "anatomical_mask",
+        "specialist_mask",
+    }
+    ALLOWED_DIAGNOSIS_USABLE_LEVELS: ClassVar[set[str]] = {
+        "observation_only",
+        "candidate_support",
+        "measurement_support",
+    }
 
     def __post_init__(self) -> None:
         if not self.task_name:
@@ -286,6 +315,16 @@ class VisualTask:
             raise ValueError("visual task target is required")
         if not self.required_modalities:
             raise ValueError("visual task required_modalities is required")
+        if self.execution_mode not in self.ALLOWED_EXECUTION_MODES:
+            raise ValueError(f"unsupported visual execution_mode: {self.execution_mode}")
+        if self.localization_mode not in self.ALLOWED_LOCALIZATION_MODES:
+            raise ValueError(f"unsupported visual localization_mode: {self.localization_mode}")
+        if self.segmentation_mode not in self.ALLOWED_SEGMENTATION_MODES:
+            raise ValueError(f"unsupported visual segmentation_mode: {self.segmentation_mode}")
+        if self.diagnosis_usable_level not in self.ALLOWED_DIAGNOSIS_USABLE_LEVELS:
+            raise ValueError(
+                f"unsupported visual diagnosis_usable_level: {self.diagnosis_usable_level}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -295,6 +334,10 @@ class VisualTask:
             "output": self.output,
             "measurements": list(self.measurements),
             "reason": self.reason,
+            "execution_mode": self.execution_mode,
+            "localization_mode": self.localization_mode,
+            "segmentation_mode": self.segmentation_mode,
+            "diagnosis_usable_level": self.diagnosis_usable_level,
         }
 
     @classmethod
@@ -303,17 +346,39 @@ class VisualTask:
         payload: dict[str, Any],
         measurements: list[str] | None = None,
     ) -> "VisualTask":
-        task_name = str(payload.get("task") or payload.get("task_name") or "")
+        target = str(payload.get("target") or "")
+        execution_mode = str(payload.get("execution_mode") or "vlm_plus_segmenter")
+        task_name = str(
+            payload.get("task")
+            or payload.get("task_name")
+            or cls._task_name_from_target(target, execution_mode)
+        )
         return cls(
             task_name=task_name,
-            target=str(payload.get("target") or cls._target_from_task_name(task_name)),
+            target=target or cls._target_from_task_name(task_name),
             required_modalities=[
                 str(modality) for modality in payload.get("required_modalities") or []
             ],
             output=str(payload.get("output") or "mask"),
             measurements=list(measurements or payload.get("measurements") or []),
             reason=str(payload.get("reason") or ""),
+            execution_mode=execution_mode,
+            localization_mode=str(payload.get("localization_mode") or "bbox"),
+            segmentation_mode=str(payload.get("segmentation_mode") or "candidate_mask"),
+            diagnosis_usable_level=str(
+                payload.get("diagnosis_usable_level") or "candidate_support"
+            ),
         )
+
+    @staticmethod
+    def _task_name_from_target(target: str, execution_mode: str) -> str:
+        if not target:
+            return ""
+        if execution_mode in {"vlm_plus_segmenter", "specialist_segmenter"}:
+            return f"segment_{target}"
+        if execution_mode == "measurement_only":
+            return f"measure_{target}"
+        return f"assess_{target}"
 
     @staticmethod
     def _target_from_task_name(task_name: str) -> str:
@@ -335,6 +400,7 @@ class VisualToolCapability:
     output: str
     priority: int = 0
     role: str = "specialist_segmenter"
+    supported_execution_modes: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.tool_name:
@@ -344,14 +410,26 @@ class VisualToolCapability:
         if not self.supported_tasks:
             raise ValueError("visual tool supported_tasks is required")
 
-    def supports(self, modality: str, task_name: str, target: str | None = None) -> bool:
+    def supports(
+        self,
+        modality: str,
+        task_name: str,
+        target: str | None = None,
+        execution_mode: str | None = None,
+    ) -> bool:
         modality_ok = self._supports_modality(modality)
         task_ok = (
             task_name in self.supported_tasks
             or (target is not None and target in self.supported_tasks)
             or "generic_lesion_candidate" in self.supported_tasks
         )
-        return modality_ok and task_ok
+        mode_ok = self._supports_execution_mode(execution_mode)
+        return modality_ok and task_ok and mode_ok
+
+    def _supports_execution_mode(self, execution_mode: str | None) -> bool:
+        if not execution_mode or not self.supported_execution_modes:
+            return True
+        return execution_mode in self.supported_execution_modes
 
     def _supports_modality(self, modality: str) -> bool:
         normalized = self._normalize_modality(modality)
@@ -372,7 +450,16 @@ class VisualToolCapability:
 
     @staticmethod
     def _normalize_modality(modality: str) -> str:
-        return str(modality).strip().upper().replace("T1CE", "T1CE")
+        normalized = str(modality).strip().upper().replace("_", " ").replace("-", "")
+        aliases = {
+            "XRAY": "XRAY",
+            "X RAY": "XRAY",
+            "X光": "XRAY",
+            "X 光": "XRAY",
+            "T1CE": "T1CE",
+            "T1 CE": "T1CE",
+        }
+        return aliases.get(normalized, normalized)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -382,6 +469,7 @@ class VisualToolCapability:
             "output": self.output,
             "priority": self.priority,
             "role": self.role,
+            "supported_execution_modes": list(self.supported_execution_modes),
         }
 
     @classmethod
@@ -393,6 +481,7 @@ class VisualToolCapability:
             output=payload.get("output", "mask"),
             priority=int(payload.get("priority", 0)),
             role=payload.get("role", "specialist_segmenter"),
+            supported_execution_modes=list(payload.get("supported_execution_modes") or []),
         )
 
 

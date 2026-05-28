@@ -139,6 +139,10 @@
         "description": "股骨头内带状或横颈线样密度增高候选区域。",
         "required_modalities": ["X-ray"],
         "output": "mask_or_region",
+        "execution_mode": "vlm_plus_segmenter",
+        "localization_mode": "bbox",
+        "segmentation_mode": "candidate_mask",
+        "diagnosis_usable_level": "candidate_support",
         "measurements": ["area_ratio_in_femoral_head", "relative_density_score", "elongation"],
         "diagnostic_role": "ARCO_II_supportive_xray_feature"
       },
@@ -148,6 +152,10 @@
         "description": "股骨头内局灶透亮、小圆形或不规则囊样候选区域。",
         "required_modalities": ["X-ray"],
         "output": "mask_or_region",
+        "execution_mode": "vlm_plus_segmenter",
+        "localization_mode": "bbox",
+        "segmentation_mode": "candidate_mask",
+        "diagnosis_usable_level": "candidate_support",
         "measurements": ["area_ratio_in_femoral_head", "relative_lucency_score", "roundness"],
         "diagnostic_role": "ARCO_II_supportive_xray_feature"
       },
@@ -157,6 +165,10 @@
         "description": "股骨头内骨小梁纹理不清或局部骨密度减低候选区域。",
         "required_modalities": ["X-ray"],
         "output": "region_or_score",
+        "execution_mode": "vlm_only",
+        "localization_mode": "score",
+        "segmentation_mode": "none",
+        "diagnosis_usable_level": "observation_only",
         "measurements": ["texture_blur_score", "local_contrast", "relative_lucency_score"],
         "diagnostic_role": "ARCO_II_supportive_xray_feature"
       },
@@ -166,6 +178,10 @@
         "description": "股骨头轮廓变扁、塌陷或新月征候选征象。",
         "required_modalities": ["X-ray", "MRI"],
         "output": "measurement",
+        "execution_mode": "measurement_only",
+        "localization_mode": "measurement",
+        "segmentation_mode": "none",
+        "diagnosis_usable_level": "measurement_support",
         "measurements": ["collapse_ratio", "head_contour_irregularity_score"],
         "diagnostic_role": "ARCO_III_or_later_boundary_feature"
       }

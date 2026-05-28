@@ -4,22 +4,25 @@
       "tool_name": "brats_model",
       "supported_modalities": ["MRI FLAIR", "FLAIR", "MRI T1", "MRI T1ce", "MRI T2"],
       "supported_tasks": ["segment_whole_tumor", "whole_tumor", "tumor_core", "enhancing_tumor"],
+      "supported_execution_modes": ["specialist_segmenter", "vlm_plus_segmenter"],
       "output": "multi_label_mask",
       "priority": 100,
       "role": "specialist_segmenter"
     },
     {
       "tool_name": "medsam2",
-      "supported_modalities": ["MRI", "CT", "Xray", "PNG"],
+      "supported_modalities": ["MRI", "CT", "X-ray", "Xray", "PNG"],
       "supported_tasks": ["generic_lesion_candidate"],
+      "supported_execution_modes": ["vlm_plus_segmenter"],
       "output": "binary_mask",
       "priority": 50,
       "role": "candidate_segmenter"
     },
     {
       "tool_name": "xray_fhn_detector",
-      "supported_modalities": ["Xray"],
-      "supported_tasks": ["assess_late_xray_findings"],
+      "supported_modalities": ["X-ray", "Xray"],
+      "supported_tasks": ["assess_late_xray_findings", "trabecular_blurring", "collapse"],
+      "supported_execution_modes": ["vlm_only", "measurement_only"],
       "output": "boxes_or_findings",
       "priority": 80,
       "role": "rule_detector"

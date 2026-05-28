@@ -36,6 +36,17 @@ def run_no_mask_skill_visual_pipeline_demo(
     )
     visual_protocol = skill.get("visual_protocol") or {}
     anatomy_reference = dict(visual_protocol.get("anatomy_reference") or {})
+    finding_targets = [
+        dict(target)
+        for target in visual_protocol.get("finding_targets") or []
+        if isinstance(target, dict)
+    ]
+    segmentable_targets = [
+        target for target in finding_targets if _target_runs_segmenter(target)
+    ]
+    observation_only_targets = [
+        target for target in finding_targets if not _target_runs_segmenter(target)
+    ]
     anatomy_mask_path: str | None = None
     anatomy_summary_path: str | None = None
     anatomy_candidates: list[dict[str, Any]] = []
@@ -76,43 +87,109 @@ def run_no_mask_skill_visual_pipeline_demo(
             default_anatomy_name=str(anatomy_reference.get("target") or "anatomy"),
         )
 
-    finding_prompt = run_no_mask_vision_prompt_demo(
-        image_path=image,
-        output_dir=output / "finding_prompt",
-        patient_message=patient_message,
-        disease_skill=skill,
-        client=client,
-        source_metadata={
-            "source": "skill.visual_protocol.finding_targets",
-            "disease_target": visual_protocol.get("disease_target"),
-        },
+    finding_prompt: dict[str, Any] | None = None
+    finding_summary: dict[str, Any] = {
+        "status": "not_run_no_segmentable_findings",
+        "summary_path": str(output / "finding_segmentation" / "summary.json"),
+        "findings": [],
+        "segmentation_results": [],
+        "quality_warnings": [],
+    }
+    if segmentable_targets or not finding_targets:
+        segment_skill = _skill_with_finding_targets(
+            skill=skill,
+            finding_targets=segmentable_targets or finding_targets,
+        )
+        finding_prompt = run_no_mask_vision_prompt_demo(
+            image_path=image,
+            output_dir=output / "finding_prompt",
+            patient_message=patient_message,
+            disease_skill=segment_skill,
+            client=client,
+            source_metadata={
+                "source": "skill.visual_protocol.finding_targets.segmentable",
+                "disease_target": visual_protocol.get("disease_target"),
+            },
+        )
+        _decorate_prompt_result_with_target_specs(
+            prompt_result_path=Path(finding_prompt["prompt_result_path"]),
+            finding_targets=segmentable_targets or finding_targets,
+        )
+        finding_summary = run_no_mask_medsam2_segmentation_demo(
+            prompt_result_path=Path(finding_prompt["prompt_result_path"]),
+            output_dir=output / "finding_segmentation",
+            segmentation_tool=segmentation_tool,
+            anatomy_mask_path=anatomy_mask_path,
+            anatomy_name=str(anatomy_reference.get("target") or "anatomy"),
+            anatomy_candidates=anatomy_candidates,
+        )
+
+    observation_prompt: dict[str, Any] | None = None
+    observation_findings: list[dict[str, Any]] = []
+    if observation_only_targets:
+        observation_prompt = run_no_mask_vision_prompt_demo(
+            image_path=image,
+            output_dir=output / "observation_prompt",
+            patient_message=patient_message,
+            disease_skill=_skill_with_finding_targets(
+                skill=skill,
+                finding_targets=observation_only_targets,
+            ),
+            client=client,
+            source_metadata={
+                "source": "skill.visual_protocol.finding_targets.observation_only",
+                "disease_target": visual_protocol.get("disease_target"),
+            },
+        )
+        _decorate_prompt_result_with_target_specs(
+            prompt_result_path=Path(observation_prompt["prompt_result_path"]),
+            finding_targets=observation_only_targets,
+        )
+        observation_prompt_result = _read_json(Path(observation_prompt["prompt_result_path"]))
+        observation_findings = _observation_findings_from_prompt_result(
+            prompt_result=observation_prompt_result,
+            finding_targets=observation_only_targets,
+        )
+
+    status = (
+        "ok"
+        if finding_summary.get("status") == "ok" or observation_findings
+        else "finding_segmentation_not_ready"
     )
-    finding_summary = run_no_mask_medsam2_segmentation_demo(
-        prompt_result_path=Path(finding_prompt["prompt_result_path"]),
-        output_dir=output / "finding_segmentation",
-        segmentation_tool=segmentation_tool,
-        anatomy_mask_path=anatomy_mask_path,
-        anatomy_name=str(anatomy_reference.get("target") or "anatomy"),
-        anatomy_candidates=anatomy_candidates,
-    )
-    status = "ok" if finding_summary.get("status") == "ok" else "finding_segmentation_not_ready"
     visual_analysis_result: dict[str, Any] | None = None
     visual_evidence_bundle: dict[str, Any] | None = None
     if status == "ok":
-        finding_prompt_result = _read_json(Path(finding_prompt["prompt_result_path"]))
-        visual_analysis_result = build_candidate_visual_analysis_result(
-            finding_summary,
-            modality=str(finding_prompt_result.get("modality") or "unknown"),
-            body_part=str(finding_prompt_result.get("body_part") or "unknown"),
-            disease_target=str(
-                visual_protocol.get("disease_target")
-                or disease_key
-                or "candidate_visual_evidence"
-            ),
-        )
+        context_prompt = finding_prompt or observation_prompt
+        finding_prompt_result = _read_json(Path(context_prompt["prompt_result_path"]))
+        if finding_summary.get("status") == "ok":
+            visual_analysis_result = build_candidate_visual_analysis_result(
+                finding_summary,
+                modality=str(finding_prompt_result.get("modality") or "unknown"),
+                body_part=str(finding_prompt_result.get("body_part") or "unknown"),
+                disease_target=str(
+                    visual_protocol.get("disease_target")
+                    or disease_key
+                    or "candidate_visual_evidence"
+                ),
+            )
+            _append_observation_findings(
+                visual_analysis_result=visual_analysis_result,
+                observation_findings=observation_findings,
+            )
+        else:
+            visual_analysis_result = _observation_only_visual_analysis_result(
+                image_path=image,
+                prompt_result=finding_prompt_result,
+                disease_target=str(
+                    visual_protocol.get("disease_target")
+                    or disease_key
+                    or "candidate_visual_evidence"
+                ),
+                findings=observation_findings,
+            )
         visual_evidence_bundle = _build_visual_evidence_bundle(
             visual_analysis_result=visual_analysis_result,
-            finding_prompt_summary=finding_prompt,
+            finding_prompt_summary=context_prompt,
             finding_segmentation_summary=finding_summary,
         )
     return _write_json(
@@ -131,8 +208,18 @@ def run_no_mask_skill_visual_pipeline_demo(
             }
             if anatomy_reference
             else None,
-            "finding_prompt_summary_path": str(finding_prompt["summary_path"]),
-            "finding_prompt_result_path": str(finding_prompt["prompt_result_path"]),
+            "finding_prompt_summary_path": str(finding_prompt["summary_path"])
+            if finding_prompt
+            else None,
+            "finding_prompt_result_path": str(finding_prompt["prompt_result_path"])
+            if finding_prompt
+            else None,
+            "observation_prompt_summary_path": str(observation_prompt["summary_path"])
+            if observation_prompt
+            else None,
+            "observation_prompt_result_path": str(observation_prompt["prompt_result_path"])
+            if observation_prompt
+            else None,
             "finding_segmentation_summary_path": str(finding_summary.get("summary_path")),
             "finding_segmentation_status": finding_summary.get("status"),
             "visual_analysis_result": visual_analysis_result,
@@ -167,6 +254,270 @@ def _anatomy_prompt_message(
         f"请先定位 {display_name} ({target}) 作为解剖参照区域。"
         f"{description} 只输出该解剖区域的候选 bbox，不做诊断。"
     )
+
+
+def _target_runs_segmenter(finding_target: dict[str, Any]) -> bool:
+    execution_mode = str(finding_target.get("execution_mode") or "vlm_plus_segmenter")
+    return execution_mode in {"vlm_plus_segmenter", "specialist_segmenter"}
+
+
+def _skill_with_finding_targets(
+    *,
+    skill: dict[str, Any],
+    finding_targets: list[dict[str, Any]],
+) -> dict[str, Any]:
+    visual_protocol = dict(skill.get("visual_protocol") or {})
+    visual_protocol["finding_targets"] = [dict(target) for target in finding_targets]
+    return {
+        **skill,
+        "visual_protocol": visual_protocol,
+    }
+
+
+def _decorate_prompt_result_with_target_specs(
+    *,
+    prompt_result_path: Path,
+    finding_targets: list[dict[str, Any]],
+) -> None:
+    prompt_result = _read_json(prompt_result_path)
+    target_specs = {
+        str(target.get("target")): _target_execution_spec(target)
+        for target in finding_targets
+        if target.get("target")
+    }
+    decorated_regions = []
+    for region in prompt_result.get("suspected_regions") or []:
+        if not isinstance(region, dict):
+            continue
+        target = str(region.get("target") or "")
+        decorated = dict(region)
+        decorated.update(target_specs.get(target, {}))
+        decorated_regions.append(decorated)
+    prompt_result["suspected_regions"] = decorated_regions
+    prompt_result_path.write_text(
+        json.dumps(prompt_result, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _target_execution_spec(finding_target: dict[str, Any]) -> dict[str, Any]:
+    execution_mode = str(finding_target.get("execution_mode") or "vlm_plus_segmenter")
+    segmentation_mode = str(finding_target.get("segmentation_mode") or "")
+    if not segmentation_mode:
+        segmentation_mode = "none" if execution_mode in {"vlm_only", "measurement_only"} else "candidate_mask"
+    diagnosis_usable_level = str(finding_target.get("diagnosis_usable_level") or "")
+    if not diagnosis_usable_level:
+        diagnosis_usable_level = (
+            "observation_only"
+            if execution_mode == "vlm_only"
+            else "measurement_support"
+            if execution_mode == "measurement_only"
+            else "candidate_support"
+        )
+    return {
+        "display_name": finding_target.get("display_name") or finding_target.get("target"),
+        "execution_mode": execution_mode,
+        "localization_mode": str(finding_target.get("localization_mode") or "bbox"),
+        "segmentation_mode": segmentation_mode,
+        "diagnosis_usable_level": diagnosis_usable_level,
+        "measurements_requested": list(finding_target.get("measurements") or []),
+    }
+
+
+def _observation_findings_from_prompt_result(
+    *,
+    prompt_result: dict[str, Any],
+    finding_targets: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    target_specs = {
+        str(target.get("target")): _target_execution_spec(target)
+        for target in finding_targets
+        if target.get("target")
+    }
+    findings = []
+    for index, region in enumerate(prompt_result.get("suspected_regions") or [], start=1):
+        if not isinstance(region, dict):
+            continue
+        target = str(region.get("target") or f"observation_{index}")
+        spec = {**target_specs.get(target, {}), **dict(region)}
+        findings.append(
+            {
+                "finding_id": f"finding_{index}_{target}",
+                "target": target,
+                "display_name": str(spec.get("display_name") or target),
+                "status": "candidate_observed",
+                "regions": [
+                    {
+                        "region_id": f"obs{index}",
+                        "mask_path": "not_generated",
+                        "overlay_path": "not_generated",
+                        "comparison_path": "not_generated",
+                        "bbox": list(region.get("bbox") or []),
+                        "centroid": _bbox_centroid(region.get("bbox")),
+                        "area_px": 0,
+                        "area_ratio_in_image": None,
+                        "area_ratio_in_anatomy": None,
+                        "laterality": "unknown",
+                        "anatomical_zone": "not_segmented",
+                        "measurements": {
+                            "bbox": list(region.get("bbox") or []),
+                            "confidence": float(region.get("confidence") or 0.0),
+                        },
+                    }
+                ],
+                "independent_evidence": True,
+                "overlap_qc": {"status": "not_assessed_no_mask"},
+                "confidence": float(region.get("confidence") or 0.0),
+                "evidence_basis": str(region.get("rationale") or ""),
+                "measurements": {
+                    "area_px": 0,
+                    "area_ratio_in_image": None,
+                    "bbox": list(region.get("bbox") or []),
+                    "centroid": _bbox_centroid(region.get("bbox")),
+                    "laterality": "unknown",
+                },
+                "execution_mode": str(spec.get("execution_mode") or "vlm_only"),
+                "localization_mode": str(spec.get("localization_mode") or "bbox"),
+                "segmentation_mode": str(spec.get("segmentation_mode") or "none"),
+                "diagnosis_usable_level": str(
+                    spec.get("diagnosis_usable_level") or "observation_only"
+                ),
+                "diagnosis_usable": False,
+                "segmentation_ref": {
+                    "status": "not_run",
+                    "reason": "execution_mode does not request a lesion mask",
+                    "selected_tool": {
+                        "tool_name": "vision_model",
+                        "role": "observation_localizer",
+                    },
+                    "quality": {
+                        "score": float(region.get("confidence") or 0.0),
+                        "level": "observation_only",
+                        "warnings": ["VLM-only observation is not measurement-grade evidence"],
+                    },
+                },
+            }
+        )
+    return findings
+
+
+def _bbox_centroid(bbox: Any) -> list[float] | None:
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return None
+    try:
+        x1, y1, x2, y2 = [float(value) for value in bbox[:4]]
+    except (TypeError, ValueError):
+        return None
+    return [round((x1 + x2) / 2, 3), round((y1 + y2) / 2, 3)]
+
+
+def _append_observation_findings(
+    *,
+    visual_analysis_result: dict[str, Any],
+    observation_findings: list[dict[str, Any]],
+) -> None:
+    if not observation_findings:
+        return
+    evidence = visual_analysis_result.setdefault("visual_evidence", {})
+    findings = [
+        dict(finding)
+        for finding in evidence.get("findings") or []
+        if isinstance(finding, dict)
+    ]
+    findings.extend(observation_findings)
+    evidence["findings"] = findings
+    evidence["structured_visual_facts"] = build_structured_visual_facts(findings)
+    evidence.setdefault("suspected_visual_findings", [])
+    evidence["suspected_visual_findings"].extend(
+        [
+            f"{finding['display_name']}：VLM-only 候选观察，未生成测量级 mask。"
+            for finding in observation_findings
+        ]
+    )
+    evidence.setdefault("visual_tool_plan", [])
+    evidence["visual_tool_plan"].append(
+        {
+            "step": "vlm_only_observation",
+            "tool_name": "vision_model",
+            "output": "bbox_text_observation",
+        }
+    )
+
+
+def _observation_only_visual_analysis_result(
+    *,
+    image_path: Path,
+    prompt_result: dict[str, Any],
+    disease_target: str,
+    findings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "image_path": str(image_path),
+        "modality": str(prompt_result.get("modality") or "unknown"),
+        "body_part": str(prompt_result.get("body_part") or "unknown"),
+        "requested_targets": [
+            str(finding.get("target"))
+            for finding in findings
+            if str(finding.get("target") or "").strip()
+        ],
+        "requested_features": ["vlm_observation", "bbox", "rationale"],
+        "image_outputs": {
+            "original_image_path": str(image_path),
+            "mask_path": "not_generated",
+            "overlay_path": "not_generated",
+            "comparison_path": "not_generated",
+        },
+        "visual_evidence": {
+            "collapse": False,
+            "sclerosis": "未评估",
+            "cystic_change": "未评估",
+            "joint_space_narrowing": False,
+            "lesion_mask": "not_generated",
+            "confidence": max(
+                [float(finding.get("confidence") or 0.0) for finding in findings] or [0.0]
+            ),
+            "texture_abnormality_score": 0.0,
+            "lesion_area_ratio": 0.0,
+            "collapse_ratio": 0.0,
+            "joint_space_width": "not_applicable",
+            "lesion_detected": False,
+            "lesion_location": "VLM-only candidate observation",
+            "segmentation_quality": "not_run_vlm_only",
+            "disease_target": disease_target,
+            "quality_warnings": [
+                {
+                    "code": "vlm_only_no_mask",
+                    "severity": "warning",
+                    "message": "VLM-only findings are observations and are not measurement-grade segmentation evidence.",
+                }
+            ],
+            "suspected_visual_findings": [
+                f"{finding['display_name']}：VLM-only 候选观察，未生成测量级 mask。"
+                for finding in findings
+            ],
+            "measurements": {},
+            "completeness": {
+                "clinical_visual_observation": {
+                    "status": "supported",
+                    "reason": "VLM produced bounded candidate observations.",
+                },
+                "measurement_grade_mask": {
+                    "status": "unassessed",
+                    "reason": "Current execution mode did not request segmentation.",
+                },
+            },
+            "findings": findings,
+            "structured_visual_facts": build_structured_visual_facts(findings),
+            "segmentation_results": [],
+            "visual_tool_plan": [
+                {
+                    "step": "vlm_only_observation",
+                    "tool_name": "vision_model",
+                    "output": "bbox_text_observation",
+                }
+            ],
+        },
+    }
 
 
 def _build_visual_evidence_bundle(
