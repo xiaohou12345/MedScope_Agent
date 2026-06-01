@@ -29,6 +29,7 @@ class ApiConnectivityChecker:
         return {
             "active_route": self.route_log.active_route,
             "model": self.route_log.model_for_active_route(),
+            "vision_model": self.route_log.vision_model_for_active_route(),
             "base_url": self.route_log.base_url_for_active_route(),
             "api_key_env": api_key_env,
             "api_key_present": api_key_present,

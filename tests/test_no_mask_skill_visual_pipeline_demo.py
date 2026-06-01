@@ -132,12 +132,22 @@ class SingleLeftFindingVisionClient:
             {
                 "modality": "xray",
                 "body_part": "hip",
+                "needs_next_imaging": True,
+                "required_next_images": [
+                    {
+                        "modality": "MRI",
+                        "region": "双髋",
+                        "reason": "X 光候选征象不能排除早期股骨头坏死。",
+                    }
+                ],
                 "suspected_regions": [
                     {
                         "target": "sclerotic_band",
                         "bbox": [1, 2, 8, 9],
+                        "polygon": [[1, 2], [8, 2], [8, 9], [1, 9]],
                         "confidence": 0.81,
                         "rationale": "image-left sclerosis candidate",
+                        "evidence_text": "图像左侧股骨头可疑硬化带。",
                     }
                 ],
             }
@@ -287,6 +297,11 @@ class OutsidePromptSegmentationTool:
             "mask_shape": {"width": image.size[0], "height": image.size[1], "depth": 1},
             "segmentation_source": "medsam2",
         }
+
+
+class FailingSegmentationTool:
+    def segment_with_model(self, image_path, prompt, mask_path, overlay_path):
+        raise RuntimeError("segmentation backend missing checkpoint")
 
 
 class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
@@ -511,6 +526,10 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             bundle = result["visual_evidence_bundle"]
             self.assertEqual(result["status"], "ok")
             self.assertEqual(bundle["present_findings"], [])
+            self.assertEqual(bundle["visual_output_mode"], "vlm_plus_segmenter")
+            self.assertEqual(bundle["segmentation_status"], "failed_qc")
+            self.assertEqual(bundle["fallback_mode"], "vlm_only")
+            self.assertFalse(bundle["segmentation_display_allowed"])
             self.assertEqual(
                 bundle["quality_warnings"][0]["code"],
                 "box_mask_misalignment",
@@ -519,6 +538,52 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             self.assertEqual(bundle["numeric_evidence"]["diagnosis_usable_finding_count"], 0)
             self.assertEqual(bundle["numeric_evidence"]["diagnosis_unusable_finding_count"], 1)
             self.assertEqual(bundle["numeric_evidence"]["independent_finding_count"], 0)
+
+    def test_pipeline_falls_back_to_vlm_only_when_segmenter_errors(self):
+        with TemporaryDirectory() as tmpdir:
+            workdir = Path(tmpdir)
+            image_path = workdir / "hip.png"
+            Image.new("RGB", (20, 10), "black").save(image_path)
+            skill = {
+                "disease_name": "股骨头坏死",
+                "visual_protocol": {
+                    "disease_target": "femoral_head_necrosis",
+                    "finding_targets": [
+                        {
+                            "target": "sclerotic_band",
+                            "display_name": "硬化带",
+                            "required_modalities": ["X-ray"],
+                            "execution_mode": "vlm_plus_segmenter",
+                            "segmentation_mode": "candidate_mask",
+                            "diagnosis_usable_level": "candidate_support",
+                        }
+                    ],
+                },
+            }
+
+            result = run_no_mask_skill_visual_pipeline_demo(
+                image_path=image_path,
+                output_dir=workdir / "out",
+                disease_skill=skill,
+                patient_message="右髋疼痛，上传髋关节X光",
+                client=SingleLeftFindingVisionClient(),
+                segmentation_tool=FailingSegmentationTool(),
+            )
+
+            bundle = result["visual_evidence_bundle"]
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(result["finding_segmentation_status"], "segmentation_error")
+            self.assertEqual(bundle["visual_output_mode"], "vlm_plus_segmenter")
+            self.assertEqual(bundle["segmentation_status"], "not_ready")
+            self.assertEqual(bundle["fallback_mode"], "vlm_only")
+            self.assertFalse(bundle["segmentation_display_allowed"])
+            self.assertEqual(bundle["present_findings"], [])
+            self.assertEqual(bundle["findings"][0]["target"], "sclerotic_band")
+            self.assertEqual(bundle["findings"][0]["polygon"], [[1, 2], [8, 2], [8, 9], [1, 9]])
+            self.assertEqual(bundle["findings"][0]["evidence_text"], "图像左侧股骨头可疑硬化带。")
+            self.assertTrue(bundle["needs_next_imaging"])
+            self.assertEqual(bundle["required_next_images"][0]["modality"], "MRI")
+            self.assertFalse(bundle["findings"][0]["diagnosis_usable"])
 
     def test_pipeline_keeps_vlm_only_findings_without_calling_segmentation(self):
         with TemporaryDirectory() as tmpdir:
@@ -563,12 +628,25 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             )
 
             self.assertEqual(result["status"], "ok")
+            self.assertEqual(len(client.calls), 1)
             self.assertEqual(len(segmentation_tool.calls), 1)
             self.assertEqual(
                 segmentation_tool.calls[0]["prompt"]["boxes"],
                 [[2, 2, 8, 8]],
             )
             bundle = result["visual_evidence_bundle"]
+            self.assertEqual(bundle["visual_output_mode"], "vlm_plus_segmenter")
+            self.assertEqual(bundle["segmentation_status"], "candidate_passed_qc")
+            self.assertIsNone(bundle["fallback_mode"])
+            self.assertTrue(bundle["segmentation_display_allowed"])
+            self.assertIn("vlm_annotation_path", bundle["image_outputs"])
+            target_overlays = bundle["image_outputs"]["target_overlay_paths"]
+            self.assertEqual(
+                [item["target"] for item in target_overlays],
+                ["sclerotic_band", "trabecular_blurring"],
+            )
+            for item in target_overlays:
+                self.assertTrue(Path(item["overlay_path"]).exists())
             by_target = {finding["target"]: finding for finding in bundle["findings"]}
             self.assertEqual(by_target["sclerotic_band"]["execution_mode"], "vlm_plus_segmenter")
             self.assertTrue(by_target["sclerotic_band"]["diagnosis_usable"])

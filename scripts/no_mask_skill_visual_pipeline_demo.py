@@ -71,21 +71,13 @@ def run_no_mask_skill_visual_pipeline_demo(
             output_dir=output / "anatomy_segmentation",
             segmentation_tool=segmentation_tool,
         )
-        if anatomy_summary.get("status") != "ok":
-            return _write_json(
-                output / "summary.json",
-                {
-                    "status": "anatomy_reference_not_ready",
-                    "anatomy_prompt_summary": anatomy_prompt,
-                    "anatomy_segmentation_summary": anatomy_summary,
-                },
+        anatomy_summary_path = str(anatomy_summary.get("summary_path") or "")
+        if anatomy_summary.get("status") == "ok":
+            anatomy_mask_path = str(anatomy_summary["mask_path"])
+            anatomy_candidates = _anatomy_candidates_from_summary(
+                anatomy_summary=anatomy_summary,
+                default_anatomy_name=str(anatomy_reference.get("target") or "anatomy"),
             )
-        anatomy_mask_path = str(anatomy_summary["mask_path"])
-        anatomy_summary_path = str(anatomy_summary["summary_path"])
-        anatomy_candidates = _anatomy_candidates_from_summary(
-            anatomy_summary=anatomy_summary,
-            default_anatomy_name=str(anatomy_reference.get("target") or "anatomy"),
-        )
 
     finding_prompt: dict[str, Any] | None = None
     finding_summary: dict[str, Any] = {
@@ -95,10 +87,17 @@ def run_no_mask_skill_visual_pipeline_demo(
         "segmentation_results": [],
         "quality_warnings": [],
     }
+    observation_prompt: dict[str, Any] | None = None
+    observation_findings: list[dict[str, Any]] = []
     if segmentable_targets or not finding_targets:
+        prompt_targets = (
+            finding_targets
+            if segmentable_targets and observation_only_targets
+            else segmentable_targets or finding_targets
+        )
         segment_skill = _skill_with_finding_targets(
             skill=skill,
-            finding_targets=segmentable_targets or finding_targets,
+            finding_targets=prompt_targets,
         )
         finding_prompt = run_no_mask_vision_prompt_demo(
             image_path=image,
@@ -113,20 +112,39 @@ def run_no_mask_skill_visual_pipeline_demo(
         )
         _decorate_prompt_result_with_target_specs(
             prompt_result_path=Path(finding_prompt["prompt_result_path"]),
-            finding_targets=segmentable_targets or finding_targets,
+            finding_targets=prompt_targets,
         )
+        segmentation_prompt_result_path = Path(finding_prompt["prompt_result_path"])
+        if segmentable_targets and observation_only_targets:
+            finding_prompt_result = _read_json(segmentation_prompt_result_path)
+            observation_findings.extend(
+                _observation_findings_from_prompt_result(
+                    prompt_result=finding_prompt_result,
+                    finding_targets=observation_only_targets,
+                )
+            )
+            segmentation_prompt_result_path = _write_prompt_result_for_targets(
+                source_path=segmentation_prompt_result_path,
+                output_path=output / "finding_prompt" / "vision_prompt_result_segmentable.json",
+                finding_targets=segmentable_targets,
+            )
         finding_summary = run_no_mask_medsam2_segmentation_demo(
-            prompt_result_path=Path(finding_prompt["prompt_result_path"]),
+            prompt_result_path=segmentation_prompt_result_path,
             output_dir=output / "finding_segmentation",
             segmentation_tool=segmentation_tool,
             anatomy_mask_path=anatomy_mask_path,
             anatomy_name=str(anatomy_reference.get("target") or "anatomy"),
             anatomy_candidates=anatomy_candidates,
         )
-
-    observation_prompt: dict[str, Any] | None = None
-    observation_findings: list[dict[str, Any]] = []
-    if observation_only_targets:
+        if finding_summary.get("status") != "ok":
+            finding_prompt_result = _read_json(Path(finding_prompt["prompt_result_path"]))
+            observation_findings.extend(
+                _observation_findings_from_prompt_result(
+                    prompt_result=finding_prompt_result,
+                    finding_targets=segmentable_targets or finding_targets,
+                )
+            )
+    if observation_only_targets and not observation_findings:
         observation_prompt = run_no_mask_vision_prompt_demo(
             image_path=image,
             output_dir=output / "observation_prompt",
@@ -160,6 +178,7 @@ def run_no_mask_skill_visual_pipeline_demo(
     visual_evidence_bundle: dict[str, Any] | None = None
     if status == "ok":
         context_prompt = finding_prompt or observation_prompt
+        context_prompt = _merge_prompt_summaries(context_prompt, observation_prompt)
         finding_prompt_result = _read_json(Path(context_prompt["prompt_result_path"]))
         if finding_summary.get("status") == "ok":
             visual_analysis_result = build_candidate_visual_analysis_result(
@@ -187,6 +206,11 @@ def run_no_mask_skill_visual_pipeline_demo(
                 ),
                 findings=observation_findings,
             )
+        _attach_visual_output_mode_metadata(
+            visual_analysis_result=visual_analysis_result,
+            finding_prompt_summary=context_prompt,
+            finding_segmentation_summary=finding_summary,
+        )
         visual_evidence_bundle = _build_visual_evidence_bundle(
             visual_analysis_result=visual_analysis_result,
             finding_prompt_summary=context_prompt,
@@ -226,6 +250,27 @@ def run_no_mask_skill_visual_pipeline_demo(
             "visual_evidence_bundle": visual_evidence_bundle,
         },
     )
+
+
+def _merge_prompt_summaries(
+    primary_prompt: dict[str, Any] | None,
+    secondary_prompt: dict[str, Any] | None,
+) -> dict[str, Any]:
+    merged = dict(primary_prompt or {})
+    overlays: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for prompt in (primary_prompt, secondary_prompt):
+        for item in (prompt or {}).get("target_overlay_paths") or []:
+            if not isinstance(item, dict):
+                continue
+            key = (str(item.get("target") or ""), str(item.get("overlay_path") or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            overlays.append(dict(item))
+    if overlays:
+        merged["target_overlay_paths"] = overlays
+    return merged
 
 
 def _anatomy_reference_skill(
@@ -300,6 +345,39 @@ def _decorate_prompt_result_with_target_specs(
     )
 
 
+def _write_prompt_result_for_targets(
+    *,
+    source_path: Path,
+    output_path: Path,
+    finding_targets: list[dict[str, Any]],
+) -> Path:
+    prompt_result = _read_json(source_path)
+    allowed_targets = {
+        str(target.get("target"))
+        for target in finding_targets
+        if target.get("target")
+    }
+    prompt_result["suspected_regions"] = [
+        dict(region)
+        for region in prompt_result.get("suspected_regions") or []
+        if isinstance(region, dict) and str(region.get("target") or "") in allowed_targets
+    ]
+    prompt_result["segmentation_prompt"] = {
+        **dict(prompt_result.get("segmentation_prompt") or {}),
+        "boxes": [
+            list(region["bbox"])
+            for region in prompt_result["suspected_regions"]
+            if isinstance(region.get("bbox"), list) and len(region["bbox"]) == 4
+        ],
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(prompt_result, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return output_path
+
+
 def _target_execution_spec(finding_target: dict[str, Any]) -> dict[str, Any]:
     execution_mode = str(finding_target.get("execution_mode") or "vlm_plus_segmenter")
     segmentation_mode = str(finding_target.get("segmentation_mode") or "")
@@ -339,13 +417,29 @@ def _observation_findings_from_prompt_result(
         if not isinstance(region, dict):
             continue
         target = str(region.get("target") or f"observation_{index}")
+        if target_specs and target not in target_specs:
+            continue
         spec = {**target_specs.get(target, {}), **dict(region)}
+        polygon = [
+            list(point)
+            for point in region.get("polygon") or []
+            if isinstance(point, (list, tuple)) and len(point) == 2
+        ]
+        evidence_text = str(region.get("evidence_text") or region.get("rationale") or "")
         findings.append(
             {
                 "finding_id": f"finding_{index}_{target}",
                 "target": target,
                 "display_name": str(spec.get("display_name") or target),
                 "status": "candidate_observed",
+                "polygon": polygon,
+                "evidence_text": evidence_text,
+                "needs_next_imaging": bool(prompt_result.get("needs_next_imaging")),
+                "required_next_images": [
+                    dict(item)
+                    for item in prompt_result.get("required_next_images") or []
+                    if isinstance(item, dict)
+                ],
                 "regions": [
                     {
                         "region_id": f"obs{index}",
@@ -353,6 +447,7 @@ def _observation_findings_from_prompt_result(
                         "overlay_path": "not_generated",
                         "comparison_path": "not_generated",
                         "bbox": list(region.get("bbox") or []),
+                        "polygon": polygon,
                         "centroid": _bbox_centroid(region.get("bbox")),
                         "area_px": 0,
                         "area_ratio_in_image": None,
@@ -361,6 +456,7 @@ def _observation_findings_from_prompt_result(
                         "anatomical_zone": "not_segmented",
                         "measurements": {
                             "bbox": list(region.get("bbox") or []),
+                            "polygon": polygon,
                             "confidence": float(region.get("confidence") or 0.0),
                         },
                     }
@@ -368,11 +464,12 @@ def _observation_findings_from_prompt_result(
                 "independent_evidence": True,
                 "overlap_qc": {"status": "not_assessed_no_mask"},
                 "confidence": float(region.get("confidence") or 0.0),
-                "evidence_basis": str(region.get("rationale") or ""),
+                "evidence_basis": evidence_text,
                 "measurements": {
                     "area_px": 0,
                     "area_ratio_in_image": None,
                     "bbox": list(region.get("bbox") or []),
+                    "polygon": polygon,
                     "centroid": _bbox_centroid(region.get("bbox")),
                     "laterality": "unknown",
                 },
@@ -430,10 +527,22 @@ def _append_observation_findings(
     evidence.setdefault("suspected_visual_findings", [])
     evidence["suspected_visual_findings"].extend(
         [
-            f"{finding['display_name']}：VLM-only 候选观察，未生成测量级 mask。"
+            (
+                f"{finding['display_name']}："
+                f"{finding.get('evidence_text') or 'VLM-only 候选观察'}；未生成测量级 mask。"
+            )
             for finding in observation_findings
         ]
     )
+    required_next_images = [
+        dict(item)
+        for finding in observation_findings
+        for item in finding.get("required_next_images") or []
+        if isinstance(item, dict)
+    ]
+    if required_next_images:
+        evidence["required_next_images"] = required_next_images
+        evidence["needs_next_imaging"] = True
     evidence.setdefault("visual_tool_plan", [])
     evidence["visual_tool_plan"].append(
         {
@@ -460,7 +569,13 @@ def _observation_only_visual_analysis_result(
             for finding in findings
             if str(finding.get("target") or "").strip()
         ],
-        "requested_features": ["vlm_observation", "bbox", "rationale"],
+        "requested_features": [
+            "vlm_observation",
+            "bbox",
+            "polygon",
+            "rationale",
+            "required_next_images",
+        ],
         "image_outputs": {
             "original_image_path": str(image_path),
             "mask_path": "not_generated",
@@ -483,7 +598,16 @@ def _observation_only_visual_analysis_result(
             "lesion_detected": False,
             "lesion_location": "VLM-only candidate observation",
             "segmentation_quality": "not_run_vlm_only",
+            "visual_output_mode": "vlm_only",
+            "segmentation_status": "not_run",
+            "segmentation_status_reason": "Current execution mode did not request a segmentation mask.",
             "disease_target": disease_target,
+            "needs_next_imaging": bool(prompt_result.get("needs_next_imaging")),
+            "required_next_images": [
+                dict(item)
+                for item in prompt_result.get("required_next_images") or []
+                if isinstance(item, dict)
+            ],
             "quality_warnings": [
                 {
                     "code": "vlm_only_no_mask",
@@ -492,7 +616,10 @@ def _observation_only_visual_analysis_result(
                 }
             ],
             "suspected_visual_findings": [
-                f"{finding['display_name']}：VLM-only 候选观察，未生成测量级 mask。"
+                (
+                    f"{finding['display_name']}："
+                    f"{finding.get('evidence_text') or 'VLM-only 候选观察'}；未生成测量级 mask。"
+                )
                 for finding in findings
             ],
             "measurements": {},
@@ -547,16 +674,43 @@ def _build_visual_evidence_bundle(
     ]
     image_outputs = dict(visual_analysis_result.get("image_outputs") or {})
     if finding_prompt_summary.get("bbox_overlay_path"):
-        image_outputs["bbox_overlay_path"] = str(finding_prompt_summary["bbox_overlay_path"])
+        bbox_overlay_path = str(finding_prompt_summary["bbox_overlay_path"])
+        image_outputs["bbox_overlay_path"] = bbox_overlay_path
+        image_outputs.setdefault("vlm_annotation_path", bbox_overlay_path)
+        image_outputs.setdefault("localization_overlay_path", bbox_overlay_path)
+    if finding_prompt_summary.get("target_overlay_paths"):
+        image_outputs["target_overlay_paths"] = [
+            dict(item)
+            for item in finding_prompt_summary.get("target_overlay_paths") or []
+            if isinstance(item, dict)
+        ]
+    visual_mode = evidence.get("visual_output_mode") or _visual_output_mode_from_summary(
+        finding_segmentation_summary
+    )
+    segmentation_state = _segmentation_display_state(
+        finding_segmentation_summary=finding_segmentation_summary,
+        evidence=evidence,
+    )
     return {
         "schema_version": "visual_evidence_bundle.v1",
         "disease_target": evidence.get("disease_target"),
+        "visual_output_mode": visual_mode,
+        "segmentation_status": segmentation_state["segmentation_status"],
+        "fallback_mode": segmentation_state.get("fallback_mode"),
+        "segmentation_status_reason": segmentation_state["reason"],
+        "segmentation_display_allowed": segmentation_state["segmentation_display_allowed"],
         "image_context": {
             "image_path": visual_analysis_result.get("image_path"),
             "modality": visual_analysis_result.get("modality"),
             "body_part": visual_analysis_result.get("body_part"),
         },
         "image_outputs": image_outputs,
+        "needs_next_imaging": bool(evidence.get("needs_next_imaging")),
+        "required_next_images": [
+            dict(item)
+            for item in evidence.get("required_next_images") or []
+            if isinstance(item, dict)
+        ],
         "present_findings": present_findings,
         "findings": findings,
         "numeric_evidence": numeric_evidence,
@@ -585,6 +739,142 @@ def _build_visual_evidence_bundle(
             "total_area_px is the sum of per-finding candidate masks and can double-count "
             "overlapping findings; Diagnosis Agent should reason per finding."
         ),
+    }
+
+
+def _attach_visual_output_mode_metadata(
+    *,
+    visual_analysis_result: dict[str, Any],
+    finding_prompt_summary: dict[str, Any],
+    finding_segmentation_summary: dict[str, Any],
+) -> None:
+    evidence = visual_analysis_result.setdefault("visual_evidence", {})
+    image_outputs = visual_analysis_result.setdefault("image_outputs", {})
+    if finding_prompt_summary.get("bbox_overlay_path"):
+        bbox_overlay_path = str(finding_prompt_summary["bbox_overlay_path"])
+        image_outputs.setdefault("bbox_overlay_path", bbox_overlay_path)
+        image_outputs.setdefault("vlm_annotation_path", bbox_overlay_path)
+        image_outputs.setdefault("localization_overlay_path", bbox_overlay_path)
+    if finding_prompt_summary.get("target_overlay_paths"):
+        image_outputs["target_overlay_paths"] = [
+            dict(item)
+            for item in finding_prompt_summary.get("target_overlay_paths") or []
+            if isinstance(item, dict)
+        ]
+    state = _segmentation_display_state(
+        finding_segmentation_summary=finding_segmentation_summary,
+        evidence=evidence,
+    )
+    evidence["visual_output_mode"] = _visual_output_mode_from_summary(
+        finding_segmentation_summary
+    )
+    evidence["segmentation_status"] = state["segmentation_status"]
+    evidence["segmentation_status_reason"] = state["reason"]
+    if state.get("fallback_mode"):
+        evidence["fallback_mode"] = state["fallback_mode"]
+    else:
+        evidence.pop("fallback_mode", None)
+    evidence.setdefault("completeness", {})["segmentation_display"] = {
+        "status": "supported" if state["segmentation_display_allowed"] else "missing",
+        "reason": state["reason"],
+    }
+
+
+def _visual_output_mode_from_summary(finding_segmentation_summary: dict[str, Any]) -> str:
+    if finding_segmentation_summary.get("status") == "not_run_no_segmentable_findings":
+        return "vlm_only"
+    if finding_segmentation_summary.get("status") in {
+        "segmentation_error",
+        "medsam2_not_ready",
+        "not_ready",
+    }:
+        return "vlm_plus_segmenter"
+    if finding_segmentation_summary.get("segmentation_results"):
+        return "vlm_plus_segmenter"
+    return "vlm_only"
+
+
+def _segmentation_display_state(
+    *,
+    finding_segmentation_summary: dict[str, Any],
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    if finding_segmentation_summary.get("status") == "not_run_no_segmentable_findings":
+        return {
+            "segmentation_status": "not_run",
+            "fallback_mode": "vlm_only",
+            "segmentation_display_allowed": False,
+            "reason": "No segmentable finding target was configured; VLM observations are shown instead.",
+        }
+    if finding_segmentation_summary.get("status") != "ok":
+        return {
+            "segmentation_status": "not_ready",
+            "fallback_mode": "vlm_only",
+            "segmentation_display_allowed": False,
+            "reason": f"Segmentation did not complete: {finding_segmentation_summary.get('status', 'unknown')}.",
+        }
+    segmentation_results = [
+        dict(item)
+        for item in finding_segmentation_summary.get("segmentation_results") or []
+        if isinstance(item, dict)
+    ]
+    if not segmentation_results:
+        return {
+            "segmentation_status": "not_run",
+            "fallback_mode": "vlm_only",
+            "segmentation_display_allowed": False,
+            "reason": "No segmentation result was generated.",
+        }
+    fake_sources = [
+        str((result.get("selected_tool") or {}).get("segmentation_source") or "")
+        for result in segmentation_results
+        if str((result.get("selected_tool") or {}).get("segmentation_source") or "").startswith("fake_")
+    ]
+    if fake_sources:
+        return {
+            "segmentation_status": "failed_qc",
+            "fallback_mode": "vlm_only",
+            "segmentation_display_allowed": False,
+            "reason": "Segmentation source is a fake/demo backend; show VLM annotation instead of lesion mask.",
+        }
+    quality_warnings = [
+        dict(item)
+        for item in finding_segmentation_summary.get("quality_warnings") or evidence.get("quality_warnings") or []
+        if isinstance(item, dict)
+    ]
+    blocking_warning = next(
+        (
+            warning
+            for warning in quality_warnings
+            if warning.get("severity") in {"error", "critical"}
+            or warning.get("code") in {"box_mask_misalignment", "overlapping_candidate_masks"}
+        ),
+        None,
+    )
+    if blocking_warning:
+        return {
+            "segmentation_status": "failed_qc",
+            "fallback_mode": "vlm_only",
+            "segmentation_display_allowed": False,
+            "reason": str(
+                blocking_warning.get("message")
+                or blocking_warning.get("reason")
+                or blocking_warning.get("code")
+                or "Segmentation quality check failed."
+            ),
+        }
+    if not any(result.get("diagnosis_usable") for result in segmentation_results):
+        return {
+            "segmentation_status": "failed_qc",
+            "fallback_mode": "vlm_only",
+            "segmentation_display_allowed": False,
+            "reason": "No segmentation result passed the diagnosis usability gate.",
+        }
+    return {
+        "segmentation_status": "candidate_passed_qc",
+        "fallback_mode": None,
+        "segmentation_display_allowed": True,
+        "reason": "Candidate segmentation passed configured quality gates.",
     }
 
 

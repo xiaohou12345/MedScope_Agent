@@ -19,6 +19,7 @@ class ApiConnectivityTest(unittest.TestCase):
         result = checker.inspect()
 
         self.assertEqual(result["active_route"], "dmx")
+        self.assertEqual(result["vision_model"], "dmx-medical-chat")
         self.assertEqual(result["api_key_env"], "DMX_API_KEY")
         self.assertFalse(result["external_script_found"])
         self.assertFalse(result["real_call_ready"])
@@ -92,8 +93,33 @@ class ApiConnectivityTest(unittest.TestCase):
 
             payload = json.loads(output)
             self.assertEqual(payload["active_route"], "ky")
+            self.assertEqual(payload["vision_model"], "ky-self-hosted-medical")
             self.assertFalse(payload["real_call_attempted"])
             self.assertFalse(payload["external_script_found"])
+
+    def test_smoke_script_reports_separate_vision_model(self):
+        with TemporaryDirectory() as tmpdir:
+            route_log_path = Path(tmpdir) / "API_ROUTE_LOG.md"
+            route_log_path.write_text(
+                "\n".join(
+                    [
+                        "active_route: dmx",
+                        "dmx_model: deepseek-v4-pro",
+                        "dmx_vision_model: gpt-5.5",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            output = run_smoke_check(
+                route_log_path=route_log_path,
+                external_script_path=Path("/tmp/missing.py"),
+                real=False,
+            )
+
+            payload = json.loads(output)
+            self.assertEqual(payload["model"], "deepseek-v4-pro")
+            self.assertEqual(payload["vision_model"], "gpt-5.5")
 
 
 if __name__ == "__main__":

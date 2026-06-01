@@ -16,6 +16,8 @@ class ImageOutputs:
     mask_path: str
     overlay_path: str
     comparison_path: str | None = None
+    vlm_annotation_path: str | None = None
+    localization_overlay_path: str | None = None
 
     def __post_init__(self) -> None:
         missing = [
@@ -38,6 +40,10 @@ class ImageOutputs:
         }
         if self.comparison_path:
             payload["comparison_path"] = self.comparison_path
+        if self.vlm_annotation_path:
+            payload["vlm_annotation_path"] = self.vlm_annotation_path
+        if self.localization_overlay_path:
+            payload["localization_overlay_path"] = self.localization_overlay_path
         return payload
 
     @classmethod
@@ -47,6 +53,8 @@ class ImageOutputs:
             mask_path=payload["mask_path"],
             overlay_path=payload["overlay_path"],
             comparison_path=payload.get("comparison_path"),
+            vlm_annotation_path=payload.get("vlm_annotation_path"),
+            localization_overlay_path=payload.get("localization_overlay_path"),
         )
 
 
@@ -551,6 +559,10 @@ class VisualEvidence:
     lesion_detected: bool = False
     lesion_location: str = "未定位"
     segmentation_quality: str = "not_available"
+    visual_output_mode: str = "vlm_plus_segmenter"
+    segmentation_status: str = "unknown"
+    fallback_mode: str | None = None
+    segmentation_status_reason: str | None = None
     whole_tumor_volume_ml: float | None = None
     tumor_core_volume_ml: float | None = None
     enhancing_tumor_volume_ml: float | None = None
@@ -582,6 +594,8 @@ class VisualEvidence:
             "lesion_detected": self.lesion_detected,
             "lesion_location": self.lesion_location,
             "segmentation_quality": self.segmentation_quality,
+            "visual_output_mode": self.visual_output_mode,
+            "segmentation_status": self.segmentation_status,
             "suspected_visual_findings": list(self.suspected_visual_findings),
         }
         optional_fields = {
@@ -591,6 +605,8 @@ class VisualEvidence:
             "edema_present": self.edema_present,
             "mass_effect": self.mass_effect,
             "disease_target": self.disease_target,
+            "fallback_mode": self.fallback_mode,
+            "segmentation_status_reason": self.segmentation_status_reason,
         }
         payload.update({key: value for key, value in optional_fields.items() if value is not None})
         if self.measurements:
@@ -629,6 +645,10 @@ class VisualEvidence:
             lesion_detected=payload.get("lesion_detected", False),
             lesion_location=payload.get("lesion_location", "未定位"),
             segmentation_quality=payload.get("segmentation_quality", "not_available"),
+            visual_output_mode=payload.get("visual_output_mode", "vlm_plus_segmenter"),
+            segmentation_status=payload.get("segmentation_status", "unknown"),
+            fallback_mode=payload.get("fallback_mode"),
+            segmentation_status_reason=payload.get("segmentation_status_reason"),
             whole_tumor_volume_ml=payload.get("whole_tumor_volume_ml"),
             tumor_core_volume_ml=payload.get("tumor_core_volume_ml"),
             enhancing_tumor_volume_ml=payload.get("enhancing_tumor_volume_ml"),

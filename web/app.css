@@ -240,6 +240,76 @@ button:disabled {
   margin-bottom: 14px;
 }
 
+.patient-visual-summary {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.patient-visual-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.patient-visual-head strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.patient-visual-head span,
+.patient-visual-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.patient-visual-status {
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
+}
+
+.patient-visual-section {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.patient-visual-section h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.patient-visual-section ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.patient-visual-section li {
+  display: grid;
+  gap: 3px;
+}
+
+.patient-visual-section li strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.patient-visual-section li span,
+.patient-visual-section p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .lesion-figure {
   margin: 0 0 14px;
   border: 1px solid var(--line);
@@ -253,6 +323,315 @@ button:disabled {
   width: 100%;
   max-height: 420px;
   object-fit: contain;
+}
+
+.visual-output-tabs {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+}
+
+.visual-mode-panel {
+  min-width: 0;
+  background: #ffffff;
+}
+
+.visual-mode-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+}
+
+.visual-mode-head strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.visual-mode-head span {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+.visual-mode-image {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  background: #0f1720;
+}
+
+.visual-mode-panel p {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.target-overlay-gallery {
+  border-top: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.target-overlay-gallery-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.target-overlay-gallery-head strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.target-overlay-gallery-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.target-overlay-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+}
+
+.target-overlay-card {
+  display: grid;
+  min-width: 0;
+  border: 0;
+  background: #ffffff;
+  color: inherit;
+  cursor: zoom-in;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.target-overlay-card:hover,
+.target-overlay-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.target-overlay-card img {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  background: #0f1720;
+}
+
+.target-overlay-card div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding: 8px 10px;
+}
+
+.target-overlay-card strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.target-overlay-card span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.target-overlay-card p {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  padding: 8px 10px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.image-lightbox[hidden] {
+  display: none;
+}
+
+.image-lightbox {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.image-lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 32, 0.72);
+}
+
+.image-lightbox-panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto auto;
+  width: min(1120px, 96vw);
+  max-height: 92vh;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(15, 23, 32, 0.32);
+}
+
+.image-lightbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+}
+
+.image-lightbox-head strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.image-lightbox-head button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.image-lightbox-body {
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  background: #0f1720;
+}
+
+.image-lightbox-body img {
+  width: 100%;
+  height: 100%;
+  max-height: calc(92vh - 330px);
+  object-fit: contain;
+}
+
+.image-lightbox-crops {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  background: #f8fafc;
+  padding: 10px 12px 12px;
+}
+
+.image-lightbox-crops[hidden] {
+  display: none;
+}
+
+.image-lightbox-crops > strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.image-lightbox-crop-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.image-lightbox-crop-item {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.image-lightbox-crop-item canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #0f1720;
+}
+
+.image-lightbox-crop-item div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding: 7px 9px;
+}
+
+.image-lightbox-crop-item strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.image-lightbox-crop-item span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.image-lightbox-crop-item p {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  padding: 8px 9px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.image-lightbox-caption {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+body.lightbox-open {
+  overflow: hidden;
+}
+
+.segmentation-fallback-box {
+  margin: 12px;
+  border: 1px solid #f1c27d;
+  border-radius: 8px;
+  background: #fff7ed;
+  padding: 12px;
+}
+
+.segmentation-fallback-box strong {
+  display: block;
+  color: #9a3412;
+  font-size: 13px;
+}
+
+.segmentation-fallback-box p {
+  border-top: 0;
+  padding: 6px 0 0;
 }
 
 .lesion-comparison {
@@ -511,6 +890,50 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+}
+
+.debug-details {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.debug-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  list-style: none;
+  padding: 13px 16px;
+}
+
+.debug-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.debug-details > summary::before {
+  content: "+";
+  display: inline-block;
+  width: 18px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.debug-details[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.debug-details[open] > summary::before {
+  content: "-";
+}
+
+.debug-details .trace-layout,
+.debug-details .skill-review-panel {
+  padding: 16px;
+}
+
+.debug-details .panel {
+  box-shadow: none;
 }
 
 .trace-panel {
@@ -994,6 +1417,8 @@ button:disabled {
   .layout,
   .trace-layout,
   .lesion-comparison,
+  .target-overlay-grid,
+  .image-lightbox-crop-grid,
   .candidate-lesion-grid,
   .memory-role-list,
   .visual-fact-usage {

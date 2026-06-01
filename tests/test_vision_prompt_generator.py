@@ -70,6 +70,76 @@ class VisionPromptGeneratorTest(unittest.TestCase):
             self.assertFalse(result["diagnosis_usable"])
             self.assertEqual(client.calls[0]["task"], "vision_prompt_generation")
 
+    def test_generator_preserves_vlm_only_polygon_and_next_imaging_guidance(self):
+        with TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "hip.jpg"
+            Image.new("RGB", (320, 240), "black").save(image_path)
+            client = RecordingVisionClient(
+                json.dumps(
+                    {
+                        "modality": "xray",
+                        "body_part": "hip",
+                        "needs_next_imaging": True,
+                        "required_next_images": [
+                            {
+                                "modality": "MRI",
+                                "region": "双髋",
+                                "reason": "X 光只能提供候选征象，早期坏死需要 MRI T1/T2/STIR 评估。",
+                            }
+                        ],
+                        "suspected_regions": [
+                            {
+                                "target": "sclerotic_band",
+                                "bbox": [64, 70, 128, 118],
+                                "polygon": [[64, 78], [118, 70], [128, 98], [88, 118]],
+                                "confidence": 0.76,
+                                "rationale": "股骨头负重区可疑硬化带。",
+                                "evidence_text": "左侧股骨头负重区可疑带状密度增高。",
+                            }
+                        ],
+                    }
+                )
+            )
+
+            result = VisionPromptGenerator(client=client).generate(
+                image_path=image_path,
+                disease_skill={
+                    "disease_name": "股骨头坏死",
+                    "visual_protocol": {
+                        "disease_target": "femoral_head_necrosis",
+                        "required_next_images": [
+                            {
+                                "modality": "MRI",
+                                "region": "双髋",
+                                "reason": "指南建议 MRI 评估早期坏死。",
+                            }
+                        ],
+                        "finding_targets": [
+                            {
+                                "target": "sclerotic_band",
+                                "execution_mode": "vlm_only",
+                            }
+                        ],
+                    },
+                },
+                patient_message="髋痛，上传骨盆正位 X 光",
+            )
+
+            self.assertEqual(result["status"], "ok")
+            self.assertTrue(result["needs_next_imaging"])
+            self.assertEqual(result["required_next_images"][0]["modality"], "MRI")
+            self.assertEqual(
+                result["suspected_regions"][0]["polygon"],
+                [[64, 78], [118, 70], [128, 98], [88, 118]],
+            )
+            self.assertEqual(
+                result["suspected_regions"][0]["evidence_text"],
+                "左侧股骨头负重区可疑带状密度增高。",
+            )
+            schema = client.calls[0]["user_payload"]["required_output_schema"]
+            self.assertIn("polygon", schema["suspected_regions"][0])
+            self.assertIn("required_next_images", schema)
+
     def test_generator_passes_skill_finding_targets_to_vision_model(self):
         with TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir) / "hip.jpg"

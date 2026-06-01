@@ -4,7 +4,9 @@
 
 active_route: dmx
 dmx_model: gemini-3.5-flash
+dmx_vision_model: gpt-5.5
 ky_model: ky-self-hosted-medical
+ky_vision_model: ky-self-hosted-medical
 dmx_base_url: https://anyaigc.com
 ky_base_url: http://127.0.0.1:8000/v1/chat/completions
 
@@ -45,6 +47,7 @@ python -m scripts.api_smoke_test --real
 ```text
 active_route: dmx
 model: gemini-3.5-flash
+vision_model: gpt-5.5
 api_key_env: DMX_API_KEY
 api_key_present: true
 external_script_path: /Users/4paradigm/Documents/project/cloudgpt_client_example.py
@@ -52,13 +55,14 @@ external_script_found: false
 real_call_ready: true
 ```
 
-离线检查结论：当前 `dmx_base_url` 和 `dmx_model` 已更新为可用路由配置。API key 不写入可提交代码文件；本机运行时从 `.env.local` 或环境变量读取。
+离线检查结论：当前 `dmx_base_url`、`dmx_model` 和 `dmx_vision_model` 已更新为可用路由配置。API key 不写入可提交代码文件；本机运行时从 `.env.local` 或环境变量读取。
 
-真实 smoke 结论：使用用户提供的 DMX key 临时注入后，`gemini-3.5-flash` 已通过 `https://anyaigc.com/v1/chat/completions` 完成图像输入 smoke，模型能读取 PNG 图像并返回 JSON 描述。该模型可作为 Vision Agent 的 lesion prompt generator 候选，不直接替代像素级分割模型。
+真实 smoke 结论：使用用户提供的 DMX key 临时注入后，旧路由 `gemini-3.5-flash` 已通过 `https://anyaigc.com/v1/chat/completions` 完成图像输入 smoke，模型能读取 PNG 图像并返回 JSON 描述。当前 Vision Agent lesion prompt generator 已切到 `dmx_vision_model: gpt-5.5`；该模型仍不直接替代像素级分割模型。
 
 ## 修改规则
 
 - 切换 DMX/KY 时，只改本文件的 `active_route`。
-- 替换模型名时，只改 `dmx_model` 或 `ky_model`。
+- 替换诊断/文本模型名时，只改 `dmx_model` 或 `ky_model`。
+- 替换 Vision/VLM 模型名时，只改 `dmx_vision_model` 或 `ky_vision_model`。
 - API key 只通过环境变量注入，不写入本文件。
 - 不要在 `agents/` 中写 provider-specific API 逻辑。

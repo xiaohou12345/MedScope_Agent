@@ -67,19 +67,33 @@ def run_no_mask_medsam2_segmentation_demo(
             },
         )
 
-    finding_results = [
-        _segment_target_region(
-            tool=tool,
-            image_path=image_path,
-            output_dir=output,
-            target_region=target_region,
-            use_legacy_paths=len(target_regions) == 1,
-            anatomy_mask_path=anatomy_mask_path,
-            anatomy_name=anatomy_name,
-            anatomy_candidates=anatomy_candidates,
+    try:
+        finding_results = [
+            _segment_target_region(
+                tool=tool,
+                image_path=image_path,
+                output_dir=output,
+                target_region=target_region,
+                use_legacy_paths=len(target_regions) == 1,
+                anatomy_mask_path=anatomy_mask_path,
+                anatomy_name=anatomy_name,
+                anatomy_candidates=anatomy_candidates,
+            )
+            for target_region in target_regions
+        ]
+    except Exception as exc:
+        return _write_summary(
+            summary_path,
+            {
+                "status": "segmentation_error",
+                "prompt_result_path": str(prompt_file),
+                "image_path": str(image_path),
+                "segmentation_prompt": segmentation_prompt,
+                "target_regions": target_regions,
+                "errors": [str(exc)],
+                "next_step": "Fallback to VLM-only visual annotation or configure a working segmentation backend.",
+            },
         )
-        for target_region in target_regions
-    ]
     quality_warnings = _attach_box_mask_alignment_quality_control(finding_results)
     quality_warnings.extend(_attach_overlap_quality_control(finding_results))
     first_result = finding_results[0]

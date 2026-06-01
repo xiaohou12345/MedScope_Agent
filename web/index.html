@@ -57,7 +57,7 @@
 
           <section id="visualPanel" class="panel visual-panel">
             <div class="panel-title">
-              <h2>图像输出</h2>
+              <h2>影像发现</h2>
               <span id="caseIdBadge">无病例</span>
             </div>
             <div id="visualMeta" class="visual-meta">等待视觉 Agent 输出</div>
@@ -73,28 +73,31 @@
           </section>
         </div>
 
-        <div class="trace-layout">
-          <section id="alignmentPanel" class="panel trace-panel alignment-panel">
-            <div class="panel-title">
-              <h2>证据协调</h2>
-            </div>
-            <div id="alignmentView" class="trace-empty">等待 alignment plan</div>
-          </section>
+        <details class="debug-details">
+          <summary>开发调试信息</summary>
+          <div class="trace-layout">
+            <section id="alignmentPanel" class="panel trace-panel alignment-panel">
+              <div class="panel-title">
+                <h2>证据协调</h2>
+              </div>
+              <div id="alignmentView" class="trace-empty">等待 alignment plan</div>
+            </section>
 
-          <section id="evidencePanel" class="panel trace-panel">
-            <div class="panel-title">
-              <h2>证据充分性</h2>
-            </div>
-            <div id="evidenceView" class="trace-empty">等待 evidence bundle</div>
-          </section>
+            <section id="evidencePanel" class="panel trace-panel">
+              <div class="panel-title">
+                <h2>证据充分性</h2>
+              </div>
+              <div id="evidenceView" class="trace-empty">等待 evidence bundle</div>
+            </section>
 
-          <section id="auditPanel" class="panel trace-panel">
-            <div class="panel-title">
-              <h2>Evidence Pipeline Trace</h2>
-            </div>
-            <div id="auditView" class="trace-empty">等待 memory audit</div>
-          </section>
-        </div>
+            <section id="auditPanel" class="panel trace-panel">
+              <div class="panel-title">
+                <h2>运行审计</h2>
+              </div>
+              <div id="auditView" class="trace-empty">等待 memory audit</div>
+            </section>
+          </div>
+        </details>
 
         <section class="panel qa-panel">
           <div class="panel-title">
@@ -107,24 +110,27 @@
           <div id="qaLog" class="qa-log"></div>
         </section>
 
-        <section id="skillReviewPanel" class="panel skill-review-panel">
-          <div class="panel-title">
-            <h2>Skill 审核</h2>
-            <div class="sample-actions">
-              <button id="refreshSkillsButton" type="button">刷新 Skill</button>
-              <button id="saveSkillDraftButton" type="button">保存草稿</button>
+        <details class="debug-details skill-debug-details">
+          <summary>Skill 管理</summary>
+          <section id="skillReviewPanel" class="panel skill-review-panel">
+            <div class="panel-title">
+              <h2>Skill 审核</h2>
+              <div class="sample-actions">
+                <button id="refreshSkillsButton" type="button">刷新 Skill</button>
+                <button id="saveSkillDraftButton" type="button">保存草稿</button>
+              </div>
             </div>
-          </div>
-          <div class="skill-review-layout">
-            <aside class="skill-list-pane">
-              <div id="skillListView" class="trace-empty">等待加载 skill</div>
-            </aside>
-            <section class="skill-detail-pane">
-              <div id="skillReviewStatus" class="skill-review-status">医生审核模式：草稿只保存到 output/fake，不直接覆盖正式 skill。</div>
-              <div id="skillDetailView" class="trace-empty">请选择一个 Skill 查看</div>
-            </section>
-          </div>
-        </section>
+            <div class="skill-review-layout">
+              <aside class="skill-list-pane">
+                <div id="skillListView" class="trace-empty">等待加载 skill</div>
+              </aside>
+              <section class="skill-detail-pane">
+                <div id="skillReviewStatus" class="skill-review-status">医生审核模式：草稿只保存到 output/fake，不直接覆盖正式 skill。</div>
+                <div id="skillDetailView" class="trace-empty">请选择一个 Skill 查看</div>
+              </section>
+            </div>
+          </section>
+        </details>
       </section>
     </main>
 

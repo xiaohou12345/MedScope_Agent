@@ -105,6 +105,29 @@ class LlmRoutingTest(unittest.TestCase):
             self.assertEqual(route_log.active_route, "dmx")
             self.assertEqual(route_log.model_for_active_route(), "dmx-medical-chat")
 
+    def test_api_route_log_keeps_vision_model_separate_from_chat_model(self):
+        with TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "API_ROUTE_LOG.md"
+            log_path.write_text(
+                "\n".join(
+                    [
+                        "# API Route Log",
+                        "",
+                        "active_route: dmx",
+                        "dmx_model: deepseek-v4-pro",
+                        "dmx_vision_model: gpt-5.5",
+                        "ky_model: ky-self-hosted-medical",
+                        "ky_vision_model: ky-self-hosted-vision",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            route_log = ApiRouteLog.from_file(log_path)
+
+            self.assertEqual(route_log.model_for_active_route(), "deepseek-v4-pro")
+            self.assertEqual(route_log.vision_model_for_active_route(), "gpt-5.5")
+
     def test_openai_client_normalizes_provider_base_url(self):
         route_log = ApiRouteLog(
             active_route="dmx",

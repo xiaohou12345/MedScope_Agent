@@ -9,6 +9,9 @@ const state = {
   realDemoMode: false,
   casePending: false,
   qaPending: false,
+  caseProgressTimer: null,
+  caseProgressStartedAt: 0,
+  caseProgressLabel: "",
   selectedSkillKey: "",
   selectedSkillDetail: {},
 };
@@ -54,6 +57,52 @@ function setStatus(text, kind = "") {
   elements.statusText.className = kind ? `status-${kind}` : "";
 }
 
+function clearCaseProgressTimer() {
+  if (state.caseProgressTimer) {
+    clearInterval(state.caseProgressTimer);
+    state.caseProgressTimer = null;
+  }
+  state.caseProgressStartedAt = 0;
+  state.caseProgressLabel = "";
+}
+
+function caseProgressStage(elapsedSeconds, stages) {
+  const stageList = stages && stages.length ? stages : [
+    {after: 0, text: "正在选择 skill 和检查影像输入"},
+    {after: 8, text: "正在调用视觉模型定位候选征象"},
+    {after: 25, text: "正在生成或校验分割候选区域"},
+    {after: 45, text: "正在整合 evidence bundle 和诊断报告"},
+  ];
+  return stageList.reduce((current, stage) => (
+    elapsedSeconds >= stage.after ? stage.text : current
+  ), stageList[0].text);
+}
+
+function startCaseProgress(label, stages) {
+  clearCaseProgressTimer();
+  state.caseProgressStartedAt = Date.now();
+  state.caseProgressLabel = label || "病例分析中";
+  const update = () => {
+    const elapsed = Math.max(1, Math.floor((Date.now() - state.caseProgressStartedAt) / 1000));
+    const stage = caseProgressStage(elapsed, stages);
+    setStatus(`${state.caseProgressLabel}... ${elapsed}s · ${stage}`);
+    if (elements.visualMeta.innerHTML.includes("Thinking...")) {
+      elements.visualMeta.innerHTML = `
+        <p>Thinking... ${escapeHtml(stage)}</p>
+        <p class="muted">已等待 ${elapsed}s。实时上传会调用 VLM/API；预生成样例会更快。</p>
+      `;
+    }
+    if (elements.reportView.innerHTML.includes("Thinking...")) {
+      elements.reportView.innerHTML = `
+        <p>Thinking... 等待诊断报告</p>
+        <p class="muted">已等待 ${elapsed}s，完成视觉证据后会自动生成报告。</p>
+      `;
+    }
+  };
+  update();
+  state.caseProgressTimer = setInterval(update, 1000);
+}
+
 function splitList(value) {
   return value
     .split(/[，,;；\n]/)
@@ -89,16 +138,28 @@ function buildQaPayload() {
 }
 
 async function postMedScope(payload) {
-  const response = await fetch("/v1/medscope", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(payload),
-  });
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error(formatApiError(body, response.status));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 180000);
+  try {
+    const response = await fetch("/v1/medscope", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(formatApiError(body, response.status));
+    }
+    return body;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("实时分析超过 180 秒未返回。建议先用预生成样例演示，或检查 VLM/分割模型后端。");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return body;
 }
 
 async function fetchSkillList() {
@@ -1002,6 +1063,10 @@ function taskStatusLabel(status) {
     runnable: "可执行",
     missing_input: "缺少输入",
     unassessed: "未评估",
+    candidate_passed_qc: "候选分割通过质量检查",
+    failed_qc: "质量检查未通过",
+    not_run: "未运行",
+    not_ready: "未就绪",
   };
   return labels[status] || status || "-";
 }
@@ -1130,23 +1195,23 @@ function renderVisualOutput(payload) {
   const bundleImage = payload.evidence_bundle?.image_evidence || {};
   const visualBundle = getVisualEvidenceBundle(payload);
   const numeric = visualBundle.numeric_evidence || {};
-  const outputs = payload.image_outputs || bundleImage.image_outputs || {};
+  const outputs = {
+    ...(visualBundle.image_outputs || {}),
+    ...(bundleImage.image_outputs || {}),
+    ...(payload.image_outputs || {}),
+  };
   const overlayPath = outputs.overlay_path;
   const originalPath = outputs.original_image_path || bundleImage.image_path || payload.visual_input_contract?.image_path || "-";
   const modality = bundleImage.modality || payload.visual_input_contract?.modality || "-";
   const bodyPart = bundleImage.body_part || payload.visual_input_contract?.body_part || "-";
-  const quality = bundleImage.segmentation_quality || payload.visual_input_contract?.segmentation_quality || "-";
-  elements.visualMeta.innerHTML = `
-    ${renderMetricGrid({
-      original_image: originalPath,
-      modality: modality,
-      body_part: bodyPart,
-      segmentation_quality: quality,
-      finding_count: numeric.finding_count,
-      total_area_px: numeric.total_area_px,
-    })}
-    ${renderVisualEvidenceBundle(visualBundle, {compact: true})}
-  `;
+  const displayState = buildVisualDisplayState(payload, visualBundle);
+  elements.visualMeta.innerHTML = renderPatientVisualSummary({
+    visualBundle,
+    displayState,
+    modality,
+    bodyPart,
+    findingCount: numeric.finding_count,
+  });
   const comparisonHtml = renderLesionComparison({
     original_path: originalPath,
     original_preview_path: outputs.original_preview_path,
@@ -1155,14 +1220,361 @@ function renderVisualOutput(payload) {
     overlay_path: overlayPath,
     comparison_path: outputs.comparison_path,
   });
-  const candidateGalleryHtml = renderCandidateLesionGallery(payload);
-  if (!comparisonHtml && !candidateGalleryHtml) {
+  const vlmAnnotationHtml = renderVlmAnnotationPanel({
+    annotation_path: outputs.vlm_annotation_path || outputs.localization_overlay_path || outputs.bbox_overlay_path,
+    target_overlay_paths: outputs.target_overlay_paths,
+    original_path: originalPath,
+    visualBundle,
+    displayState,
+  });
+  const segmentationHtml = renderSegmentationPanel({
+    comparisonHtml,
+    candidateGalleryHtml: displayState.segmentationDisplayAllowed ? renderCandidateLesionGallery(payload) : "",
+    displayState,
+  });
+  if (!vlmAnnotationHtml && !segmentationHtml) {
     elements.lesionFigure.hidden = true;
     elements.lesionFigure.innerHTML = "";
     return;
   }
-  elements.lesionFigure.innerHTML = `${comparisonHtml}${candidateGalleryHtml}`;
+  elements.lesionFigure.innerHTML = `
+    <div class="visual-output-tabs" aria-label="视觉输出模式">
+      ${vlmAnnotationHtml}
+      ${segmentationHtml}
+    </div>
+  `;
   elements.lesionFigure.hidden = false;
+}
+
+function renderPatientVisualSummary({visualBundle, displayState, modality, bodyPart, findingCount}) {
+  const findings = patientVisibleFindings(visualBundle);
+  const requiredNextImages = Array.isArray(visualBundle.required_next_images)
+    ? visualBundle.required_next_images
+    : [];
+  const statusText = displayState.segmentationDisplayAllowed
+    ? "已生成可用于展示的分割结果"
+    : "当前仅展示 VLM 标注，不把 mask 当作诊断依据";
+  return `
+    <div class="patient-visual-summary" aria-label="患者可见影像摘要">
+      <div class="patient-visual-head">
+        <strong>患者可见影像摘要</strong>
+        <span>${escapeHtml([modality, bodyPart].filter((item) => item && item !== "-").join(" · ") || "影像")}</span>
+      </div>
+      <div class="patient-visual-status">${escapeHtml(statusText)}</div>
+      ${findings.length ? `
+        <div class="patient-visual-section">
+          <h3>主要影像发现</h3>
+          <ul>
+            ${findings.map((finding) => `
+              <li>
+                <strong>${escapeHtml(finding.title)}</strong>
+                ${finding.text ? `<span>${escapeHtml(finding.text)}</span>` : ""}
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+      ` : `
+        <div class="patient-visual-section">
+          <h3>主要影像发现</h3>
+          <p>${Number(findingCount || 0) > 0 ? "候选影像发现未进入诊断采用列表。" : "暂未返回明确的候选影像发现。"}</p>
+        </div>
+      `}
+      ${requiredNextImages.length ? `
+        <div class="patient-visual-section">
+          <h3>建议补充检查</h3>
+          <ul>
+            ${requiredNextImages.map((item) => `
+              <li>
+                <strong>${escapeHtml([item.region, item.modality].filter(Boolean).join(" ") || "补充影像")}</strong>
+                ${item.reason ? `<span>${escapeHtml(item.reason)}</span>` : ""}
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function patientVisibleFindings(visualBundle) {
+  const findings = Array.isArray(visualBundle.findings) ? visualBundle.findings : [];
+  return findings
+    .map((finding) => ({
+      title: finding.display_name || finding.target || "候选影像发现",
+      text: finding.evidence_text || finding.evidence_basis || finding.description || "",
+      diagnosisUsable: finding.diagnosis_usable === true,
+    }))
+    .filter((finding) => finding.text || finding.title)
+    .sort((a, b) => Number(b.diagnosisUsable) - Number(a.diagnosisUsable))
+    .slice(0, 5);
+}
+
+function buildVisualDisplayState(payload, visualBundle) {
+  const evidence = payload.visual_input_contract?.visual_evidence
+    || visualBundle.diagnosis_payload?.visual_evidence
+    || {};
+  const segmentationResults = Array.isArray(visualBundle.segmentation_results)
+    ? visualBundle.segmentation_results
+    : Array.isArray(evidence.segmentation_results) ? evidence.segmentation_results : [];
+  const warningList = [
+    ...(Array.isArray(visualBundle.quality_warnings) ? visualBundle.quality_warnings : []),
+    ...(Array.isArray(evidence.quality_warnings) ? evidence.quality_warnings : []),
+  ];
+  const hasFakeSegmentation = segmentationResults.some((result) => {
+    const source = result.selected_tool?.segmentation_source || result.segmentation_source || "";
+    return String(source).startsWith("fake_");
+  });
+  const blockingWarning = warningList.find((warning) => {
+    const code = warning.code || "";
+    return warning.severity === "error"
+      || warning.severity === "critical"
+      || code === "box_mask_misalignment"
+      || code === "overlapping_candidate_masks";
+  });
+  let segmentationStatus = visualBundle.segmentation_status
+    || evidence.segmentation_status
+    || "";
+  let fallbackMode = visualBundle.fallback_mode || evidence.fallback_mode || "";
+  let reason = visualBundle.segmentation_status_reason
+    || evidence.segmentation_status_reason
+    || "";
+  if (hasFakeSegmentation) {
+    segmentationStatus = "failed_qc";
+    fallbackMode = "vlm_only";
+    reason = reason || "当前分割来自 fake/demo backend，不能作为病灶 mask 展示。";
+  } else if (blockingWarning) {
+    segmentationStatus = "failed_qc";
+    fallbackMode = "vlm_only";
+    reason = reason || blockingWarning.message || blockingWarning.reason || blockingWarning.code;
+  } else if (!segmentationStatus) {
+    segmentationStatus = segmentationResults.some((result) => result.diagnosis_usable)
+      ? "candidate_passed_qc"
+      : segmentationResults.length ? "failed_qc" : "not_run";
+    fallbackMode = segmentationStatus === "candidate_passed_qc" ? "" : "vlm_only";
+  }
+  const segmentationDisplayAllowed = (
+    visualBundle.segmentation_display_allowed === true
+    || segmentationStatus === "candidate_passed_qc"
+  ) && segmentationStatus !== "failed_qc" && !fallbackMode;
+  return {
+    visualOutputMode: visualBundle.visual_output_mode
+      || evidence.visual_output_mode
+      || (segmentationResults.length ? "vlm_plus_segmenter" : "vlm_only"),
+    segmentationStatus,
+    fallbackMode,
+    reason: reason || (segmentationDisplayAllowed
+      ? "候选分割通过当前质量门控。"
+      : "分割未通过质量检查，已降级为 VLM 标注。"),
+    segmentationDisplayAllowed,
+  };
+}
+
+function renderVlmAnnotationPanel({annotation_path, target_overlay_paths, original_path, visualBundle, displayState}) {
+  const annotationUrl = outputImageUrl(annotation_path);
+  const originalUrl = outputImageUrl(original_path);
+  const previewUrl = annotationUrl || originalUrl;
+  const targetGalleryHtml = renderTargetOverlayGallery(target_overlay_paths, visualBundle);
+  if (!previewUrl && !targetGalleryHtml) {
+    return "";
+  }
+  return `
+    <section class="visual-mode-panel visual-mode-vlm">
+      <div class="visual-mode-head">
+        <strong>VLM 标注</strong>
+        <span>${escapeHtml(displayState.visualOutputMode || "vlm_only")}</span>
+      </div>
+      ${previewUrl ? `
+        <div class="visual-mode-image">
+          <img src="${escapeHtml(previewUrl)}" alt="VLM 标注的候选病灶位置总览" />
+        </div>
+      ` : ""}
+      ${targetGalleryHtml}
+      <p>显示 VLM/Codex 根据 skill 给出的候选位置、框选区域和文字证据；这不是像素级医学分割。</p>
+    </section>
+  `;
+}
+
+const VISUAL_FINDING_LABELS = {
+  sclerotic_band: {
+    label: "硬化带",
+    description: "股骨头内带状或横颈线样密度增高候选区域。",
+    color: "#f97316",
+    guidance: "看股骨头负重区下方是否有带状、横线样密度增高。",
+  },
+  cystic_change: {
+    label: "囊性变",
+    description: "股骨头内局灶透亮、小圆形或不规则囊样候选区域。",
+    color: "#2563eb",
+    guidance: "看股骨头内是否有小圆形或不规则透亮低密度区。",
+  },
+  trabecular_blurring: {
+    label: "骨小梁模糊",
+    description: "股骨头内骨小梁纹理不清或局部骨密度减低候选区域。",
+    color: "#7c3aed",
+    guidance: "看候选区域内骨小梁纹理是否变淡、变乱或边界不清。",
+  },
+  collapse: {
+    label: "股骨头塌陷",
+    description: "股骨头轮廓变扁、塌陷或新月征候选征象。",
+    color: "#16a34a",
+    guidance: "看股骨头外形边缘是否变扁、不连续或出现塌陷轮廓。",
+  },
+};
+
+function renderTargetOverlayGallery(targetOverlayPaths, visualBundle = {}) {
+  const findingsByTarget = findingMetadataByTarget(visualBundle);
+  const items = Array.isArray(targetOverlayPaths)
+    ? targetOverlayPaths
+      .map((item) => ({
+        target: item.target || "candidate_region",
+        displayName: targetDisplayName(item, findingsByTarget),
+        description: targetDescription(item, findingsByTarget),
+        regionCount: item.region_count,
+        regions: findingsByTarget[String(item.target || "")]?.regions || [],
+        url: outputImageUrl(item.overlay_path),
+      }))
+      .filter((item) => item.url)
+    : [];
+  if (!items.length) {
+    return "";
+  }
+  return `
+    <div class="target-overlay-gallery" aria-label="按征象单独查看">
+      <div class="target-overlay-gallery-head">
+        <strong>按征象单独查看</strong>
+        <span>${items.length} 类候选征象</span>
+      </div>
+      <div class="target-overlay-grid">
+        ${items.map((item) => `
+          <button
+            class="target-overlay-card"
+            type="button"
+            data-lightbox-src="${escapeHtml(item.url)}"
+            data-lightbox-title="${escapeHtml(item.displayName)}"
+            data-lightbox-caption="${escapeHtml(item.description)}"
+            data-lightbox-regions="${escapeHtml(JSON.stringify(item.regions))}"
+            aria-label="放大查看 ${escapeHtml(item.displayName)}"
+          >
+            <img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.displayName)} 单独标注图" />
+            <div>
+              <strong>${escapeHtml(item.displayName)}</strong>
+              <span>${escapeHtml(String(item.regionCount || 1))} 处</span>
+            </div>
+            <p>${escapeHtml(item.description)}</p>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function findingMetadataByTarget(visualBundle = {}) {
+  const findings = Array.isArray(visualBundle.findings) ? visualBundle.findings : [];
+  return findings.reduce((mapping, finding) => {
+    const target = String(finding.target || "");
+    if (!target) {
+      return mapping;
+    }
+    const current = mapping[target] || {
+      displayName: finding.display_name || finding.target,
+      description: "",
+      regions: [],
+    };
+    const description = finding.evidence_text || finding.description || finding.evidence_basis || "";
+    mapping[target] = {
+      displayName: current.displayName || finding.display_name || finding.target,
+      description: current.description || description,
+      regions: [
+        ...current.regions,
+        ...normalizeFindingRegions(finding, current.regions.length),
+      ],
+    };
+    return mapping;
+  }, {});
+}
+
+function normalizeFindingRegions(finding, offset = 0) {
+  const regionSources = Array.isArray(finding.regions) && finding.regions.length
+    ? finding.regions
+    : [finding.measurements || finding];
+  return regionSources
+    .map((region, index) => ({
+      regionId: region.region_id || finding.region_id || String(offset + index + 1),
+      target: finding.target || region.target || "",
+      laterality: region.laterality || finding.laterality || "",
+      bbox: normalizeBbox(region.bbox || region.measurements?.bbox || finding.bbox || finding.measurements?.bbox),
+      areaPx: region.area_px || region.measurements?.area_px || finding.measurements?.area_px,
+    }))
+    .filter((region) => region.bbox);
+}
+
+function normalizeBbox(bbox) {
+  if (!Array.isArray(bbox) || bbox.length !== 4) {
+    return null;
+  }
+  const values = bbox.map((value) => Number(value));
+  if (values.some((value) => !Number.isFinite(value))) {
+    return null;
+  }
+  const [x1, y1, x2, y2] = values;
+  if (x2 <= x1 || y2 <= y1) {
+    return null;
+  }
+  return values;
+}
+
+function targetDisplayName(item, findingsByTarget) {
+  const target = String(item.target || "");
+  const configured = VISUAL_FINDING_LABELS[target];
+  const rawName = item.display_name || findingsByTarget[target]?.displayName || target || "候选征象";
+  const label = configured?.label || rawName;
+  return target && label !== target ? `${label} (${target})` : label;
+}
+
+function targetDescription(item, findingsByTarget) {
+  const target = String(item.target || "");
+  return findingsByTarget[target]?.description
+    || VISUAL_FINDING_LABELS[target]?.description
+    || item.description
+    || "根据当前 skill 定位出的候选影像征象，点击可放大查看。";
+}
+
+function visualFindingStyle(target) {
+  return VISUAL_FINDING_LABELS[String(target || "")] || {
+    label: "候选征象",
+    color: "#ef4444",
+    guidance: "看彩色高亮框内的局部灰度、纹理或轮廓异常。",
+  };
+}
+
+function renderSegmentationPanel({comparisonHtml, candidateGalleryHtml, displayState}) {
+  if (!displayState.segmentationDisplayAllowed) {
+    return `
+      <section class="visual-mode-panel visual-mode-segmentation visual-mode-disabled">
+        <div class="visual-mode-head">
+          <strong>分割结果</strong>
+          <span>${escapeHtml(taskStatusLabel(displayState.segmentationStatus))}</span>
+        </div>
+        <div class="segmentation-fallback-box">
+          <strong>分割未通过质量检查，已降级为 VLM 标注</strong>
+          <p>${escapeHtml(displayState.reason)}</p>
+        </div>
+      </section>
+    `;
+  }
+  if (!comparisonHtml && !candidateGalleryHtml) {
+    return "";
+  }
+  return `
+    <section class="visual-mode-panel visual-mode-segmentation">
+      <div class="visual-mode-head">
+        <strong>分割结果</strong>
+        <span>${escapeHtml(taskStatusLabel(displayState.segmentationStatus))}</span>
+      </div>
+      ${comparisonHtml}
+      ${candidateGalleryHtml}
+    </section>
+  `;
 }
 
 function renderLesionComparison(paths) {
@@ -1181,7 +1593,7 @@ function renderLesionComparison(paths) {
         </div>
       `).join("")}
     </div>
-    <figcaption>原图、分割病灶与对比叠加结果</figcaption>
+    <figcaption>仅在分割通过质量检查时展示 mask、overlay 与数值结果</figcaption>
   `;
 }
 
@@ -1198,8 +1610,8 @@ function buildVisualComparisonItems(paths) {
       url: outputImageUrl(paths.original_preview_path || paths.original_path),
     },
     {
-      label: "分割病灶",
-      alt: "视觉 Agent 分割出的病灶区域",
+      label: "分割候选 mask",
+      alt: "视觉 Agent 生成并通过质量检查的候选 mask",
       url: outputImageUrl(paths.mask_preview_path || paths.mask_path),
     },
     {
@@ -1380,11 +1792,18 @@ function renderVisualEvidenceBundle(bundle, options = {}) {
   const findings = Array.isArray(bundle.findings) ? bundle.findings : [];
   const numeric = bundle.numeric_evidence || {};
   const present = Array.isArray(bundle.present_findings) ? bundle.present_findings : [];
+  const requiredNextImages = Array.isArray(bundle.required_next_images)
+    ? bundle.required_next_images
+    : [];
   return `
     <div class="${options.compact ? "visual-finding-summary" : "trace-subblock"}">
       ${options.compact ? "" : "<strong>多征象视觉证据</strong>"}
       ${renderMetricGrid({
         present_findings: present.join(", "),
+        needs_next_imaging: bundle.needs_next_imaging,
+        required_next_images: requiredNextImages
+          .map((item) => `${item.modality || "-"} ${item.region || ""}`.trim())
+          .join("; "),
         finding_count: numeric.finding_count,
         region_count: numeric.region_count,
         total_area_px: numeric.total_area_px,
@@ -1413,6 +1832,8 @@ function renderFindingList(findings) {
             ${renderMetricGrid({
               target: finding.target,
               confidence: finding.confidence,
+              polygon_points: Array.isArray(finding.polygon) ? finding.polygon.length : undefined,
+              evidence_text: finding.evidence_text,
               area_px: measurements.area_px,
               area_ratio_in_image: measurements.area_ratio_in_image,
               area_ratio_in_anatomy: measurements.area_ratio_in_anatomy,
@@ -2447,6 +2868,9 @@ function setCasePending(isPending, label = "运行分析") {
   elements.xrayInsufficientButton.disabled = isPending;
   elements.fhnNoMaskButton.disabled = isPending;
   elements.submitButton.textContent = isPending ? "Thinking..." : label;
+  if (!isPending) {
+    clearCaseProgressTimer();
+  }
 }
 
 function showCaseThinking(label) {
@@ -2472,6 +2896,28 @@ function showCaseThinking(label) {
   `;
 }
 
+function renderCaseError(error, fallbackMessage = "病例分析失败") {
+  const message = error?.message || fallbackMessage;
+  const detailHtml = `
+    <div class="trace-empty error-state" role="alert">
+      <strong>${escapeHtml(fallbackMessage)}</strong>
+      <p>${escapeHtml(message)}</p>
+      <p class="muted">如果是实时上传病例，请检查是否已经上传影像、VLM/API 是否可用，以及分割后端是否配置完成。</p>
+    </div>
+  `;
+  elements.visualMeta.innerHTML = detailHtml;
+  elements.reportView.innerHTML = `
+    <div class="report-empty error-state" role="alert">
+      <strong>${escapeHtml(fallbackMessage)}</strong>
+      <p>${escapeHtml(message)}</p>
+    </div>
+  `;
+  elements.evidenceView.innerHTML = detailHtml;
+  elements.auditView.innerHTML = detailHtml;
+  elements.lesionFigure.hidden = true;
+  elements.lesionFigure.innerHTML = "";
+}
+
 function showQaThinking(question) {
   const item = document.createElement("div");
   item.className = "qa-item qa-pending";
@@ -2485,6 +2931,240 @@ function updateQaItem(item, question, answer, kind = "") {
   item.className = kind ? `qa-item qa-${kind}` : "qa-item";
   item.removeAttribute("aria-busy");
   item.innerHTML = `<strong>${escapeHtml(question)}</strong><p>${escapeHtml(answer || "-")}</p>`;
+}
+
+function ensureImageLightbox() {
+  let lightbox = document.getElementById("imageLightbox");
+  if (lightbox) {
+    return lightbox;
+  }
+  lightbox = document.createElement("div");
+  lightbox.id = "imageLightbox";
+  lightbox.className = "image-lightbox";
+  lightbox.hidden = true;
+  lightbox.innerHTML = `
+    <div class="image-lightbox-backdrop" data-lightbox-close="true"></div>
+    <section class="image-lightbox-panel" role="dialog" aria-modal="true" aria-labelledby="imageLightboxTitle">
+      <div class="image-lightbox-head">
+        <strong id="imageLightboxTitle"></strong>
+        <button type="button" data-lightbox-close="true" aria-label="关闭放大图">×</button>
+      </div>
+      <div class="image-lightbox-body">
+        <img alt="" />
+      </div>
+      <div class="image-lightbox-crops" aria-label="局部放大候选区域"></div>
+      <p class="image-lightbox-caption"></p>
+    </section>
+  `;
+  document.body.appendChild(lightbox);
+  return lightbox;
+}
+
+function openImageLightbox({src, title, caption, regions}) {
+  if (!src) {
+    return;
+  }
+  const lightbox = ensureImageLightbox();
+  const image = lightbox.querySelector("img");
+  const crops = lightbox.querySelector(".image-lightbox-crops");
+  const parsedRegions = parseLightboxRegions(regions);
+  crops.innerHTML = "";
+  image.onload = () => renderLightboxCrops(image, parsedRegions, crops);
+  image.alt = title || "放大查看影像标注";
+  image.src = src;
+  lightbox.querySelector("#imageLightboxTitle").textContent = title || "影像标注";
+  lightbox.querySelector(".image-lightbox-caption").textContent = caption || "";
+  lightbox.hidden = false;
+  document.body.classList.add("lightbox-open");
+  lightbox.querySelector("[data-lightbox-close='true']").focus();
+  if (image.complete && image.naturalWidth) {
+    renderLightboxCrops(image, parsedRegions, crops);
+  }
+}
+
+function closeImageLightbox() {
+  const lightbox = document.getElementById("imageLightbox");
+  if (!lightbox) {
+    return;
+  }
+  lightbox.hidden = true;
+  lightbox.querySelector("img").removeAttribute("src");
+  lightbox.querySelector(".image-lightbox-crops").innerHTML = "";
+  document.body.classList.remove("lightbox-open");
+}
+
+function parseLightboxRegions(rawRegions) {
+  if (Array.isArray(rawRegions)) {
+    return rawRegions;
+  }
+  if (!rawRegions) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(rawRegions);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function renderLightboxCrops(image, regions, container) {
+  container.innerHTML = "";
+  const normalizedRegions = regions
+    .map((region) => ({
+      ...region,
+      bbox: normalizeBbox(region.bbox),
+    }))
+    .filter((region) => region.bbox)
+    .slice(0, 6);
+  if (!normalizedRegions.length || !image.naturalWidth || !image.naturalHeight) {
+    container.hidden = true;
+    return;
+  }
+  container.hidden = false;
+  const heading = document.createElement("strong");
+  heading.textContent = "局部放大";
+  container.appendChild(heading);
+  const grid = document.createElement("div");
+  grid.className = "image-lightbox-crop-grid";
+  normalizedRegions.forEach((region, index) => {
+    grid.appendChild(buildLightboxCropItem({
+      image,
+      region,
+      index,
+    }));
+  });
+  container.appendChild(grid);
+}
+
+function buildLightboxCropItem({image, region, index}) {
+  const item = document.createElement("article");
+  item.className = "image-lightbox-crop-item";
+  const canvas = document.createElement("canvas");
+  const crop = paddedCrop(region.bbox, image.naturalWidth, image.naturalHeight);
+  const targetWidth = 360;
+  const targetHeight = Math.max(180, Math.round((crop.height / crop.width) * targetWidth));
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const context = canvas.getContext("2d");
+  const style = visualFindingStyle(region.target);
+  context.drawImage(
+    image,
+    crop.x,
+    crop.y,
+    crop.width,
+    crop.height,
+    0,
+    0,
+    targetWidth,
+    targetHeight,
+  );
+  enhanceCanvasContrast(context, targetWidth, targetHeight);
+  const scaleX = targetWidth / crop.width;
+  const scaleY = targetHeight / crop.height;
+  const [x1, y1, x2, y2] = region.bbox;
+  drawCandidateHighlight({
+    context,
+    label: style.label || "候选区域",
+    color: style.color || "#ef4444",
+    rect: {
+      x: (x1 - crop.x) * scaleX,
+      y: (y1 - crop.y) * scaleY,
+      width: (x2 - x1) * scaleX,
+      height: (y2 - y1) * scaleY,
+    },
+  });
+  const label = document.createElement("div");
+  label.innerHTML = `
+    <strong>候选区域 ${escapeHtml(region.regionId || String(index + 1))}</strong>
+    <span>${escapeHtml([region.laterality, region.areaPx ? `${region.areaPx} px` : ""].filter(Boolean).join(" · ") || "bbox 局部放大")}</span>
+  `;
+  const hint = document.createElement("p");
+  hint.textContent = style.guidance || "看彩色高亮框内的局部灰度、纹理或轮廓异常。";
+  item.appendChild(canvas);
+  item.appendChild(label);
+  item.appendChild(hint);
+  return item;
+}
+
+function enhanceCanvasContrast(context, width, height) {
+  let imageData;
+  try {
+    imageData = context.getImageData(0, 0, width, height);
+  } catch (error) {
+    return;
+  }
+  const data = imageData.data;
+  const contrast = 1.32;
+  const brightness = 5;
+  for (let index = 0; index < data.length; index += 4) {
+    const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+    const enhanced = Math.max(0, Math.min(255, (gray - 128) * contrast + 128 + brightness));
+    data[index] = enhanced;
+    data[index + 1] = enhanced;
+    data[index + 2] = enhanced;
+  }
+  context.putImageData(imageData, 0, 0);
+}
+
+function drawCandidateHighlight({context, label, color, rect}) {
+  const x = Math.max(0, rect.x);
+  const y = Math.max(0, rect.y);
+  const width = Math.max(8, rect.width);
+  const height = Math.max(8, rect.height);
+  context.save();
+  context.fillStyle = hexToRgba(color, 0.22);
+  context.strokeStyle = color;
+  context.lineWidth = 4;
+  context.fillRect(x, y, width, height);
+  context.strokeRect(x, y, width, height);
+  context.setLineDash([8, 5]);
+  context.lineWidth = 2;
+  context.strokeStyle = "#ffffff";
+  context.strokeRect(x + 4, y + 4, Math.max(1, width - 8), Math.max(1, height - 8));
+  context.setLineDash([]);
+  const labelText = `看这里：${label}`;
+  context.font = "bold 18px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+  const metrics = context.measureText(labelText);
+  const labelWidth = Math.min(context.canvas.width - 16, metrics.width + 18);
+  const labelHeight = 30;
+  const labelX = Math.max(8, Math.min(context.canvas.width - labelWidth - 8, x));
+  const labelY = y > 42 ? y - 38 : Math.min(context.canvas.height - labelHeight - 8, y + height + 8);
+  context.fillStyle = hexToRgba(color, 0.92);
+  context.fillRect(labelX, labelY, labelWidth, labelHeight);
+  context.fillStyle = "#ffffff";
+  context.fillText(labelText, labelX + 9, labelY + 21);
+  context.restore();
+}
+
+function hexToRgba(hex, alpha) {
+  const normalized = String(hex || "#ef4444").replace("#", "");
+  const value = normalized.length === 3
+    ? normalized.split("").map((char) => char + char).join("")
+    : normalized.padEnd(6, "0").slice(0, 6);
+  const r = parseInt(value.slice(0, 2), 16);
+  const g = parseInt(value.slice(2, 4), 16);
+  const b = parseInt(value.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function paddedCrop(bbox, imageWidth, imageHeight) {
+  const [x1, y1, x2, y2] = bbox;
+  const width = x2 - x1;
+  const height = y2 - y1;
+  const padding = Math.max(width, height, 36) * 1.15;
+  const centerX = (x1 + x2) / 2;
+  const centerY = (y1 + y2) / 2;
+  const cropWidth = Math.min(imageWidth, Math.max(width + padding * 2, 96));
+  const cropHeight = Math.min(imageHeight, Math.max(height + padding * 2, 96));
+  const cropX = Math.max(0, Math.min(imageWidth - cropWidth, centerX - cropWidth / 2));
+  const cropY = Math.max(0, Math.min(imageHeight - cropHeight, centerY - cropHeight / 2));
+  return {
+    x: cropX,
+    y: cropY,
+    width: cropWidth,
+    height: cropHeight,
+  };
 }
 
 function escapeHtml(value) {
@@ -2556,12 +3236,17 @@ async function runStandardSample() {
   loadStandardSample();
   setCasePending(true);
   showCaseThinking("标准样例分析中");
+  startCaseProgress("读取标准样例", [
+    {after: 0, text: "正在读取预生成 artifact"},
+    {after: 3, text: "如果样例不存在，将切换到实时分析"},
+  ]);
   setStatus("标准样例分析中...");
   try {
     const payload = await fetchStandardDemoCaseOrRun("glioma_ground_truth", buildCasePayload());
     renderPayload(payload);
     setStatus("标准样例完成", "ok");
   } catch (error) {
+    renderCaseError(error, "标准样例读取失败");
     setStatus(error.message, "error");
   } finally {
     setCasePending(false);
@@ -2576,12 +3261,17 @@ async function runRealVlmMedSAM2Sample() {
   loadRealVlmMedSAM2Sample();
   setCasePending(true);
   showCaseThinking("真实 VLM+MedSAM2 样例读取中");
+  startCaseProgress("读取真实样例", [
+    {after: 0, text: "正在读取预生成 artifact"},
+    {after: 3, text: "正在整合影像输出和报告"},
+  ]);
   setStatus("真实 VLM+MedSAM2 样例读取中...");
   try {
     const payload = await fetchRealVlmMedSAM2Demo();
     renderPayload(payload);
     setStatus("真实 VLM+MedSAM2 样例完成", "ok");
   } catch (error) {
+    renderCaseError(error, "真实 VLM+MedSAM2 样例读取失败");
     setStatus(error.message, "error");
   } finally {
     setCasePending(false);
@@ -2595,12 +3285,17 @@ async function runEvidenceGatewaySnapshot() {
   }
   setCasePending(true);
   showCaseThinking("Evidence Gateway 快照读取中");
+  startCaseProgress("读取 Evidence Gateway 快照", [
+    {after: 0, text: "正在读取预生成 artifact"},
+    {after: 3, text: "正在整合 gateway 视图"},
+  ]);
   setStatus("Evidence Gateway 快照读取中...");
   try {
     const snapshot = await fetchEvidenceGatewaySnapshot();
     renderEvidenceGatewaySnapshot(snapshot);
     setStatus("Evidence Gateway 快照完成", "ok");
   } catch (error) {
+    renderCaseError(error, "Evidence Gateway 快照读取失败");
     setStatus(error.message, "error");
   } finally {
     setCasePending(false);
@@ -2615,12 +3310,17 @@ async function runXrayInsufficientSample() {
   loadXrayInsufficientSample();
   setCasePending(true);
   showCaseThinking("X 光证据协调中");
+  startCaseProgress("读取 X 光证据不足样例", [
+    {after: 0, text: "正在读取预生成 artifact"},
+    {after: 3, text: "如果样例不存在，将切换到实时分析"},
+  ]);
   setStatus("X 光证据不足样例分析中...");
   try {
     const payload = await fetchStandardDemoCaseOrRun("xray_insufficient_evidence", buildCasePayload());
     renderPayload(payload);
     setStatus("X 光证据不足样例完成", "ok");
   } catch (error) {
+    renderCaseError(error, "X 光证据不足样例读取失败");
     setStatus(error.message, "error");
   } finally {
     setCasePending(false);
@@ -2635,12 +3335,17 @@ async function runFhnNoMaskSample() {
   loadFhnNoMaskSample();
   setCasePending(true);
   showCaseThinking("FHN no-mask VLM + MedSAM2 分析中");
+  startCaseProgress("读取 FHN no-mask 样例", [
+    {after: 0, text: "正在读取预生成 artifact"},
+    {after: 3, text: "如果样例不存在，将切换到实时 VLM + MedSAM2"},
+  ]);
   setStatus("FHN no-mask 多征象样例分析中...");
   try {
     const payload = await fetchStandardDemoCaseOrRun("fhn_no_mask_multifinding", buildCasePayload());
     renderPayload(payload);
     setStatus("FHN no-mask 多征象样例完成", "ok");
   } catch (error) {
+    renderCaseError(error, "FHN no-mask 多征象样例读取失败");
     setStatus(error.message, "error");
   } finally {
     setCasePending(false);
@@ -2708,6 +3413,28 @@ elements.dropZone.addEventListener("drop", async (event) => {
   }
 });
 
+document.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-lightbox-src]");
+  if (card) {
+    openImageLightbox({
+      src: card.dataset.lightboxSrc,
+      title: card.dataset.lightboxTitle,
+      caption: card.dataset.lightboxCaption,
+      regions: card.dataset.lightboxRegions,
+    });
+    return;
+  }
+  if (event.target.closest("[data-lightbox-close]")) {
+    closeImageLightbox();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeImageLightbox();
+  }
+});
+
 elements.caseForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (state.casePending) {
@@ -2716,12 +3443,19 @@ elements.caseForm.addEventListener("submit", async (event) => {
   }
   setCasePending(true);
   showCaseThinking("病例分析中");
+  startCaseProgress("实时病例分析", [
+    {after: 0, text: "正在选择 skill 和检查影像输入"},
+    {after: 8, text: "正在调用 VLM/API 定位候选影像征象"},
+    {after: 25, text: "正在运行或跳过分割候选区域"},
+    {after: 45, text: "正在生成 evidence bundle 和诊断报告"},
+  ]);
   setStatus("分析中...");
   try {
     const payload = await postMedScope(buildCasePayload());
     renderPayload(payload);
     setStatus("分析完成", "ok");
   } catch (error) {
+    renderCaseError(error, "病例分析失败");
     setStatus(error.message, "error");
   } finally {
     setCasePending(false);

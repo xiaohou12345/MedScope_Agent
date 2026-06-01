@@ -61,7 +61,7 @@ class OpenAICompatibleVisionClient:
         image = Path(image_path)
         data_url = self._image_data_url(image)
         payload = {
-            "model": self.route_log.model_for_active_route(),
+            "model": self.route_log.vision_model_for_active_route(),
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {
@@ -135,6 +135,7 @@ class VisionPromptGenerator:
                 width=width,
                 height=height,
                 model_payload=model_payload,
+                skill_required_next_images=user_payload["skill_required_next_images"],
             )
         except ValueError as exc:
             return self._invalid_result(image, width, height, str(exc), content)
@@ -163,14 +164,29 @@ class VisionPromptGenerator:
                 "visual_protocol": visual_protocol,
             },
             "requested_finding_targets": finding_targets,
+            "skill_required_next_images": [
+                dict(item)
+                for item in visual_protocol.get("required_next_images") or []
+                if isinstance(item, dict)
+            ],
             "required_output_schema": {
                 "modality": "xray|ct|mri|ultrasound|unknown",
                 "body_part": "chest|brain|hip|abdomen|unknown",
+                "needs_next_imaging": True,
+                "required_next_images": [
+                    {
+                        "modality": "MRI|CT|X-ray|ultrasound",
+                        "region": "body region",
+                        "reason": "why this image is needed by the skill/guideline",
+                    }
+                ],
                 "suspected_regions": [
                     {
                         "target": "one_of_requested_finding_targets",
                         "bbox": [0, 0, width, height],
+                        "polygon": [[0, 0], [width, 0], [width, height], [0, height]],
                         "confidence": 0.0,
+                        "evidence_text": "short visual evidence phrase",
                         "rationale": "visual reason only",
                     }
                 ],
@@ -216,6 +232,7 @@ class VisionPromptGenerator:
         width: int,
         height: int,
         model_payload: dict[str, Any],
+        skill_required_next_images: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         regions = model_payload.get("suspected_regions") or []
         if not isinstance(regions, list):
@@ -239,12 +256,19 @@ class VisionPromptGenerator:
             raise ValueError(rejected_regions[0]["reason"])
         boxes = [region["bbox"] for region in checked_regions]
         status = "ok" if boxes else "no_suspected_region"
+        required_next_images = self._normalized_required_next_images(
+            model_payload=model_payload,
+            skill_required_next_images=skill_required_next_images or [],
+        )
+        needs_next_imaging = bool(model_payload.get("needs_next_imaging")) or bool(required_next_images)
         return {
             "status": status,
             "image_path": str(image_path),
             "image_size": {"width": width, "height": height},
             "modality": str(model_payload.get("modality") or "unknown"),
             "body_part": str(model_payload.get("body_part") or "unknown"),
+            "needs_next_imaging": needs_next_imaging,
+            "required_next_images": required_next_images,
             "suspected_regions": checked_regions,
             "segmentation_prompt": {
                 "source": "vision_model_bbox",
@@ -273,12 +297,70 @@ class VisionPromptGenerator:
         if not (0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
             raise ValueError(f"Invalid bbox outside image bounds or empty: {[x1, y1, x2, y2]}")
         confidence = float(region.get("confidence", 0.0))
+        polygon = self._checked_polygon(region.get("polygon"), width=width, height=height)
+        evidence_text = str(region.get("evidence_text") or region.get("rationale") or "")
         return {
             "target": str(region.get("target") or "candidate_region"),
             "bbox": [x1, y1, x2, y2],
+            "polygon": polygon,
             "confidence": max(0.0, min(1.0, confidence)),
+            "evidence_text": evidence_text,
             "rationale": str(region.get("rationale") or ""),
         }
+
+    def _checked_polygon(
+        self,
+        polygon: Any,
+        *,
+        width: int,
+        height: int,
+    ) -> list[list[int]]:
+        if polygon in (None, ""):
+            return []
+        if not isinstance(polygon, list):
+            raise ValueError(f"Invalid polygon: {polygon}")
+        checked_points: list[list[int]] = []
+        for point in polygon:
+            if (
+                not isinstance(point, list)
+                or len(point) != 2
+                or not all(isinstance(value, (int, float)) for value in point)
+            ):
+                raise ValueError(f"Invalid polygon point: {point}")
+            x, y = [int(round(value)) for value in point]
+            if not (0 <= x <= width and 0 <= y <= height):
+                raise ValueError(f"Invalid polygon point outside image bounds: {[x, y]}")
+            checked_points.append([x, y])
+        if checked_points and len(checked_points) < 3:
+            raise ValueError("Invalid polygon: at least 3 points are required")
+        return checked_points
+
+    def _normalized_required_next_images(
+        self,
+        *,
+        model_payload: dict[str, Any],
+        skill_required_next_images: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        raw_items = (
+            model_payload.get("required_next_images")
+            or model_payload.get("recommended_next_images")
+            or skill_required_next_images
+            or []
+        )
+        if not isinstance(raw_items, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            normalized.append(
+                {
+                    "modality": str(item.get("modality") or "unknown"),
+                    "region": str(item.get("region") or item.get("body_part") or "unknown"),
+                    "reason": str(item.get("reason") or ""),
+                }
+            )
+        return normalized
 
     def _invalid_result(
         self,
@@ -294,6 +376,8 @@ class VisionPromptGenerator:
             "image_size": {"width": width, "height": height},
             "modality": "unknown",
             "body_part": "unknown",
+            "needs_next_imaging": False,
+            "required_next_images": [],
             "suspected_regions": [],
             "segmentation_prompt": {
                 "source": "vision_model_bbox",

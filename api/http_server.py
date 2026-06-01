@@ -12,6 +12,8 @@ from urllib.parse import parse_qs, urlparse
 
 from api.service import MedScopeReadinessError, MedScopeService
 from memory.memory_manager import MemoryManager
+from scripts.image_prompt_skill_baseline import run_image_prompt_skill_baseline
+from tools.skill_builder_tool import SkillBuilderTool
 
 
 STATIC_ROOT = Path(__file__).resolve().parent.parent / "web"
@@ -495,7 +497,47 @@ def dispatch_http_request(
         if parsed.query.startswith("filename="):
             filename = parsed.query.removeprefix("filename=")
         return handle_file_upload(filename=filename, body=body)
+    if method == "POST" and route_path == "/v1/baseline/image-prompt-skill":
+        try:
+            payload = json.loads(body.decode("utf-8")) if body else {}
+            return 200, _run_image_baseline_from_payload(payload)
+        except FileNotFoundError as exc:
+            return 400, {"error": str(exc), "error_type": "missing_input"}
+        except RuntimeError as exc:
+            return 503, {
+                "error": str(exc),
+                "error_type": "baseline_model_not_ready",
+                "action_items": [
+                    "确认 docs/API_ROUTE_LOG.md 中 active_route 指向可用模型路由。",
+                    "配置对应 API key 环境变量，例如 DMX_API_KEY 或 KY_API_KEY。",
+                    "如果只想离线测试，请运行 scripts.image_prompt_skill_baseline 的单元测试或注入 fake client。",
+                ],
+            }
+        except ValueError as exc:
+            return 400, {"error": str(exc)}
+        except json.JSONDecodeError as exc:
+            return 400, {"error": f"invalid json: {exc}"}
     return 404, {"error": "not found"}
+
+
+def _run_image_baseline_from_payload(payload: dict) -> dict:
+    image_path = payload.get("image_path")
+    patient_prompt = payload.get("patient_prompt") or payload.get("patient_message")
+    if not image_path:
+        raise ValueError("image_path is required")
+    if not patient_prompt:
+        raise ValueError("patient_prompt is required")
+    disease_skill = payload.get("skill")
+    disease_key = payload.get("disease_key")
+    if disease_skill is None and disease_key:
+        disease_skill = SkillBuilderTool().load_guideline_skill(str(disease_key))
+    return run_image_prompt_skill_baseline(
+        image_path=Path(str(image_path)),
+        patient_prompt=str(patient_prompt),
+        disease_skill=disease_skill,
+        disease_key=str(disease_key) if disease_key else None,
+        output_dir=Path(DEFAULT_OUTPUT_ROOT) / "fake" / "image_prompt_skill_baseline",
+    )
 
 
 def dispatch_memory_request(

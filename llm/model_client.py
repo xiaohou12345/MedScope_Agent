@@ -26,6 +26,8 @@ class ApiRouteLog:
     active_route: str
     dmx_model: str = "dmx-medical-chat"
     ky_model: str = "ky-self-hosted-medical"
+    dmx_vision_model: str | None = None
+    ky_vision_model: str | None = None
     dmx_base_url: str = "https://api.dmx.local/v1/chat/completions"
     ky_base_url: str = "http://127.0.0.1:8000/v1/chat/completions"
 
@@ -44,6 +46,8 @@ class ApiRouteLog:
             active_route=route_data.get("active_route", "dmx"),
             dmx_model=route_data.get("dmx_model", cls.dmx_model),
             ky_model=route_data.get("ky_model", cls.ky_model),
+            dmx_vision_model=route_data.get("dmx_vision_model") or None,
+            ky_vision_model=route_data.get("ky_vision_model") or None,
             dmx_base_url=route_data.get("dmx_base_url", cls.dmx_base_url),
             ky_base_url=route_data.get("ky_base_url", cls.ky_base_url),
         )
@@ -52,6 +56,11 @@ class ApiRouteLog:
         if self.active_route == "ky":
             return self.ky_model
         return self.dmx_model
+
+    def vision_model_for_active_route(self) -> str:
+        if self.active_route == "ky":
+            return self.ky_vision_model or self.ky_model
+        return self.dmx_vision_model or self.dmx_model
 
     def base_url_for_active_route(self) -> str:
         if self.active_route == "ky":
