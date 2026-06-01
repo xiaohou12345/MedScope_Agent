@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import mimetypes
 import json
+import os
 import re
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -67,6 +68,25 @@ STATIC_ROUTES = {
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
     "/static/app.js": ("app.js", "application/javascript; charset=utf-8"),
 }
+
+
+def load_dotenv_local(path: Path | str = Path(".env.local")) -> dict[str, str]:
+    env_path = Path(path)
+    if not env_path.exists():
+        return {}
+    loaded: dict[str, str] = {}
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if not key or key in os.environ:
+            continue
+        os.environ[key] = value
+        loaded[key] = value
+    return loaded
 
 
 def _build_trace_consistency(agents_traced: list[str], agent_io_summary: dict) -> dict:
@@ -1678,6 +1698,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
+    load_dotenv_local()
     run_http_server(host=args.host, port=args.port)
 
 

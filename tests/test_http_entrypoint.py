@@ -13,6 +13,7 @@ from api.http_server import (
     dispatch_skill_request,
     dispatch_static_request,
     handle_file_upload,
+    load_dotenv_local,
     resolve_public_output_path,
 )
 from memory.memory_manager import MemoryManager
@@ -52,6 +53,32 @@ class FakeGaoDoctor:
 
 
 class HttpEntrypointTest(unittest.TestCase):
+    def test_load_dotenv_local_loads_missing_keys_without_overriding_environment(self):
+        with TemporaryDirectory() as tmpdir, patch.dict(
+            "os.environ",
+            {"DMX_API_KEY": "already-set"},
+            clear=True,
+        ):
+            env_path = Path(tmpdir) / ".env.local"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "DMX_API_KEY=file-key",
+                        "KY_API_KEY=ky-file-key",
+                        "IGNORED_LINE",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_dotenv_local(env_path)
+
+            self.assertEqual(loaded, {"KY_API_KEY": "ky-file-key"})
+            import os
+
+            self.assertEqual(os.environ["DMX_API_KEY"], "already-set")
+            self.assertEqual(os.environ["KY_API_KEY"], "ky-file-key")
+
     def test_health_endpoint_returns_ok(self):
         status, payload = dispatch_http_request(
             method="GET",
@@ -80,11 +107,11 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("evidencePanel", text)
         self.assertIn("auditPanel", text)
         self.assertIn("qaSubmitButton", text)
-        self.assertIn("一键标准样例", text)
-        self.assertIn("X 光证据不足样例", text)
-        self.assertIn("FHN no-mask 多征象样例", text)
+        self.assertIn("载入标准样例", text)
+        self.assertIn("载入 X 光证据不足样例", text)
+        self.assertIn("载入 FHN no-mask 样例", text)
         self.assertIn("Evidence Gateway 快照", text)
-        self.assertIn("真实 VLM+MedSAM2 样例", text)
+        self.assertIn("载入 VLM+MedSAM2 样例", text)
         self.assertNotIn("调试 JSON", text)
         self.assertNotIn("图像路径", text)
         self.assertNotIn("Mask 路径", text)

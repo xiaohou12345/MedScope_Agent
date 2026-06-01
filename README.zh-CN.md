@@ -1,0 +1,339 @@
+# MedScope Agent 中文说明
+
+MedScope Agent 是一个实验性的医疗多 Agent / Agentic Runtime 项目，目标是把“患者描述 + 医疗图像 + 医学指南 Skill”组织成一条可追踪、可审计、受证据约束的临床证据流水线。
+
+本项目是科研原型，不是医疗器械，不能用于真实临床诊断或治疗决策。
+
+英文说明见 [README.md](README.md)。
+
+## 项目定位
+
+MedScope 不是简单把系统拆成很多 Agent。更准确的说法是：
+
+```text
+上层：Clinical Evidence Pipeline 临床证据流水线
+  Clinical Orchestrator
+    -> Skill Gateway / Skill Builder
+    -> Vision Evidence Agent
+    -> Diagnosis Reasoning Agent
+    -> Memory / Audit Layer
+
+下层：Agentic Runtime / Evidence Gateway
+  Skill 分发
+  共享 artifact 工作区
+  工具路由
+  契约和安全守卫
+  stop hooks / reflection hooks
+  candidate queue / validation gate
+```
+
+一句话概括：
+
+> MedScope 把医疗诊断拆成一条受指南和证据约束的执行链路：视觉 Agent 只负责观察、定位、分割和测量；诊断 Agent 只消费结构化 evidence bundle；Memory/Audit 记录证据链；Gateway 负责 skill、文件、工具、契约和候选更新的统一管理。
+
+## 当前已经实现的能力
+
+- 支持 `skills/` 中的正式 guideline skill。
+- 支持根据患者描述、症状、图像路径线索自动选择 skill。
+- 支持 Vision Agent 根据 skill 的 `visual_protocol` 输出结构化视觉证据。
+- 支持参考 mask、VLM-only、VLM+MedSAM2 候选分割、MedSAM2 runner 等多种视觉路径。
+- 支持诊断 Agent 只读取 evidence bundle，不直接读取原始图像。
+- 支持缺失证据安全边界：缺失 T1ce、MRI、mask 等不能被写成阴性或 0。
+- 支持四类 memory：`patient_memory`、`image_memory`、`skill_memory`、`reasoning_memory`。
+- 支持 follow-up QA 基于 evidence bundle 回答，避免脱离当前病例证据。
+- 支持前端上传、Thinking 状态、影像发现、诊断报告、evidence bundle、memory audit 展示。
+- 支持 prompt baseline，用于比较普通 LLM/Codex 式提示词和 evidence-bounded pipeline 的差异。
+
+## 五个实现模块应该怎么讲
+
+代码里仍然有几个实现类，但对外汇报时不建议讲成“五个平铺 Agent”。
+
+更建议这样讲：
+
+- `Clinical Orchestrator`：对应 `agents/gaodoctor_agent.py`，负责患者入口、意图识别、skill 路由、流程调度和 QA。
+- `Vision Evidence Agent`：对应 `agents/vision_agent.py` 和视觉工具，只输出视觉证据、mask、overlay、数值测量和证据充分性。
+- `Diagnosis Reasoning Agent`：对应 `agents/diagnosis_agent.py`，只根据 skill 和 evidence bundle 生成报告。
+- `Skill Builder / Guideline Component`：条件触发组件。已有 skill 时加载和校验；缺 skill 时才检索指南、抽取规则、生成候选或正式 skill。
+- `Memory / Audit Layer`：基础设施，不参与医学判断，只保存四类 memory、evidence bundle、runtime trace、audit 和 replay。
+
+底层的 `Evidence Gateway` 才是系统扩展性的核心：
+
+- 管理 skill 和 visual protocol。
+- 管理上传图片、mask、overlay、报告和 audit artifact。
+- 根据 skill 和图像模态选择视觉工具。
+- 用 contract guard 限制 Agent 输入输出。
+- 用 stop hook 检查证据缺口和越界诊断。
+- 用 candidate queue 保存候选经验，但不自动改写正式医学指南。
+
+详细说明：
+
+- [docs/architecture/boundaries.md](docs/architecture/boundaries.md)
+- [docs/DUAL_PATH_AGENT_FRAMEWORK.md](docs/DUAL_PATH_AGENT_FRAMEWORK.md)
+- [docs/AGENT_FLOW.zh-CN.md](docs/AGENT_FLOW.zh-CN.md)
+
+## 目录结构
+
+```text
+agents/       高医生/视觉/诊断/报告等实现
+api/          HTTP API 和统一 service 入口
+contracts/    Agent、Tool、Memory、Report 之间的数据契约
+docs/         架构说明、API 路由、数据集和 MedSAM2 配置文档
+llm/          OpenAI-compatible 模型调用封装
+memory/       JSON memory、evidence bundle、audit、runtime trace
+prompts/      诊断、高医生和 baseline prompt
+scripts/      demo、评测脚本、数据集探针、MedSAM2 wrapper
+skills/       疾病 skill、指南来源、visual protocol
+tests/        单元测试和集成测试
+tools/        指南、视觉、分割、测量、路由工具
+web/          静态前端
+```
+
+以下内容默认不上传 GitHub：
+
+- `output/`、`outputs/`
+- `data/external/`、`data/cases/`、`data/images/`、`data/masks/`、`data/overlays/`
+- DICOM/NIfTI 文件、模型权重
+- `.env.local` 等本地密钥文件
+
+## 当前 Skill
+
+正式 skill 文件：
+
+- `skills/femoral_head_necrosis.yaml`：股骨头坏死
+- `skills/diffuse_glioma_brats.yaml`：成人弥漫性胶质瘤 / BraTS
+- `skills/idiopathic_pulmonary_fibrosis_hrct.yaml`：特发性肺纤维化 HRCT
+- `skills/pneumonia_chest_xray.yaml`：肺炎胸片
+
+注意：这些文件扩展名是 `.yaml`，但当前内容是 JSON-compatible 格式，代码用 Python 标准库 `json` 加载。
+
+## 环境要求
+
+建议环境：
+
+- Python 3.10+
+- Pillow
+- NumPy
+- nibabel，用于 NIfTI/BraTS 流程
+- 可选：PyTorch + 外部 MedSAM2 仓库，用于真实分割推理
+
+当前仓库还没有提交 `requirements.txt` 或 `pyproject.toml`，这是后续需要补齐的工程项。可以先按需要安装：
+
+```bash
+python -m pip install pillow numpy nibabel
+```
+
+## 模型 API 配置
+
+模型路由统一放在 [docs/API_ROUTE_LOG.md](docs/API_ROUTE_LOG.md)。
+
+真实模型调用需要环境变量：
+
+```bash
+export DMX_API_KEY="..."
+# 或
+export KY_API_KEY="..."
+```
+
+Agent 代码不应直接写 provider-specific 逻辑，只通过 `llm/` 中的统一接口调用。
+
+## MedSAM2 配置
+
+MedSAM2 是可选外部分割后端。需要真实调用时配置：
+
+```bash
+export MEDSAM2_REPO_PATH="/path/to/MedSAM2"
+export MEDSAM2_COMMAND_TEMPLATE='python /path/to/runner.py --image {image_path} --output {output_mask_path} --prompt-json {prompt_json}'
+export MEDSAM2_TIMEOUT_SECONDS=600
+```
+
+说明见：
+
+- [docs/datasets/medsam2_runner_config.md](docs/datasets/medsam2_runner_config.md)
+
+## 启动前端
+
+```bash
+python -m api.http_server --host 127.0.0.1 --port 8000
+```
+
+浏览器打开：
+
+```text
+http://127.0.0.1:8000
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+## 命令行使用
+
+默认入口：
+
+```bash
+python app.py \
+  --image /path/to/image.png \
+  --message "左髋疼痛三个月，请结合影像分析" \
+  --symptom "髋关节疼痛" \
+  --risk-factor "饮酒史"
+```
+
+显式指定 skill：
+
+```bash
+python app.py \
+  --image /path/to/image.png \
+  --message "请评估这张骨盆正位 X 光是否支持股骨头坏死" \
+  --disease-key femoral_head_necrosis
+```
+
+## HTTP API
+
+主诊断接口：
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/medscope \
+  -H "Content-Type: application/json" \
+  -d '{
+    "patient_message": "请评估这张髋关节 X 光。",
+    "image_path": "/path/to/image.png",
+    "patient_info": {
+      "age": 45,
+      "sex": "male",
+      "symptoms": ["髋关节疼痛"]
+    }
+  }'
+```
+
+常用接口：
+
+- `GET /health`
+- `POST /v1/upload?filename=image.png`
+- `GET /v1/skills`
+- `GET /v1/skills/{skill_key}`
+- `POST /v1/skills/{skill_key}/review-draft`
+- `GET /v1/memory/cases`
+- `GET /v1/memory/cases/{case_id}`
+- `GET /v1/memory/cases/{case_id}/evidence-bundle`
+- `GET /v1/memory/cases/{case_id}/audit`
+- `GET /v1/demo/standard`
+- `POST /v1/baseline/image-prompt-skill`
+
+## 常用 Demo
+
+标准端到端 demo：
+
+```bash
+python -m scripts.end_to_end_demo --suite
+```
+
+API 连通性检查：
+
+```bash
+python -m scripts.api_smoke_test
+```
+
+证据约束推理评测：
+
+```bash
+python -m scripts.evidence_bounded_reasoning_eval
+```
+
+三层 prompt baseline：
+
+```bash
+python -m scripts.baseline_reasoning_eval
+```
+
+图像 + prompt + skill baseline：
+
+```bash
+python -m scripts.image_prompt_skill_baseline \
+  --image /path/to/image.png \
+  --message "请分析这张图像" \
+  --disease-key femoral_head_necrosis \
+  --output-dir output/real/Codex工作流基线/my_case
+```
+
+这是可复用的三层 Codex/VLM 工作流。它会在同一张图、同一个患者描述、
+同一个 disease skill 上依次运行：
+
+- `simple_prompt`
+- `workflow_prompt`
+- `fewshot_prompt`
+
+并在输出目录中生成：
+
+- `image_prompt_skill_baseline.json`：三层原始输出和指标。
+- `image_prompt_skill_baseline.md`：三层对比表。
+- `中文结论.md`：中文结论、三个层次说明，以及它和 MedScope Agent 主流程的区别。
+
+无 mask 视觉流水线：
+
+```bash
+python -m scripts.no_mask_skill_visual_pipeline_demo \
+  --image /path/to/xray.png \
+  --message "请评估股骨头坏死相关征象"
+```
+
+BraTS 视觉测试线：
+
+```bash
+python -m scripts.brats_vision_test_line
+```
+
+## 测试
+
+运行全量测试：
+
+```bash
+python -m unittest discover -v
+```
+
+最近一次本地验证：
+
+```text
+Ran 328 tests in 71.407s
+OK
+```
+
+前端 JS 语法检查：
+
+```bash
+node --check web/app.js
+```
+
+## 项目 Review
+
+当前做得比较扎实的部分：
+
+- 临床职责边界比较清楚：诊断 Agent 不直接读原图，避免大模型凭空脑补像素证据。
+- `guideline_based` 和 `data_mined_hypothesis` 的边界已经写进 skill contract。
+- Memory 不只是保存结论，而是保存 patient/image/skill/reasoning 四类证据链。
+- Vision Agent 已经支持“只用 VLM 观察”和“VLM 定位 + MedSAM2 候选分割”两种模式。
+- 测试覆盖较广，包含契约、路由、HTTP、Memory、视觉协议、安全门、baseline 和 demo。
+
+当前主要风险和不足：
+
+- 视觉分割质量还没有真正收敛。框架能路由和审计 MedSAM2/VLM，但病灶是否准确仍需要疾病数据集和模型验证。
+- 真实数据和生成结果大量在 `output/`、`data/external/`，这些不会随 GitHub 同步，新环境复现实验还不够方便。
+- 还没有依赖锁文件，环境复现需要补 `requirements.txt` 或 `pyproject.toml`。
+- Skill 自动升级被正确阻断，但后续如果要做 self-evolving，需要严格保留人工审核和 validation gate。
+- 当前系统是科研 demo，不是临床验证系统。
+
+建议下一步：
+
+1. 补 `requirements.txt` 或 `pyproject.toml`，区分 core / vision / medsam2 / dev 依赖。
+2. 准备一组可以公开提交的小型安全样例，让新 clone 的仓库能直接跑通主 demo。
+3. 把视觉后端接口进一步标准化：VLM-only、VLM+MedSAM2、专病分割模型三种模式分清楚。
+4. 单独建立视觉分割 benchmark，不要只依赖前端效果图判断。
+5. 保持 clinical skill 更新必须经过人工审核和验证门。
+
+## 医疗安全和隐私
+
+- 不要提交 API key、`.env.local`、DICOM、NIfTI、模型权重或真实患者 case trace。
+- 系统输出是科研审计 artifact，不是医疗建议。
+- 缺失证据必须显示为 missing / unassessed，不能写成阴性。
+- VLM 或分割模型给出的病灶只能作为候选证据，未经验证不能当成确定诊断依据。

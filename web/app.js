@@ -9,6 +9,9 @@ const state = {
   realDemoMode: false,
   casePending: false,
   qaPending: false,
+  qaAbortController: null,
+  qaPendingItem: null,
+  qaPendingQuestion: "",
   caseProgressTimer: null,
   caseProgressStartedAt: 0,
   caseProgressLabel: "",
@@ -160,6 +163,20 @@ async function postMedScope(payload) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function postMedScopeQa(payload, signal) {
+  const response = await fetch("/v1/medscope", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+    signal,
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  return body;
 }
 
 async function fetchSkillList() {
@@ -585,6 +602,7 @@ async function postDemoQa(caseSlug, payload) {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(payload),
+    signal: state.qaAbortController?.signal,
   });
   const body = await response.json();
   if (!response.ok) {
@@ -598,6 +616,7 @@ async function postRealVlmMedSAM2Qa(payload) {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(payload),
+    signal: state.qaAbortController?.signal,
   });
   const body = await response.json();
   if (!response.ok) {
@@ -2837,6 +2856,23 @@ function renderPayload(payload) {
   if (state.caseId && !payload.memory_replay) {
     refreshMemoryReplay(state.caseId);
   }
+  updateQaControls();
+}
+
+function renderQaPayload(payload) {
+  state.caseId = payload.case_id || state.caseId || "";
+  state.lastPayload = {
+    ...state.lastPayload,
+    case_id: state.caseId,
+    intent: payload.intent || "qa",
+    memory_audit: payload.memory_audit || state.lastPayload.memory_audit,
+    memory_replay: payload.memory_replay || state.lastPayload.memory_replay,
+    runtime_gateway_trace: payload.runtime_gateway_trace || state.lastPayload.runtime_gateway_trace,
+  };
+  if (payload.memory_audit || payload.memory_replay || payload.runtime_gateway_trace) {
+    renderMemoryAudit(state.lastPayload);
+  }
+  updateQaControls();
 }
 
 async function refreshMemoryReplay(caseId) {
@@ -2854,9 +2890,23 @@ async function refreshMemoryReplay(caseId) {
 
 function setQaPending(isPending) {
   state.qaPending = isPending;
-  elements.qaInput.disabled = isPending;
-  elements.qaSubmitButton.disabled = isPending;
-  elements.qaSubmitButton.textContent = isPending ? "Thinking..." : "发送";
+  if (!isPending) {
+    state.qaAbortController = null;
+    state.qaPendingItem = null;
+    state.qaPendingQuestion = "";
+  }
+  updateQaControls();
+}
+
+function updateQaControls() {
+  const analysisReady = Boolean(state.caseId);
+  const disabled = !analysisReady || state.casePending || state.qaPending;
+  elements.qaInput.disabled = !analysisReady || state.casePending;
+  elements.qaSubmitButton.disabled = !analysisReady || state.casePending;
+  elements.qaSubmitButton.textContent = state.qaPending ? "撤回" : "发送";
+  elements.qaInput.placeholder = analysisReady
+    ? "例如：为什么增强肿瘤没有结果？"
+    : "分析完成后可以追问";
 }
 
 function setCasePending(isPending, label = "运行分析") {
@@ -2868,6 +2918,7 @@ function setCasePending(isPending, label = "运行分析") {
   elements.xrayInsufficientButton.disabled = isPending;
   elements.fhnNoMaskButton.disabled = isPending;
   elements.submitButton.textContent = isPending ? "Thinking..." : label;
+  updateQaControls();
   if (!isPending) {
     clearCaseProgressTimer();
   }
@@ -2928,6 +2979,10 @@ function showQaThinking(question) {
 }
 
 function updateQaItem(item, question, answer, kind = "") {
+  if (kind === "withdrawn") {
+    item.remove();
+    return;
+  }
   item.className = kind ? `qa-item qa-${kind}` : "qa-item";
   item.removeAttribute("aria-busy");
   item.innerHTML = `<strong>${escapeHtml(question)}</strong><p>${escapeHtml(answer || "-")}</p>`;
@@ -3234,23 +3289,8 @@ async function runStandardSample() {
     return;
   }
   loadStandardSample();
-  setCasePending(true);
-  showCaseThinking("标准样例分析中");
-  startCaseProgress("读取标准样例", [
-    {after: 0, text: "正在读取预生成 artifact"},
-    {after: 3, text: "如果样例不存在，将切换到实时分析"},
-  ]);
-  setStatus("标准样例分析中...");
-  try {
-    const payload = await fetchStandardDemoCaseOrRun("glioma_ground_truth", buildCasePayload());
-    renderPayload(payload);
-    setStatus("标准样例完成", "ok");
-  } catch (error) {
-    renderCaseError(error, "标准样例读取失败");
-    setStatus(error.message, "error");
-  } finally {
-    setCasePending(false);
-  }
+  resetViews();
+  setStatus("已载入标准样例，点击“运行分析”开始", "ok");
 }
 
 async function runRealVlmMedSAM2Sample() {
@@ -3259,23 +3299,8 @@ async function runRealVlmMedSAM2Sample() {
     return;
   }
   loadRealVlmMedSAM2Sample();
-  setCasePending(true);
-  showCaseThinking("真实 VLM+MedSAM2 样例读取中");
-  startCaseProgress("读取真实样例", [
-    {after: 0, text: "正在读取预生成 artifact"},
-    {after: 3, text: "正在整合影像输出和报告"},
-  ]);
-  setStatus("真实 VLM+MedSAM2 样例读取中...");
-  try {
-    const payload = await fetchRealVlmMedSAM2Demo();
-    renderPayload(payload);
-    setStatus("真实 VLM+MedSAM2 样例完成", "ok");
-  } catch (error) {
-    renderCaseError(error, "真实 VLM+MedSAM2 样例读取失败");
-    setStatus(error.message, "error");
-  } finally {
-    setCasePending(false);
-  }
+  resetViews();
+  setStatus("已载入真实 VLM+MedSAM2 样例，点击“运行分析”开始", "ok");
 }
 
 async function runEvidenceGatewaySnapshot() {
@@ -3308,23 +3333,8 @@ async function runXrayInsufficientSample() {
     return;
   }
   loadXrayInsufficientSample();
-  setCasePending(true);
-  showCaseThinking("X 光证据协调中");
-  startCaseProgress("读取 X 光证据不足样例", [
-    {after: 0, text: "正在读取预生成 artifact"},
-    {after: 3, text: "如果样例不存在，将切换到实时分析"},
-  ]);
-  setStatus("X 光证据不足样例分析中...");
-  try {
-    const payload = await fetchStandardDemoCaseOrRun("xray_insufficient_evidence", buildCasePayload());
-    renderPayload(payload);
-    setStatus("X 光证据不足样例完成", "ok");
-  } catch (error) {
-    renderCaseError(error, "X 光证据不足样例读取失败");
-    setStatus(error.message, "error");
-  } finally {
-    setCasePending(false);
-  }
+  resetViews();
+  setStatus("已载入 X 光证据不足样例，点击“运行分析”开始", "ok");
 }
 
 async function runFhnNoMaskSample() {
@@ -3333,28 +3343,18 @@ async function runFhnNoMaskSample() {
     return;
   }
   loadFhnNoMaskSample();
-  setCasePending(true);
-  showCaseThinking("FHN no-mask VLM + MedSAM2 分析中");
-  startCaseProgress("读取 FHN no-mask 样例", [
-    {after: 0, text: "正在读取预生成 artifact"},
-    {after: 3, text: "如果样例不存在，将切换到实时 VLM + MedSAM2"},
-  ]);
-  setStatus("FHN no-mask 多征象样例分析中...");
-  try {
-    const payload = await fetchStandardDemoCaseOrRun("fhn_no_mask_multifinding", buildCasePayload());
-    renderPayload(payload);
-    setStatus("FHN no-mask 多征象样例完成", "ok");
-  } catch (error) {
-    renderCaseError(error, "FHN no-mask 多征象样例读取失败");
-    setStatus(error.message, "error");
-  } finally {
-    setCasePending(false);
-  }
+  resetViews();
+  setStatus("已载入 FHN no-mask 多征象样例，点击“运行分析”开始", "ok");
 }
 
 function resetViews() {
+  state.caseId = "";
+  state.lastPayload = {};
+  state.demoCaseSlug = "";
+  state.realDemoMode = false;
+  state.qaPending = false;
   setCasePending(false);
-  setQaPending(false);
+  updateQaControls();
   elements.qaLog.innerHTML = "";
   elements.reportView.innerHTML = '<div class="report-empty">等待分析结果</div>';
   elements.visualMeta.textContent = "等待视觉 Agent 输出";
@@ -3441,6 +3441,11 @@ elements.caseForm.addEventListener("submit", async (event) => {
     setStatus("上一个病例仍在分析中", "warn");
     return;
   }
+  state.caseId = "";
+  state.demoCaseSlug = "";
+  state.realDemoMode = false;
+  state.qaPending = false;
+  elements.qaLog.innerHTML = "";
   setCasePending(true);
   showCaseThinking("病例分析中");
   startCaseProgress("实时病例分析", [
@@ -3465,7 +3470,15 @@ elements.caseForm.addEventListener("submit", async (event) => {
 elements.qaForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (state.qaPending) {
-    setStatus("上一条追问仍在回答中", "warn");
+    if (state.qaAbortController) {
+      state.qaAbortController.abort();
+    }
+    if (state.qaPendingItem) {
+      updateQaItem(state.qaPendingItem, state.qaPendingQuestion, "", "withdrawn");
+    }
+    elements.qaInput.value = state.qaPendingQuestion;
+    setQaPending(false);
+    setStatus("已撤回追问，可修改后重新发送", "ok");
     return;
   }
   const question = elements.qaInput.value.trim();
@@ -3474,6 +3487,9 @@ elements.qaForm.addEventListener("submit", async (event) => {
     return;
   }
   const thinkingItem = showQaThinking(question);
+  state.qaAbortController = new AbortController();
+  state.qaPendingItem = thinkingItem;
+  state.qaPendingQuestion = question;
   setQaPending(true);
   setStatus("发送中...");
   try {
@@ -3481,12 +3497,15 @@ elements.qaForm.addEventListener("submit", async (event) => {
       ? await postRealVlmMedSAM2Qa(buildQaPayload())
       : state.demoCaseSlug
         ? await postDemoQa(state.demoCaseSlug, buildQaPayload())
-        : await postMedScope(buildQaPayload());
-    renderPayload(payload);
+        : await postMedScopeQa(buildQaPayload(), state.qaAbortController.signal);
+    renderQaPayload(payload);
     updateQaItem(thinkingItem, question, payload.reply_to_patient);
     elements.qaInput.value = "";
     setStatus("已回答", "ok");
   } catch (error) {
+    if (error.name === "AbortError") {
+      return;
+    }
     updateQaItem(thinkingItem, question, error.message, "error");
     setStatus(error.message, "error");
   } finally {
@@ -3507,5 +3526,6 @@ elements.resetButton.addEventListener("click", () => {
   setStatus("已清空");
 });
 
+updateQaControls();
 checkHealth();
 loadSkillList();

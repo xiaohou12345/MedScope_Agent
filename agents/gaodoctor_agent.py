@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -707,6 +708,16 @@ class GaoDoctorAgent:
         evidence_bundle = self.memory_manager.get_evidence_bundle(case_id)
         llm_used = False
         llm_fallback_reason = None
+        if self._is_identity_question(question):
+            answer = self._answer_identity_follow_up()
+            self.memory_manager.append_qa_memory(
+                case_id=case_id,
+                question=question,
+                answer=answer,
+                llm_used=False,
+                llm_fallback_reason="identity_question_template",
+            )
+            return answer
         if self.prompt_runner:
             try:
                 answer = self._answer_follow_up_with_llm(
@@ -750,7 +761,9 @@ class GaoDoctorAgent:
                 "不得把 excluded fact 说成独立诊断依据；必须说明其 exclusion_reason。"
                 "如果 evidence_bundle 中字段为 missing 或 unassessed，必须明确说明证据缺失，"
                 "不得把缺失解释为阴性、正常、没有发现或数值为 0。"
-                "回答应面向患者，语言简洁，并保留必要的不确定性和线下就医提示。"
+                "回答必须面向患者，先直接回答问题，再用最多 1-2 句解释。"
+                "不要输出 Case ID、字段名、JSON key、英文技术标签、完整报告、项目符号列表或 evidence_bundle 原文。"
+                "底层字段只能作为内部依据，不能原样展示给患者。"
             ),
             user_payload={
                 "question": question,
@@ -768,7 +781,22 @@ class GaoDoctorAgent:
         if not answer:
             raise ValueError("empty llm follow-up answer")
         self._validate_follow_up_answer_against_evidence_bundle(answer, evidence_bundle)
+        answer = self._sanitize_patient_follow_up_answer(answer)
         return answer
+
+    def _sanitize_patient_follow_up_answer(self, answer: str) -> str:
+        lines = [
+            line.strip(" -*\t")
+            for line in answer.splitlines()
+            if line.strip()
+        ]
+        compact = " ".join(lines)
+        compact = re.sub(r"\*\*(.*?)\*\*", r"\1", compact)
+        compact = re.sub(r"__(.*?)__", r"\1", compact)
+        compact = compact.replace("**", "").replace("__", "")
+        if len(compact) <= 360:
+            return compact
+        return compact[:357].rstrip() + "..."
 
     def _validate_follow_up_answer_against_evidence_bundle(
         self,
@@ -843,27 +871,124 @@ class GaoDoctorAgent:
                 if index == -1:
                     break
                 prefix = answer[max(0, index - 32) : index]
+                suffix = answer[index + len(marker) : index + len(marker) + 40]
+                if self._is_qualified_missing_evidence_phrase(marker, suffix):
+                    search_from = index + len(marker)
+                    continue
                 if not any(negation in prefix for negation in negation_markers):
                     return True
                 search_from = index + len(marker)
         return False
+
+    def _is_qualified_missing_evidence_phrase(self, marker: str, suffix: str) -> bool:
+        if marker not in {"未见", "未发现"}:
+            return False
+        evidence_terms = ["证据", "依据", "信息", "数据"]
+        qualifier_terms = ["可用于", "足够", "充分", "能够", "能用来", "支持", "判断"]
+        return any(term in suffix for term in evidence_terms) and any(
+            term in suffix for term in qualifier_terms
+        )
 
     def _answer_follow_up_with_template(
         self,
         question: str,
         evidence_bundle: dict[str, Any],
     ) -> str:
+        if self._is_identity_question(question):
+            return self._answer_identity_follow_up()
+        if self._is_prognosis_question(question):
+            return self._answer_prognosis_follow_up_with_template(evidence_bundle)
+        if self._is_diagnosis_confirmation_question(question):
+            return self._answer_diagnosis_confirmation_with_template(evidence_bundle)
         reasoning_evidence = evidence_bundle["reasoning_evidence"]
         image_memory = evidence_bundle["image_evidence"]
-        evidence = "；".join(reasoning_evidence["key_evidence"])
-        uncertainty = "；".join(reasoning_evidence["uncertainty"])
+        evidence_items = self._first_nonempty_items(reasoning_evidence["key_evidence"], limit=2)
+        uncertainty_items = self._first_nonempty_items(reasoning_evidence["uncertainty"], limit=2)
+        evidence = "；".join(evidence_items) or "目前没有可直接复述的关键影像依据"
+        uncertainty = "；".join(uncertainty_items) or "仍需线下医生结合完整资料复核"
         fact_usage_text = self._format_visual_fact_usage_for_follow_up(evidence_bundle)
         image_context = f"{image_memory['modality']} {image_memory['body_part']}"
         return (
-            f"关于“{question}”，我刚才主要依据的是 {image_context} 影像记录：{evidence}。"
+            f"关于“{question}”，这次 {image_context} 影像的关键依据是：{evidence}。"
             f"{fact_usage_text}"
             f"需要注意：{uncertainty}。"
         )
+
+    def _is_identity_question(self, question: str) -> bool:
+        normalized = question.strip().lower()
+        return normalized in {"你是谁", "你是誰", "who are you", "你是什么", "你是什么agent"}
+
+    def _answer_identity_follow_up(self) -> str:
+        return (
+            "我是 MedScope 的高医生 Agent，负责解释当前病例报告和回答追问。"
+            "我只能根据已保存的影像证据和报告回答，不能替代线下医生诊断。"
+        )
+
+    def _is_prognosis_question(self, question: str) -> bool:
+        return any(marker in question for marker in ["活多久", "能活", "寿命", "生存期"])
+
+    def _is_diagnosis_confirmation_question(self, question: str) -> bool:
+        return any(marker in question for marker in ["是", "是不是", "有没有", "有吗", "吗"]) and any(
+            disease in question for disease in ["股骨头坏死", "胶质瘤", "肺炎", "肺纤维化", "这个病"]
+        )
+
+    def _answer_diagnosis_confirmation_with_template(
+        self,
+        evidence_bundle: dict[str, Any],
+    ) -> str:
+        reasoning = evidence_bundle.get("reasoning_evidence", {})
+        image = evidence_bundle.get("image_evidence", {})
+        skill = evidence_bundle.get("skill_evidence", {})
+        disease = self._display_disease_name(skill)
+        key_evidence = self._first_nonempty_items(reasoning.get("key_evidence", []), limit=1)
+        uncertainty = self._first_nonempty_items(reasoning.get("uncertainty", []), limit=1)
+        modality = str(image.get("modality") or "当前影像").upper()
+        image_label = "X 光" if modality in {"XRAY", "X-RAY", "X光"} else str(image.get("modality") or "当前影像")
+        evidence_text = key_evidence[0] if key_evidence else "当前记录只有候选影像证据"
+        uncertainty_text = uncertainty[0] if uncertainty else "仍需线下医生结合完整检查复核"
+        return (
+            f"目前不能仅凭这张 {image_label}确诊{disease}，但存在{disease}相关候选征象。"
+            f"主要依据是：{evidence_text}。"
+            f"需要注意：{uncertainty_text}。"
+            "建议带片给骨科医生复核，并根据需要补充 MRI/CT。"
+        )
+
+    def _display_disease_name(self, skill: dict[str, Any]) -> str:
+        value = str(skill.get("selected_skill") or skill.get("used_skill") or "")
+        mapping = {
+            "femoral_head_necrosis": "股骨头坏死",
+            "diffuse_glioma_brats": "胶质瘤",
+            "idiopathic_pulmonary_fibrosis_hrct": "肺纤维化",
+            "pneumonia_chest_xray": "肺炎",
+        }
+        return mapping.get(value, "该疾病")
+
+    def _answer_prognosis_follow_up_with_template(
+        self,
+        evidence_bundle: dict[str, Any],
+    ) -> str:
+        skill = evidence_bundle.get("skill_evidence", {})
+        disease = str(skill.get("selected_skill") or skill.get("used_skill") or "")
+        if "femoral_head_necrosis" in disease or "股骨头" in disease:
+            return (
+                "不能仅凭这张 X 光判断寿命。股骨头坏死通常不是直接决定生存期的疾病，"
+                "主要影响疼痛、行走和髋关节功能；具体预后取决于分期、病因和治疗方案，"
+                "需要骨科医生结合 MRI/CT 和体格检查评估。"
+            )
+        return (
+            "不能仅凭当前影像证据判断能活多久。生存期或长期预后需要结合明确诊断、"
+            "分期、病理/实验室结果、全身状况和治疗反应，由线下专科医生综合评估。"
+        )
+
+    def _first_nonempty_items(self, items: list[Any], limit: int) -> list[str]:
+        result = []
+        for item in items or []:
+            text = str(item).strip()
+            if text:
+                result.append(text)
+            if len(result) >= limit:
+                break
+        return result
 
     def _visual_fact_usage_from_evidence_bundle(
         self,

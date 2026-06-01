@@ -22,11 +22,11 @@
             <div class="panel-title">
               <h2>病例输入</h2>
               <div class="sample-actions">
-                <button id="sampleGliomaButton" type="button">一键标准样例</button>
-                <button id="realVlmMedSAM2Button" type="button">真实 VLM+MedSAM2 样例</button>
+                <button id="sampleGliomaButton" type="button">载入标准样例</button>
+                <button id="realVlmMedSAM2Button" type="button">载入 VLM+MedSAM2 样例</button>
                 <button id="evidenceGatewaySnapshotButton" type="button">Evidence Gateway 快照</button>
-                <button id="xrayInsufficientButton" type="button">X 光证据不足样例</button>
-                <button id="fhnNoMaskButton" type="button">FHN no-mask 多征象样例</button>
+                <button id="xrayInsufficientButton" type="button">载入 X 光证据不足样例</button>
+                <button id="fhnNoMaskButton" type="button">载入 FHN no-mask 样例</button>
               </div>
             </div>
 
@@ -104,8 +104,8 @@
             <h2>追问</h2>
           </div>
           <form id="qaForm" class="qa-form">
-            <input id="qaInput" placeholder="例如：为什么增强肿瘤没有结果？" />
-            <button id="qaSubmitButton" type="submit">发送</button>
+            <input id="qaInput" placeholder="分析完成后可以追问" disabled />
+            <button id="qaSubmitButton" type="submit" disabled>发送</button>
           </form>
           <div id="qaLog" class="qa-log"></div>
         </section>

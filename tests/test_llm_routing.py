@@ -378,6 +378,126 @@ class LlmRoutingTest(unittest.TestCase):
             self.assertFalse(qa_entry["llm_used"])
             self.assertIn("violates evidence constraints", qa_entry["llm_fallback_reason"])
 
+    def test_gaodoctor_allows_follow_up_llm_answer_that_says_evidence_not_available(self):
+        model_client = RecordingModelClient(
+            response=ChatResponse(
+                content="目前未见可用于判断强化肿瘤的 T1ce 证据，因此不能说无强化或阴性。",
+                model="fake-model",
+                route="test",
+            )
+        )
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            case_id = "case_qa_missing_evidence_safe_language"
+            memory.save_case_memory(
+                case_id=case_id,
+                patient_memory={
+                    "patient_id": "patient_001",
+                    "patient_message": "请看一下 FLAIR MRI",
+                    "patient_info": {"symptoms": ["头痛"]},
+                    "symptoms": ["头痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "image_path": "flair.nii.gz",
+                    "modality": "MRI",
+                    "body_part": "brain",
+                    "visual_evidence": {
+                        "measurements": {
+                            "whole_tumor_volume_ml": 117.996,
+                            "enhancing_tumor_volume_ml": None,
+                        },
+                        "completeness": {
+                            "whole_tumor": {"status": "supported", "reason": "FLAIR modality available"},
+                            "enhancing_tumor": {"status": "missing", "reason": "Requires T1ce modality"},
+                        },
+                        "segmentation_quality": "ground_truth_nifti",
+                    },
+                },
+                skill_memory={
+                    "skill_id": "diffuse_glioma_brats_v0.1",
+                    "selected_skill": "diffuse_glioma_brats",
+                    "skill_type": "guideline_based",
+                    "alignment_plan": {
+                        "analysis_status": "partial_evidence",
+                        "diagnosis_scope": {
+                            "blocked": ["不能从缺失 T1ce 推断无强化"],
+                        },
+                    },
+                },
+                reasoning_memory={
+                    "diagnostic_tendency": "成人弥漫性胶质瘤影像疑似",
+                    "key_evidence": ["whole tumor 体积估计为 117.996 ml"],
+                    "uncertainty": ["enhancing_tumor 缺少 T1ce，不能解释为阴性或 0"],
+                    "follow_up": ["补全 T1ce"],
+                    "treatment_advice": ["线下复核"],
+                },
+            )
+            doctor = GaoDoctorAgent(
+                memory_manager=memory,
+                prompt_runner=PromptRunner(model_client=model_client),
+            )
+
+            answer = doctor.answer_follow_up(
+                case_id=case_id,
+                question="增强肿瘤是不是没有？",
+            )
+            saved_case = memory.get_case_by_id(case_id)
+            qa_entry = saved_case["patient_memory"]["qa_history"][0]
+
+            self.assertEqual(
+                answer,
+                "目前未见可用于判断强化肿瘤的 T1ce 证据，因此不能说无强化或阴性。",
+            )
+            self.assertTrue(qa_entry["llm_used"])
+            self.assertIsNone(qa_entry["llm_fallback_reason"])
+
+    def test_gaodoctor_follow_up_llm_answer_strips_markdown_bold_markers(self):
+        model_client = RecordingModelClient(
+            response=ChatResponse(
+                content="**无法确定**。当前证据不足，不能只凭这张 X 光确诊。",
+                model="fake-model",
+                route="test",
+            )
+        )
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            case_id = "case_qa_markdown_bold"
+            memory.save_case_memory(
+                case_id=case_id,
+                patient_memory={
+                    "patient_id": "patient_001",
+                    "patient_message": "右髋疼痛，上传 X 光",
+                    "patient_info": {"symptoms": ["髋关节疼痛"]},
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "image_path": "hip.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "visual_evidence": {"segmentation_quality": "candidate"},
+                },
+                skill_memory={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "selected_skill": "femoral_head_necrosis",
+                },
+                reasoning_memory={
+                    "diagnostic_tendency": "疑似股骨头坏死候选影像表现",
+                    "key_evidence": ["股骨头上缘轮廓轻度不规则候选区"],
+                    "uncertainty": ["单纯 X 光证据不足，建议补充 MRI/CT"],
+                },
+            )
+            doctor = GaoDoctorAgent(
+                memory_manager=memory,
+                prompt_runner=PromptRunner(model_client=model_client),
+            )
+
+            answer = doctor.answer_follow_up(case_id=case_id, question="这张图片能确定吗？")
+
+            self.assertEqual(answer, "无法确定。当前证据不足，不能只凭这张 X 光确诊。")
+            self.assertNotIn("**", answer)
+
     def test_gaodoctor_rejects_follow_up_llm_answer_that_uses_excluded_visual_fact(self):
         model_client = RecordingModelClient(
             response=ChatResponse(
@@ -465,6 +585,160 @@ class LlmRoutingTest(unittest.TestCase):
             self.assertTrue(qa_entry["evidence_bundle_used"])
             self.assertFalse(qa_entry["llm_used"])
             self.assertIn("model unavailable", qa_entry["llm_fallback_reason"])
+
+    def test_gaodoctor_follow_up_template_answers_prognosis_concisely(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            case_id = "case_qa_prognosis"
+            memory.save_case_memory(
+                case_id=case_id,
+                patient_memory={
+                    "patient_message": "右髋疼痛，上传 X 光",
+                    "patient_info": {"symptoms": ["髋关节疼痛"]},
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "image_path": "hip.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "visual_evidence": {
+                        "segmentation_quality": "candidate",
+                        "completeness": {
+                            "measurement_grade_mask": {
+                                "status": "unassessed",
+                                "reason": "Current execution mode did not request segmentation.",
+                            },
+                            "segmentation_display": {
+                                "status": "missing",
+                                "reason": "Segmentation did not complete: segmentation_error.",
+                            },
+                        },
+                    },
+                },
+                skill_memory={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "selected_skill": "femoral_head_necrosis",
+                },
+                reasoning_memory={
+                    "diagnostic_tendency": "疑似股骨头坏死候选影像表现",
+                    "key_evidence": [
+                        "股骨头塌陷：右侧股骨头上缘轮廓轻度不规则候选；未生成测量级 mask。",
+                        "硬化带：右侧股骨头上外侧见带状密度增高候选影；未生成测量级 mask。",
+                        "囊性变：右侧股骨头内可疑小片透亮区；未生成测量级 mask。",
+                    ],
+                    "uncertainty": [
+                        "当前输出使用候选视觉证据，不能替代真实医学诊断",
+                        "视觉证据字段 measurement_grade_mask 当前为 unassessed",
+                        "视觉证据字段 segmentation_display 当前为 missing",
+                        "不能在缺少 MRI 时排除早期股骨头坏死",
+                    ],
+                },
+            )
+            doctor = GaoDoctorAgent(memory_manager=memory)
+
+            answer = doctor.answer_follow_up(case_id=case_id, question="这个病能活多久")
+
+            self.assertIn("不能仅凭这张 X 光判断寿命", answer)
+            self.assertIn("股骨头坏死通常不是直接决定生存期的疾病", answer)
+            self.assertLess(len(answer), 180)
+            self.assertNotIn("measurement_grade_mask", answer)
+            self.assertNotIn("segmentation_display", answer)
+            self.assertNotIn("未作为独立依据的视觉事实", answer)
+
+    def test_gaodoctor_follow_up_template_answers_diagnosis_question_with_conclusion_first(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            case_id = "case_qa_diagnosis_question"
+            memory.save_case_memory(
+                case_id=case_id,
+                patient_memory={
+                    "patient_message": "右髋疼痛，上传 X 光",
+                    "patient_info": {"symptoms": ["髋关节疼痛"]},
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "image_path": "hip.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "visual_evidence": {
+                        "segmentation_quality": "candidate",
+                        "completeness": {
+                            "segmentation_display": {
+                                "status": "missing",
+                                "reason": "Segmentation did not complete: segmentation_error.",
+                            },
+                        },
+                    },
+                },
+                skill_memory={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "selected_skill": "femoral_head_necrosis",
+                },
+                reasoning_memory={
+                    "diagnostic_tendency": "疑似股骨头坏死候选影像表现",
+                    "key_evidence": [
+                        "股骨头塌陷：右侧股骨头上缘轮廓轻度不规则候选区；未生成测量级 mask。",
+                        "硬化带：右侧股骨头上外侧见带状密度增高候选影；未生成测量级 mask。",
+                    ],
+                    "uncertainty": [
+                        "单纯 X 光对早期股骨头坏死敏感性有限",
+                        "当前输出使用候选视觉证据，不能替代真实医学诊断",
+                    ],
+                },
+            )
+            doctor = GaoDoctorAgent(memory_manager=memory)
+
+            answer = doctor.answer_follow_up(case_id=case_id, question="这张图片是股骨头坏死吗")
+
+            self.assertTrue(answer.startswith("目前不能仅凭这张 X 光确诊"))
+            self.assertIn("存在股骨头坏死相关候选征象", answer)
+            self.assertIn("建议带片给骨科医生复核", answer)
+            self.assertLess(len(answer), 240)
+            self.assertNotIn("未作为独立依据的视觉事实", answer)
+            self.assertNotIn("not_diagnosis_usable", answer)
+
+    def test_gaodoctor_follow_up_identity_question_does_not_dump_case_evidence(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            case_id = "case_qa_identity"
+            memory.save_case_memory(
+                case_id=case_id,
+                patient_memory={
+                    "patient_message": "请看一下 FLAIR MRI",
+                    "patient_info": {"symptoms": ["头痛"]},
+                    "symptoms": ["头痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "image_path": "flair.nii.gz",
+                    "modality": "MRI",
+                    "body_part": "brain",
+                    "visual_evidence": {
+                        "measurements": {"whole_tumor_volume_ml": 117.996},
+                        "completeness": {
+                            "tumor_core": {"status": "missing", "reason": "Requires T1, T1ce, T2"}
+                        },
+                    },
+                },
+                skill_memory={"skill_id": "diffuse_glioma_brats_v0.1"},
+                reasoning_memory={
+                    "diagnostic_tendency": "成人弥漫性胶质瘤影像疑似",
+                    "key_evidence": ["whole tumor 体积估计为 117.996 ml"],
+                    "uncertainty": ["tumor_core 缺少 T1/T1ce/T2，不能解释为阴性或 0"],
+                },
+            )
+            doctor = GaoDoctorAgent(memory_manager=memory)
+
+            answer = doctor.answer_follow_up(case_id=case_id, question="你是谁")
+
+            self.assertIn("我是 MedScope 的高医生 Agent", answer)
+            self.assertLess(len(answer), 120)
+            self.assertNotIn("117.996", answer)
+            self.assertNotIn("tumor_core", answer)
+            self.assertNotIn("missing", answer)
+            self.assertNotIn("FLAIR", answer)
 
     def test_route_log_does_not_require_api_key_for_dry_run_tests(self):
         with TemporaryDirectory() as tmpdir:

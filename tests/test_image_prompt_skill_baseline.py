@@ -96,6 +96,14 @@ class ImagePromptSkillBaselineTest(unittest.TestCase):
             self.assertEqual(result["metrics_by_level"]["simple_prompt"]["json_valid_count"], 1)
             self.assertTrue(Path(result["output_paths"]["json_path"]).exists())
             self.assertTrue(Path(result["output_paths"]["markdown_path"]).exists())
+            conclusion_path = Path(result["output_paths"]["chinese_conclusion_path"])
+            self.assertTrue(conclusion_path.exists())
+            conclusion = conclusion_path.read_text(encoding="utf-8")
+            self.assertIn("三层 Codex/VLM 分析中文结论", conclusion)
+            self.assertIn("Level 1: simple_prompt", conclusion)
+            self.assertIn("Level 2: workflow_prompt", conclusion)
+            self.assertIn("Level 3: fewshot_prompt", conclusion)
+            self.assertIn("不是正式 MedScope Agent 输出", conclusion)
 
     def test_baseline_level_order_is_simple_workflow_fewshot(self):
         self.assertEqual(
