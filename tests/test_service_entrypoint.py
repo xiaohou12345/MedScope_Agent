@@ -74,6 +74,59 @@ class FakeAlignmentPlanner:
         }
 
 
+class FakeNoMaskVisualRunner:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        image_path = str(kwargs["image_path"])
+        visual_result = {
+            "image_path": image_path,
+            "modality": "xray",
+            "body_part": "hip",
+            "image_outputs": {
+                "original_image_path": image_path,
+                "mask_path": "output/fake/fhn_no_mask/finding_mask.png",
+                "overlay_path": "output/fake/fhn_no_mask/finding_overlay.png",
+                "comparison_path": "output/fake/fhn_no_mask/finding_comparison.png",
+            },
+            "visual_evidence": {
+                "collapse": False,
+                "sclerosis": "候选阳性",
+                "cystic_change": "unknown",
+                "joint_space_narrowing": False,
+                "lesion_mask": "output/fake/fhn_no_mask/finding_mask.png",
+                "confidence": 0.7,
+                "texture_abnormality_score": 0.75,
+                "lesion_area_ratio": 0.03,
+                "collapse_ratio": 0.0,
+                "joint_space_width": "unknown",
+                "lesion_detected": True,
+                "lesion_location": "femoral head",
+                "disease_target": "femoral_head_necrosis",
+                "segmentation_quality": "medium_candidate",
+                "suspected_visual_findings": ["硬化带：candidate_present"],
+                "measurements": {"lesion_area_ratio": 0.03},
+                "completeness": {},
+                "findings": [
+                    {
+                        "finding_id": "finding_sclerotic_band",
+                        "target": "sclerotic_band",
+                        "display_name": "硬化带",
+                        "status": "candidate_present",
+                        "diagnosis_usable": True,
+                        "measurements": {"area_px": 120},
+                    }
+                ],
+            },
+        }
+        return {
+            "status": "ok",
+            "visual_analysis_result": visual_result,
+        }
+
+
 class MedScopeServiceEntrypointTest(unittest.TestCase):
     def test_service_default_gaodoctor_has_prompt_runner_for_follow_up_qa(self):
         service = MedScopeService()
@@ -229,7 +282,13 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
     def test_service_persists_orchestrator_routing_scope_to_skill_memory(self):
         with TemporaryDirectory() as tmpdir:
             memory = MemoryManager(base_dir=Path(tmpdir))
-            service = MedScopeService(gaodoctor_agent=GaoDoctorAgent(memory_manager=memory))
+            no_mask_runner = FakeNoMaskVisualRunner()
+            service = MedScopeService(
+                gaodoctor_agent=GaoDoctorAgent(
+                    memory_manager=memory,
+                    no_mask_visual_pipeline_runner=no_mask_runner,
+                )
+            )
 
             result = service.handle_request(
                 {
@@ -244,7 +303,9 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
             self.assertEqual(result["routing_decision"]["agent_scope"], "orchestrator_api")
             self.assertEqual(routing["agent_scope"], "orchestrator_api")
             self.assertEqual(routing["selected_skill"], "femoral_head_necrosis")
+            self.assertEqual(routing["selected_vision_mode"], "no_mask_skill")
             self.assertEqual(routing["source"], "auto")
+            self.assertEqual(len(no_mask_runner.calls), 1)
 
     def test_service_auto_selects_ipf_skill_from_hrct_chest_clues(self):
         fake_doctor = FakeGaoDoctor()
@@ -309,13 +370,32 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
         )
 
         self.assertEqual(fake_doctor.calls[0]["disease_key"], "femoral_head_necrosis")
-        self.assertIsNone(fake_doctor.calls[0]["vision_mode"])
+        self.assertEqual(fake_doctor.calls[0]["vision_mode"], "no_mask_skill")
         self.assertEqual(result["routing_decision"]["selected_skill"], "femoral_head_necrosis")
-        self.assertIsNone(result["routing_decision"]["selected_vision_mode"])
+        self.assertEqual(result["routing_decision"]["selected_vision_mode"], "no_mask_skill")
         self.assertEqual(result["routing_decision"]["source"], "auto")
         self.assertEqual(result["routing_decision"]["skill_builder_action"], "load_existing_skill")
         self.assertIn("髋", result["routing_decision"]["matched_clues"])
         self.assertEqual(result["alignment_plan"]["analysis_status"], "partial_evidence")
+
+    def test_service_auto_selects_fhn_no_mask_mode_for_uploaded_hip_image_without_prompt_keywords(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        result = service.handle_request(
+            {
+                "patient_message": "右髋疼痛，帮我看看",
+                "image_path": "output/fake/uploads/uploaded_patient_image.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        self.assertEqual(fake_doctor.calls[0]["disease_key"], "femoral_head_necrosis")
+        self.assertEqual(fake_doctor.calls[0]["vision_mode"], "no_mask_skill")
+        self.assertEqual(result["routing_decision"]["selected_skill"], "femoral_head_necrosis")
+        self.assertEqual(result["routing_decision"]["selected_vision_mode"], "no_mask_skill")
+        self.assertEqual(result["routing_decision"]["source"], "auto")
+        self.assertIn("髋", result["routing_decision"]["matched_clues"])
 
     def test_service_delegates_alignment_plan_to_planner(self):
         fake_doctor = FakeGaoDoctor()

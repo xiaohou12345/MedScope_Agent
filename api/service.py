@@ -194,6 +194,9 @@ class MedScopeService:
             "x 光",
             "x光",
             "坏死",
+            "fhn",
+            "onfh",
+            "avn",
         ]
         return [marker for marker in femoral_markers if marker in text]
 
@@ -217,6 +220,8 @@ class MedScopeService:
             if payload.get("mask_path"):
                 return "ground_truth"
             return "medsam2"
+        if disease_key == "femoral_head_necrosis" and payload.get("image_path"):
+            return "no_mask_skill"
         return None
 
     def _build_alignment_plan(
