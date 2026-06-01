@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MedScope Skill Editor</title>
+    <link rel="stylesheet" href="/skill-editor/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">MedScope Config Studio</p>
+          <h1>Skill / Prompt 可视化编辑器</h1>
+          <p id="statusText">正在连接编辑器后端...</p>
+        </div>
+        <div class="toolbar">
+          <button id="refreshButton" type="button">刷新</button>
+          <button id="saveButton" class="primary" type="button">保存版本</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="sidebar">
+          <section class="sidebar-group">
+            <div class="sidebar-title">
+              <span>Skill</span>
+              <button id="newSkillButton" type="button">+</button>
+            </div>
+            <nav id="skillList" class="document-list"></nav>
+          </section>
+
+          <section class="sidebar-group">
+            <div class="sidebar-title">
+              <span>Prompt</span>
+              <button id="newPromptButton" type="button">+</button>
+            </div>
+            <nav id="promptList" class="document-list"></nav>
+          </section>
+
+          <button id="deleteButton" class="danger full-width" type="button">删除当前文件</button>
+        </aside>
+
+        <section class="editor-panel">
+          <div class="audit-grid">
+            <label>
+              修改人
+              <input id="authorInput" placeholder="例如：张医生" />
+            </label>
+            <label>
+              版本备注
+              <input id="noteInput" placeholder="例如：补充 X 光质控规则" />
+            </label>
+          </div>
+
+          <section id="skillEditor" class="editor-card">
+            <div class="form-grid">
+              <label>
+                疾病名称
+                <input data-skill-field="disease_name" />
+              </label>
+              <label>
+                Skill ID
+                <input data-skill-field="skill_id" />
+              </label>
+              <label>
+                版本
+                <input data-skill-field="version" />
+              </label>
+              <label>
+                证据等级
+                <input data-skill-field="evidence_level" />
+              </label>
+              <label class="wide">
+                来源
+                <textarea data-skill-field="source" rows="2"></textarea>
+              </label>
+              <label>
+                常见症状
+                <textarea data-skill-field="common_symptoms" rows="5"></textarea>
+              </label>
+              <label>
+                风险因素
+                <textarea data-skill-field="risk_factors" rows="5"></textarea>
+              </label>
+              <label>
+                需要的影像检查
+                <textarea data-skill-field="required_image_views" rows="5"></textarea>
+              </label>
+              <label>
+                解剖关注区域
+                <textarea data-skill-field="anatomy" rows="5"></textarea>
+              </label>
+              <label>
+                影像征象
+                <textarea data-skill-field="lesion_features" rows="6"></textarea>
+              </label>
+              <label>
+                视觉 Agent 分割/定位目标
+                <textarea data-skill-field="segmentation_targets" rows="6"></textarea>
+              </label>
+              <label>
+                定量特征
+                <textarea data-skill-field="quantitative_features" rows="5"></textarea>
+              </label>
+              <label>
+                报告需要包含
+                <textarea data-skill-field="report_requirements" rows="5"></textarea>
+              </label>
+              <label>
+                医生备注
+                <textarea data-skill-field="doctor_notes" rows="5" placeholder="这里会写入 quality_control.doctor_review_notes"></textarea>
+              </label>
+            </div>
+
+            <details>
+              <summary>查看分期规则和来源</summary>
+              <div class="readonly-grid">
+                <label>
+                  分期规则预览
+                  <pre id="stagingPreview"></pre>
+                </label>
+                <label>
+                  来源文献预览
+                  <pre id="sourcePreview"></pre>
+                </label>
+              </div>
+            </details>
+          </section>
+
+          <section id="promptEditor" class="editor-card hidden">
+            <label>
+              Prompt Markdown
+              <textarea id="promptMarkdown" class="prompt-markdown" rows="22"></textarea>
+            </label>
+          </section>
+        </section>
+
+        <section class="preview-panel">
+          <div class="tabs">
+            <button class="tab active" data-tab="preview" type="button">阅读预览</button>
+            <button class="tab" data-tab="raw" type="button">原始文件</button>
+            <button class="tab" data-tab="history" type="button">版本记录</button>
+          </div>
+          <article id="previewView" class="preview-content"></article>
+          <pre id="rawView" class="preview-content hidden"></pre>
+          <article id="historyView" class="preview-content hidden"></article>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script src="/skill-editor/app.js"></script>
+  </body>
+</html>

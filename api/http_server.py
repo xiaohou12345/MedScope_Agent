@@ -14,6 +14,10 @@ from urllib.parse import parse_qs, urlparse
 from api.service import MedScopeReadinessError, MedScopeService
 from memory.memory_manager import MemoryManager
 from scripts.image_prompt_skill_baseline import run_image_prompt_skill_baseline
+from skill_editor.backend import (
+    dispatch_skill_editor_api_request,
+    dispatch_skill_editor_static_request,
+)
 from tools.skill_builder_tool import SkillBuilderTool
 
 
@@ -485,6 +489,13 @@ def dispatch_http_request(
     memory_factory: Callable[[], MemoryManager] | None = None,
 ) -> tuple[int, dict]:
     factory = service_factory or MedScopeService
+    editor_status, editor_payload = dispatch_skill_editor_api_request(
+        method=method,
+        path=path,
+        body=body,
+    )
+    if editor_status is not None:
+        return editor_status, editor_payload
     demo_status, demo_payload = dispatch_demo_request(method=method, path=path, body=body)
     if demo_status is not None:
         return demo_status, demo_payload
@@ -1638,6 +1649,10 @@ def create_handler(service_factory: Callable[[], MedScopeService] | None = None)
 
     class MedScopeHttpHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
+            editor_status, editor_body, editor_content_type = dispatch_skill_editor_static_request(self.path)
+            if editor_status is not None:
+                self._write_bytes(editor_status, editor_body, editor_content_type)
+                return
             static_status, body, content_type = dispatch_static_request(self.path)
             if static_status == 200:
                 self._write_bytes(static_status, body, content_type)
@@ -1659,6 +1674,24 @@ def create_handler(service_factory: Callable[[], MedScopeService] | None = None)
         def do_POST(self) -> None:
             status_code, payload = dispatch_http_request(
                 method="POST",
+                path=self.path,
+                body=self._read_body(),
+                service_factory=factory,
+            )
+            self._write_json(status_code, payload)
+
+        def do_PUT(self) -> None:
+            status_code, payload = dispatch_http_request(
+                method="PUT",
+                path=self.path,
+                body=self._read_body(),
+                service_factory=factory,
+            )
+            self._write_json(status_code, payload)
+
+        def do_DELETE(self) -> None:
+            status_code, payload = dispatch_http_request(
+                method="DELETE",
                 path=self.path,
                 body=self._read_body(),
                 service_factory=factory,
