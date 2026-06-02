@@ -235,6 +235,7 @@ function renderPreview() {
     return;
   }
   const editor = collectSkillEditor();
+  const raw = state.detail.raw || {};
   els.previewView.innerHTML = `
     <h2>${escapeHtml(editor.disease_name || state.key)}</h2>
     ${renderField("Skill ID", editor.skill_id)}
@@ -247,6 +248,10 @@ function renderPreview() {
     ${renderList("影像征象", editor.lesion_features)}
     ${renderList("视觉 Agent 目标", editor.segmentation_targets)}
     ${renderList("报告需要包含", editor.report_requirements)}
+    ${renderStagingRules(raw.staging_rules)}
+    ${renderVisualProtocol(raw.visual_protocol)}
+    ${renderSourceDocuments(raw.source_documents)}
+    ${renderQualityControl(raw.quality_control)}
   `;
 }
 
@@ -352,6 +357,101 @@ function renderList(label, text) {
   const items = splitLines(text);
   if (!items.length) return "";
   return `<h3>${escapeHtml(label)}</h3><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function renderStagingRules(stagingRules) {
+  if (!stagingRules || typeof stagingRules !== "object" || Array.isArray(stagingRules)) return "";
+  const rows = Object.entries(stagingRules).map(([stage, rule]) => {
+    if (!rule || typeof rule !== "object" || Array.isArray(rule)) {
+      return `<li><strong>${escapeHtml(stage)}：</strong>${escapeHtml(rule)}</li>`;
+    }
+    const features = Object.entries(rule)
+      .filter(([key]) => key !== "description")
+      .flatMap(([, value]) => Array.isArray(value) ? value : [value])
+      .filter((value) => value !== undefined && value !== null && String(value).trim());
+    return `
+      <li>
+        <strong>${escapeHtml(stage)}：</strong>${escapeHtml(rule.description || "")}
+        ${features.length ? `<ul>${features.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+      </li>
+    `;
+  });
+  return `<h3>分期 / 判断规则</h3><ul>${rows.join("")}</ul>`;
+}
+
+function renderVisualProtocol(protocol) {
+  if (!protocol || typeof protocol !== "object" || Array.isArray(protocol)) return "";
+  return `
+    <h3>视觉协议</h3>
+    ${renderField("疾病目标", protocol.disease_target)}
+    ${renderField("临床关注点", protocol.clinical_focus)}
+    ${renderObjectList("影像对齐任务", protocol.alignment_tasks, ["task", "reason", "required_modalities"])}
+    ${renderObjectList("视觉发现目标", protocol.finding_targets, ["display_name", "target", "description", "required_modalities", "diagnostic_role", "execution_mode"])}
+    ${renderObjectList("证据不足规则", protocol.insufficiency_rules, ["condition", "status", "reason"])}
+    ${renderObjectList("建议补充影像", protocol.required_next_images, ["modality", "region", "reason"])}
+    ${renderObjectList("疑似方向", protocol.suspected_conditions, ["condition", "reason"])}
+    ${renderJsonBlock("Required Modalities", protocol.required_modalities)}
+    ${renderJsonBlock("Measurements", protocol.measurements)}
+  `;
+}
+
+function renderSourceDocuments(documents) {
+  if (!Array.isArray(documents) || !documents.length) return "";
+  return `
+    <h3>指南 / 来源文献</h3>
+    <ul>
+      ${documents.map((doc) => `
+        <li>
+          <strong>${escapeHtml(doc.title || doc.source_id || "未命名来源")}</strong>
+          ${doc.publisher ? ` · ${escapeHtml(doc.publisher)}` : ""}
+          ${doc.url ? `<br><span>${escapeHtml(doc.url)}</span>` : ""}
+          ${doc.evidence_note ? `<br><span>${escapeHtml(doc.evidence_note)}</span>` : ""}
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderQualityControl(quality) {
+  if (!quality || typeof quality !== "object" || Array.isArray(quality)) return "";
+  const rows = Object.entries(quality)
+    .filter(([key]) => key !== "doctor_review_notes")
+    .map(([key, value]) => `<li><strong>${escapeHtml(key)}：</strong>${escapeHtml(formatValue(value))}</li>`);
+  const notes = Array.isArray(quality.doctor_review_notes) ? quality.doctor_review_notes : [];
+  return `
+    <h3>质控 / 医生备注</h3>
+    ${rows.length ? `<ul>${rows.join("")}</ul>` : ""}
+    ${notes.length ? `<ul>${notes.map((note) => `<li>${escapeHtml(note.note || note)}</li>`).join("")}</ul>` : ""}
+  `;
+}
+
+function renderObjectList(label, items, keys) {
+  if (!Array.isArray(items) || !items.length) return "";
+  return `
+    <h4>${escapeHtml(label)}</h4>
+    <ul>
+      ${items.map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return `<li>${escapeHtml(formatValue(item))}</li>`;
+        const title = item.display_name || item.task || item.condition || item.modality || item.target || label;
+        const details = keys
+          .filter((key) => item[key] !== undefined && item[key] !== null && item[key] !== "")
+          .map((key) => `<li><strong>${escapeHtml(key)}：</strong>${escapeHtml(formatValue(item[key]))}</li>`)
+          .join("");
+        return `<li><strong>${escapeHtml(title)}</strong>${details ? `<ul>${details}</ul>` : ""}</li>`;
+      }).join("")}
+    </ul>
+  `;
+}
+
+function renderJsonBlock(label, value) {
+  if (value === undefined || value === null || (typeof value === "object" && !Object.keys(value).length)) return "";
+  return `<h4>${escapeHtml(label)}</h4><pre>${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+}
+
+function formatValue(value) {
+  if (Array.isArray(value)) return value.join("、");
+  if (value && typeof value === "object") return JSON.stringify(value, null, 2);
+  return value ?? "";
 }
 
 function splitLines(value) {

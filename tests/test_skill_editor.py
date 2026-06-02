@@ -15,7 +15,7 @@ class SkillEditorTest(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(content_type, "text/html; charset=utf-8")
-        self.assertIn("Skill / Prompt 可视化编辑器".encode("utf-8"), body)
+        self.assertIn("MedScope Skill / Prompt 编辑".encode("utf-8"), body)
         self.assertIn(b"/skill-editor/app.js", body)
 
     def test_skill_editor_updates_existing_medscope_yaml_without_losing_unknown_fields(self):

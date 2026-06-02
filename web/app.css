@@ -58,6 +58,12 @@ textarea {
   padding: 16px 18px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 h1,
 h2,
 p {
@@ -186,7 +192,25 @@ button {
   white-space: nowrap;
 }
 
+.nav-link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #ffffff;
+  padding: 0 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
 button:hover {
+  background: var(--accent-dark);
+}
+
+.nav-link-button:hover {
   background: var(--accent-dark);
 }
 
@@ -1011,6 +1035,7 @@ button:disabled {
   }
 
   .topbar,
+  .topbar-actions,
   .grid-two,
   .actions,
   .sample-actions,
