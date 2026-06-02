@@ -17,6 +17,8 @@ const state = {
   caseProgressLabel: "",
   selectedSkillKey: "",
   selectedSkillDetail: {},
+  uploadedImagePaths: [],
+  uploadedImageNames: [],
 };
 
 const elements = {
@@ -114,13 +116,24 @@ function splitList(value) {
 }
 
 function buildCasePayload() {
+  const imagePaths = state.uploadedImagePaths.length
+    ? state.uploadedImagePaths
+    : splitList(elements.imagePath.value);
   const payload = {
     patient_message: elements.patientMessage.value.trim(),
-    image_path: elements.imagePath.value.trim() || null,
+    image_path: imagePaths[0] || elements.imagePath.value.trim() || null,
     patient_info: {
       symptoms: splitList(elements.symptoms.value),
     },
   };
+  if (imagePaths.length > 1) {
+    payload.image_paths = imagePaths;
+    payload.patient_info.image_series = imagePaths.map((path, index) => ({
+      image_id: `image_${String(index + 1).padStart(3, "0")}`,
+      image_path: path,
+      view_hint: inferViewHint(path, state.uploadedImageNames[index] || ""),
+    }));
+  }
   if (state.useSampleMask) {
     payload.mask_path = state.sampleMaskPath;
   }
@@ -131,6 +144,17 @@ function buildCasePayload() {
     payload.vision_mode = state.sampleVisionMode;
   }
   return payload;
+}
+
+function inferViewHint(path, filename) {
+  const text = `${path} ${filename}`.toLowerCase();
+  if (text.includes("frog") || text.includes("lauenstein") || text.includes("蛙")) {
+    return "frog_lateral";
+  }
+  if (text.includes("ap") || text.includes("pelvis") || text.includes("正位") || text.includes("卧")) {
+    return "ap_pelvis";
+  }
+  return "unknown";
 }
 
 function buildQaPayload() {
@@ -150,7 +174,7 @@ async function postMedScope(payload) {
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
-    const body = await response.json();
+    const body = await parseJsonResponse(response);
     if (!response.ok) {
       throw new Error(formatApiError(body, response.status));
     }
@@ -172,11 +196,23 @@ async function postMedScopeQa(payload, signal) {
     body: JSON.stringify(payload),
     signal,
   });
-  const body = await response.json();
+  const body = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(formatApiError(body, response.status));
   }
   return body;
+}
+
+async function parseJsonResponse(response) {
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error(`服务响应为空：HTTP ${response.status}。可能是后端进程重启、连接中断或实时模型调用异常。`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`服务返回了非 JSON 响应：HTTP ${response.status}。请检查服务器日志。`);
+  }
 }
 
 async function fetchSkillList() {
@@ -652,7 +688,7 @@ function formatApiError(body, status) {
 
 async function uploadFile(file) {
   if (!file) {
-    return;
+    return null;
   }
   elements.uploadStatus.textContent = `上传中：${file.name}`;
   const response = await fetch(`/v1/upload?filename=${encodeURIComponent(file.name)}`, {
@@ -664,13 +700,35 @@ async function uploadFile(file) {
   if (!response.ok) {
     throw new Error(body.error || `HTTP ${response.status}`);
   }
-  elements.imagePath.value = body.image_path;
+  return body;
+}
+
+async function uploadFiles(fileList) {
+  const files = Array.from(fileList || []).filter(Boolean);
+  if (!files.length) {
+    return;
+  }
+  elements.uploadStatus.textContent = `上传中：${files.length} 个文件`;
+  const uploaded = [];
+  for (const file of files) {
+    elements.uploadStatus.textContent = `上传中：${file.name}`;
+    const body = await uploadFile(file);
+    if (body) {
+      uploaded.push(body);
+    }
+  }
+  state.uploadedImagePaths = uploaded.map((item) => item.image_path);
+  state.uploadedImageNames = uploaded.map((item) => item.filename);
+  elements.imagePath.value = state.uploadedImagePaths.join("\n");
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
-  elements.uploadStatus.textContent = `已上传：${body.filename}`;
+  const filenames = state.uploadedImageNames.join("、");
+  elements.uploadStatus.textContent = uploaded.length === 1
+    ? `已上传：${filenames}`
+    : `已上传 ${uploaded.length} 张同一病例影像：${filenames}`;
 }
 
 async function checkHealth() {
@@ -3234,6 +3292,8 @@ function escapeHtml(value) {
 function loadStandardSample() {
   elements.patientMessage.value = "请基于这次 FLAIR MRI 做胶质瘤辅助分析";
   elements.imagePath.value = "data/external/brats2021_00030/BraTS2021_00030_flair.nii.gz";
+  state.uploadedImagePaths = [];
+  state.uploadedImageNames = [];
   state.useSampleMask = true;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
@@ -3246,6 +3306,8 @@ function loadStandardSample() {
 function loadRealVlmMedSAM2Sample() {
   elements.patientMessage.value = "请展示真实 VLM bbox + MedSAM2 分割 + 诊断 Agent 的 BraTS 胶质瘤样例";
   elements.imagePath.value = "data/external/brats2021_00030/BraTS2021_00030_flair.nii.gz";
+  state.uploadedImagePaths = [];
+  state.uploadedImageNames = [];
   state.useSampleMask = false;
   state.sampleDiseaseKey = "diffuse_glioma_brats";
   state.sampleVisionMode = "medsam2";
@@ -3258,6 +3320,8 @@ function loadRealVlmMedSAM2Sample() {
 function loadXrayInsufficientSample() {
   elements.patientMessage.value = "左髋疼痛，X光能不能判断有没有早期股骨头坏死？";
   elements.imagePath.value = "output/fake/uploads/hip_xray.png";
+  state.uploadedImagePaths = [];
+  state.uploadedImageNames = [];
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
@@ -3270,6 +3334,8 @@ function loadXrayInsufficientSample() {
 function loadFhnNoMaskSample() {
   elements.patientMessage.value = "右髋疼痛，上传 X 光，请根据股骨头坏死 skill 自动圈出候选征象";
   elements.imagePath.value = "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png";
+  state.uploadedImagePaths = [];
+  state.uploadedImageNames = [];
   state.useSampleMask = false;
   state.sampleDiseaseKey = "femoral_head_necrosis";
   state.sampleVisionMode = "no_mask_skill";
@@ -3383,7 +3449,7 @@ elements.saveSkillDraftButton.addEventListener("click", async () => {
 });
 elements.fileInput.addEventListener("change", async () => {
   try {
-    await uploadFile(elements.fileInput.files[0]);
+    await uploadFiles(elements.fileInput.files);
     setStatus("上传完成", "ok");
   } catch (error) {
     setStatus(error.message, "error");
@@ -3406,7 +3472,7 @@ elements.fileInput.addEventListener("change", async () => {
 
 elements.dropZone.addEventListener("drop", async (event) => {
   try {
-    await uploadFile(event.dataTransfer.files[0]);
+    await uploadFiles(event.dataTransfer.files);
     setStatus("上传完成", "ok");
   } catch (error) {
     setStatus(error.message, "error");
@@ -3521,6 +3587,8 @@ elements.resetButton.addEventListener("click", () => {
   state.sampleVisionMode = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
+  state.uploadedImagePaths = [];
+  state.uploadedImageNames = [];
   elements.caseForm.reset();
   resetViews();
   setStatus("已清空");

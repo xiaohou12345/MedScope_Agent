@@ -393,7 +393,7 @@ class VisualTask:
         normalized = task_name
         for prefix in ("segment_", "measure_", "assess_"):
             if normalized.startswith(prefix):
-                normalized = normalized.removeprefix(prefix)
+                normalized = normalized[len(prefix) :]
                 break
         return normalized or task_name
 

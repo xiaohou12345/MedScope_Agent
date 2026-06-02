@@ -213,6 +213,7 @@ class GaoDoctorAgent:
             "case_id": case_id,
             "image_id": "image_001",
             "image_path": case_input.image_path,
+            "image_series": case_input.patient_info.get("image_series", []),
             "modality": visual_result["modality"],
             "body_part": visual_result["body_part"],
             "image_outputs": visual_result["image_outputs"],

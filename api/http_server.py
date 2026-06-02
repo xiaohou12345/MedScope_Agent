@@ -74,6 +74,14 @@ STATIC_ROUTES = {
 }
 
 
+def _remove_prefix(value: str, prefix: str) -> str:
+    return value[len(prefix) :] if value.startswith(prefix) else value
+
+
+def _remove_suffix(value: str, suffix: str) -> str:
+    return value[: -len(suffix)] if suffix and value.endswith(suffix) else value
+
+
 def load_dotenv_local(path: Path | str = Path(".env.local")) -> dict[str, str]:
     env_path = Path(path)
     if not env_path.exists():
@@ -194,7 +202,7 @@ def resolve_public_output_path(path: str, output_root: Path | str = DEFAULT_OUTP
     if not route_path.startswith("/output/"):
         raise ValueError("only output files can be served")
     root = Path(output_root).resolve()
-    relative = route_path.removeprefix("/output/")
+    relative = _remove_prefix(route_path, "/output/")
     if not relative or ".." in Path(relative).parts:
         raise ValueError("invalid output path")
     resolved = (root / relative).resolve()
@@ -230,7 +238,7 @@ def dispatch_skill_request(
         return 200, {"skills": skills, "count": len(skills)}
 
     prefix = "/v1/skills/"
-    remainder = route_path.removeprefix(prefix).strip("/")
+    remainder = _remove_prefix(route_path, prefix).strip("/")
     parts = remainder.split("/") if remainder else []
     if not parts or not _is_safe_skill_key(parts[0]):
         return 404, {"error": "not found"}
@@ -443,7 +451,7 @@ def _latest_skill_review_draft(*, skill_key: str, output_root: Path) -> dict:
     if not drafts:
         return {"exists": False}
     latest = drafts[-1]
-    return {"exists": True, "draft_path": str(latest), "updated_at": latest.stem.removeprefix(f"{skill_key}_")}
+    return {"exists": True, "draft_path": str(latest), "updated_at": _remove_prefix(latest.stem, f"{skill_key}_")}
 
 
 def _save_skill_review_draft(
@@ -516,17 +524,26 @@ def dispatch_http_request(
         try:
             payload = json.loads(body.decode("utf-8")) if body else {}
             return 200, factory().handle_request(payload)
+        except json.JSONDecodeError as exc:
+            return 400, {"error": f"invalid json: {exc}"}
         except MedScopeReadinessError as exc:
             return 503, exc.to_response()
         except ValueError as exc:
             return 400, {"error": str(exc)}
-        except json.JSONDecodeError as exc:
-            return 400, {"error": f"invalid json: {exc}"}
+        except Exception as exc:
+            return 500, {
+                "error": str(exc),
+                "error_type": "analysis_runtime_error",
+                "action_items": [
+                    "实时分析链路异常中断，请查看服务器日志或重试。",
+                    "如果刚上传图片，请确认图片路径存在且 VLM/API 可用。",
+                ],
+            }
     if method == "POST" and route_path == "/v1/upload":
         parsed = urlparse(path)
         filename = "upload.bin"
         if parsed.query.startswith("filename="):
-            filename = parsed.query.removeprefix("filename=")
+            filename = _remove_prefix(parsed.query, "filename=")
         return handle_file_upload(filename=filename, body=body)
     if method == "POST" and route_path == "/v1/baseline/image-prompt-skill":
         try:
@@ -590,7 +607,7 @@ def dispatch_memory_request(
     prefix = "/v1/memory/cases/"
     if not route_path.startswith(prefix):
         return 404, {"error": "not found"}
-    remainder = route_path.removeprefix(prefix).strip("/")
+    remainder = _remove_prefix(route_path, prefix).strip("/")
     parts = remainder.split("/") if remainder else []
     if not parts or not parts[0]:
         return 404, {"error": "not found"}
@@ -643,7 +660,7 @@ def dispatch_demo_request(
     prefix = "/v1/demo/standard/cases/"
     if not route_path.startswith(prefix):
         return None, {}
-    remainder = route_path.removeprefix(prefix).strip("/")
+    remainder = _remove_prefix(route_path, prefix).strip("/")
     parts = remainder.split("/") if remainder else []
     if len(parts) != 2:
         return 404, {"error": "not found"}
@@ -676,7 +693,7 @@ def _dispatch_real_vlm_medsam2_demo_request(
     output_root: Path,
 ) -> tuple[int, dict]:
     prefix = "/v1/demo/real-vlm-medsam2"
-    artifact_name = route_path.removeprefix(prefix).strip("/")
+    artifact_name = _remove_prefix(route_path, prefix).strip("/")
     if method == "POST" and artifact_name == "qa":
         return _answer_real_vlm_medsam2_demo_qa(body=body, output_root=output_root)
     if method == "GET" and artifact_name == "response":
@@ -897,7 +914,7 @@ def _largest_nonzero_slice(mask_volume: object) -> int:
 def _preview_stem(path: str) -> str:
     name = Path(path).name
     if name.endswith(".nii.gz"):
-        name = name.removesuffix(".nii.gz")
+        name = _remove_suffix(name, ".nii.gz")
     else:
         name = Path(name).stem
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "mask"

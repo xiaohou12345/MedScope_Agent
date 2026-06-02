@@ -150,6 +150,34 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
         self.assertFalse(hasattr(service, "diagnosis_agent"))
         self.assertFalse(hasattr(service, "vision_agent"))
 
+    def test_service_accepts_multi_image_case_group_and_uses_first_image_as_primary(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        service.handle_request(
+            {
+                "patient_message": "右髋疼痛，判断是否股骨头坏死",
+                "image_paths": [
+                    "output/fake/uploads/patient_ap_pelvis.png",
+                    "output/fake/uploads/patient_frog_lateral.png",
+                ],
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        call = fake_doctor.calls[0]
+        self.assertEqual(call["image_path"], "output/fake/uploads/patient_ap_pelvis.png")
+        self.assertEqual(call["disease_key"], "femoral_head_necrosis")
+        self.assertEqual(call["vision_mode"], "no_mask_skill")
+        self.assertEqual(
+            [item["image_path"] for item in call["patient_info"]["image_series"]],
+            [
+                "output/fake/uploads/patient_ap_pelvis.png",
+                "output/fake/uploads/patient_frog_lateral.png",
+            ],
+        )
+        self.assertEqual(call["patient_info"]["image_series"][1]["view_hint"], "frog_lateral")
+
     def test_service_routes_qa_payload_through_same_front_door(self):
         fake_doctor = FakeGaoDoctor()
         service = MedScopeService(gaodoctor_agent=fake_doctor)

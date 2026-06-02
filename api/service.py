@@ -61,6 +61,7 @@ class MedScopeService:
         self.alignment_planner = alignment_planner or AlignmentPlanner()
 
     def handle_request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        payload = self._normalize_image_payload(payload)
         patient_message = payload.get("patient_message")
         if not patient_message:
             raise ValueError("patient_message is required")
@@ -102,6 +103,45 @@ class MedScopeService:
         if alignment_plan.get("required_next_images"):
             result.setdefault("required_next_images", alignment_plan["required_next_images"])
         return self._attach_case_outputs(result)
+
+    def _normalize_image_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(payload)
+        image_paths = self._coerce_image_paths(normalized.get("image_paths"))
+        if image_paths and not normalized.get("image_path"):
+            normalized["image_path"] = image_paths[0]
+        if image_paths:
+            normalized["image_paths"] = image_paths
+            patient_info = dict(normalized.get("patient_info") or {})
+            if not patient_info.get("image_series"):
+                patient_info["image_series"] = [
+                    {
+                        "image_id": f"image_{index + 1:03d}",
+                        "image_path": image_path,
+                        "view_hint": self._infer_view_hint(image_path),
+                    }
+                    for index, image_path in enumerate(image_paths)
+                ]
+            normalized["patient_info"] = patient_info
+        return normalized
+
+    def _coerce_image_paths(self, value: Any) -> list[str]:
+        if not value:
+            return []
+        if isinstance(value, str):
+            candidates = [item.strip() for item in value.replace("\n", ",").split(",")]
+        elif isinstance(value, list):
+            candidates = [str(item).strip() for item in value]
+        else:
+            return []
+        return [item for item in candidates if item]
+
+    def _infer_view_hint(self, image_path: str) -> str:
+        text = image_path.lower()
+        if any(marker in text for marker in ["frog", "lauenstein", "蛙"]):
+            return "frog_lateral"
+        if any(marker in text for marker in ["ap", "pelvis", "正位", "卧"]):
+            return "ap_pelvis"
+        return "unknown"
 
     def _build_routing_decision(self, payload: dict[str, Any]) -> dict[str, Any]:
         explicit_disease_key = payload.get("disease_key")
@@ -211,6 +251,7 @@ class MedScopeService:
             for value in [
                 payload.get("patient_message", ""),
                 payload.get("image_path", ""),
+                " ".join(str(path) for path in self._coerce_image_paths(payload.get("image_paths"))),
                 symptoms_text,
             ]
         ).lower()

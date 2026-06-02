@@ -110,7 +110,7 @@ class GuidelineSourceImportTool:
             stripped = line.strip()
             if stripped.startswith("## "):
                 self._append_section(sections, current_heading, current_lines)
-                current_heading = stripped.removeprefix("## ").strip()
+                current_heading = stripped[3:].strip()
                 current_lines = []
             else:
                 current_lines.append(line)
