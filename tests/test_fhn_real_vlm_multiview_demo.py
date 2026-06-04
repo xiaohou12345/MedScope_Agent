@@ -1,9 +1,11 @@
 import json
+import os
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from scripts.fhn_real_vlm_multiview_demo import main, run_demo
 
@@ -66,6 +68,27 @@ class FhnRealVlmMultiViewDemoTest(unittest.TestCase):
             readiness = json.loads((output_dir / "readiness.json").read_text(encoding="utf-8"))
             self.assertEqual(readiness["workflow"], "fhn_real_vlm_validation")
             self.assertFalse(readiness["network_call_attempted"])
+
+    def test_demo_dry_run_loads_dotenv_local_without_leaking_secret(self):
+        old_cwd = Path.cwd()
+        with TemporaryDirectory() as tmpdir, patch.dict("os.environ", {}, clear=True):
+            tmp_path = Path(tmpdir)
+            (tmp_path / ".env.local").write_text("DMX_API_KEY=sk-test-secret\n", encoding="utf-8")
+            output_dir = tmp_path / "demo"
+            os.chdir(tmp_path)
+            try:
+                result = run_demo(
+                    ap_image="/tmp/ap.png",
+                    lateral_image="/tmp/lateral.png",
+                    output_dir=output_dir,
+                    dry_run=True,
+                )
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertTrue(result["readiness"]["api_key_present"])
+            self.assertEqual(result["readiness"]["status"], "ready")
+            self.assertNotIn("sk-test-secret", json.dumps(result, ensure_ascii=False))
 
     def test_demo_real_run_writes_summary_evidence_report_and_audit(self):
         with TemporaryDirectory() as tmpdir:

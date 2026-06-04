@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,6 +26,7 @@ def run_demo(
 ) -> dict[str, Any]:
     demo_dir = Path(output_dir)
     demo_dir.mkdir(parents=True, exist_ok=True)
+    _load_dotenv_local()
 
     image_paths = [str(ap_image), str(lateral_image)]
     if frog_lateral_image:
@@ -136,6 +138,20 @@ def main(argv: list[str] | None = None) -> int:
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_dotenv_local(path: Path = Path(".env.local")) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 if __name__ == "__main__":
