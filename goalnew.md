@@ -5998,6 +5998,33 @@ node --check web/app.js
 
 结果：前端静态资源测试与 JS 语法检查已通过。
 
+### 2026-06-04 FHN Real VLM Validation 收尾与回归状态同步
+
+本轮目标：在 FHN Evidence Protocol MVP 已经收敛的基础上，补齐 real VLM validation 后的最终回归状态，避免 `.env.local` 中的 MedSAM2 配置污染后续测试，并把 git-tracked 阶段文档的测试快照更新到最新结果。
+
+新增/调整：
+
+- `scripts/fhn_real_vlm_multiview_demo.py` 的 `.env.local` 加载范围限定为 `DMX_` / `KY_`。
+- 新增测试确认 dry-run 不会把 `MEDSAM2_REPO_PATH`、`MEDSAM2_COMMAND_TEMPLATE` 写入当前进程环境。
+- `docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md` 的验证快照从 `391 tests passed` 更新为 `409 tests passed`。
+- `docs/PRE_COMMIT_AUDIT_20260604.md` 增加最新 follow-up verification 记录。
+
+验证：
+
+```bash
+node --check web/app.js
+git diff --check
+python -m unittest discover -v
+```
+
+结果：JS 语法检查、diff whitespace 检查与全量 `409` 个 unittest 均通过。
+
+当前边界：
+
+- FHN evidence protocol / real VLM validation 主线已经形成可演示 MVP。
+- real VLM 输出仍只能作为候选视觉证据，不能宣称 X 光自动确诊股骨头坏死。
+- MedSAM2 / 专病分割质量仍是后续独立验证任务，不在本轮收敛中伪装完成。
+
 ### 2026-06-04 FHN Evidence Protocol MVP 收敛交付入口补齐
 
 本轮目标：上一轮已经把 FHN 多图 Evidence Protocol MVP 的阶段报告、交付清单和本地演示材料整理到 `output/real`，但 `output/` 被 `.gitignore` 忽略，直接同步 GitHub 时这些入口文档不会被提交。因此需要补一个可跟踪的阶段入口，保证项目首页能看见当前阶段成果。

@@ -103,7 +103,7 @@ The AP + lateral CC0 pair is a real-image demonstration candidate, not a strict 
 
 ## Verification Snapshot
 
-Latest full verification recorded during this phase:
+Latest full verification recorded after the real VLM validation path and dotenv isolation fix:
 
 ```bash
 python -m unittest discover -v
@@ -112,7 +112,7 @@ python -m unittest discover -v
 Result recorded in the local phase report:
 
 ```text
-391 tests passed
+409 tests passed
 ```
 
 For a fresh pre-commit check, run:
