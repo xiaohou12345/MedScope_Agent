@@ -32,6 +32,7 @@ def run_segmentation_benchmark(
             raw_case=dict(raw_case),
             prepare_fixtures=prepare_fixtures,
             evaluator=evaluator or BratsEvaluationTool(),
+            metric_gates=dict(manifest.get("metric_gates") or {}),
         )
         for raw_case in manifest.get("cases") or []
         if isinstance(raw_case, dict)
@@ -75,6 +76,7 @@ def _evaluate_case(
     raw_case: dict[str, Any],
     prepare_fixtures: bool,
     evaluator: Any,
+    metric_gates: dict[str, Any],
 ) -> dict[str, Any]:
     case = dict(raw_case)
     if prepare_fixtures and case.get("fixture_generator") == "scripts.prepare_public_demo_fixture":
@@ -101,6 +103,11 @@ def _evaluate_case(
             prediction_mask_path=prediction,
             reference_mask_path=reference,
         )
+    quality_gate = _evaluate_metric_gate(
+        metric_status=metric_status,
+        metrics=metrics,
+        metric_gates=metric_gates,
+    )
 
     return {
         "case_id": case.get("case_id"),
@@ -114,6 +121,7 @@ def _evaluate_case(
         "reference_mask_path": reference,
         "metric_status": metric_status,
         "metrics": metrics,
+        "quality_gate": quality_gate,
         "diagnosis_allowed": False,
         "formal_skill_update_allowed": False,
         "limitations": limitations,
@@ -154,6 +162,59 @@ def _aggregate(cases: list[dict[str, Any]]) -> dict[str, int]:
         "missing_prediction_mask_count": sum(
             1 for case in cases if case.get("metric_status") == "missing_prediction_mask"
         ),
+        "metric_pass_case_count": sum(
+            1 for case in cases if (case.get("quality_gate") or {}).get("status") == "pass"
+        ),
+        "metric_fail_case_count": sum(
+            1 for case in cases if (case.get("quality_gate") or {}).get("status") == "fail"
+        ),
+    }
+
+
+def _evaluate_metric_gate(
+    *,
+    metric_status: str,
+    metrics: dict[str, Any] | None,
+    metric_gates: dict[str, Any],
+) -> dict[str, Any]:
+    if metric_status != "metric_ready":
+        return {
+            "status": "not_applicable",
+            "reason": f"case metric_status is {metric_status}",
+            "required_metrics": [],
+            "minimums": {},
+            "failed_metrics": [],
+            "missing_metrics": [],
+        }
+    required_metrics = list(metric_gates.get("required_metrics") or [])
+    minimums = dict(metric_gates.get("minimums") or {})
+    if not required_metrics and not minimums:
+        return {
+            "status": "not_configured",
+            "reason": "manifest does not define metric_gates",
+            "required_metrics": [],
+            "minimums": {},
+            "failed_metrics": [],
+            "missing_metrics": [],
+        }
+
+    metric_values = metrics or {}
+    required = sorted(set(required_metrics) | set(minimums))
+    missing = [name for name in required if name not in metric_values]
+    failed = [
+        name
+        for name, minimum in minimums.items()
+        if name in metric_values
+        and metric_values[name] is not None
+        and float(metric_values[name]) < float(minimum)
+    ]
+    status = "pass" if not missing and not failed else "fail"
+    return {
+        "status": status,
+        "required_metrics": required,
+        "minimums": minimums,
+        "failed_metrics": failed,
+        "missing_metrics": missing,
     }
 
 
@@ -165,19 +226,22 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         f"- `benchmark_scope`: `{payload.get('benchmark_scope')}`",
         f"- `case_count`: `{payload.get('aggregate', {}).get('case_count')}`",
         f"- `metric_ready_case_count`: `{payload.get('aggregate', {}).get('metric_ready_case_count')}`",
+        f"- `metric_pass_case_count`: `{payload.get('aggregate', {}).get('metric_pass_case_count')}`",
+        f"- `metric_fail_case_count`: `{payload.get('aggregate', {}).get('metric_fail_case_count')}`",
         f"- `missing_reference_mask_count`: `{payload.get('aggregate', {}).get('missing_reference_mask_count')}`",
         "",
-        "| case_id | disease | modality | backend | metric_status | diagnosis_allowed |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| case_id | disease | modality | backend | metric_status | quality_gate | diagnosis_allowed |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for case in payload.get("cases") or []:
         lines.append(
-            "| {case_id} | {disease} | {modality} | {backend} | {status} | {diagnosis} |".format(
+            "| {case_id} | {disease} | {modality} | {backend} | {status} | {quality_gate} | {diagnosis} |".format(
                 case_id=case.get("case_id"),
                 disease=case.get("disease_key"),
                 modality=case.get("modality"),
                 backend=case.get("backend_type"),
                 status=case.get("metric_status"),
+                quality_gate=(case.get("quality_gate") or {}).get("status"),
                 diagnosis=case.get("diagnosis_allowed"),
             )
         )

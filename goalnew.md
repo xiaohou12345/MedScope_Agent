@@ -6193,13 +6193,55 @@ python -m scripts.segmentation_benchmark --manifest benchmarks/segmentation/femo
 python -m unittest discover -v
 ```
 
-结果：`414` 个测试通过，耗时 `56.049s`。
+结果：`415` 个测试通过，耗时 `63.128s`。
 
 当前边界：
 
 - 当前 manifest 只是 smoke/readiness fixture，不是带标注的医学 benchmark。
 - 不宣称任何病灶分割质量。
 - 真实 Dice/IoU 需要后续加入 reference mask 和 prediction mask。
+
+### 2026-06-04 Segmentation Benchmark Metric Gate 补齐
+
+本轮目标：上一轮 benchmark 入口只能证明 readiness 和“没有 reference mask 时不伪造指标”。本轮补齐 metric-ready case 的质量门统计，让真实标注 case 接入时可以明确 pass/fail，但仍不能升级诊断或 formal skill。
+
+新增/调整：
+
+- `scripts/segmentation_benchmark.py`
+  - 支持读取 manifest 级 `metric_gates`
+  - metric-ready case 会输出 `quality_gate.status = pass | fail | not_configured`
+  - aggregate 增加 `metric_pass_case_count` 和 `metric_fail_case_count`
+  - markdown 报告展示 quality gate 状态
+- `tests/test_segmentation_benchmark.py`
+  - 增加 metric-ready fixture 测试
+  - 验证低于阈值时进入 `metric_fail_case_count`
+  - 验证即使有 metrics，也不会允许 `diagnosis_allowed` 或 `formal_skill_update_allowed`
+- `benchmarks/segmentation/README.md` / README / 中文 README
+  - 明确后续真实标注 case 应通过 manifest `metric_gates` 做质量门验证。
+
+TDD 验证：
+
+```bash
+python -m unittest tests.test_segmentation_benchmark.SegmentationBenchmarkTest.test_metric_ready_case_applies_manifest_quality_gate_without_diagnosis_upgrade -v
+```
+
+RED 结果：测试先因 aggregate 缺少 `metric_pass_case_count` / `metric_fail_case_count` 失败。
+
+GREEN 验证：
+
+```bash
+python -m unittest tests.test_segmentation_benchmark -v
+```
+
+结果：benchmark 测试 `3` 个通过。
+
+全量回归：
+
+```bash
+python -m unittest discover -v
+```
+
+结果：`415` 个测试通过，耗时 `63.128s`。
 
 ### 2026-06-04 FHN Evidence Protocol MVP 收敛交付入口补齐
 
