@@ -99,6 +99,7 @@ def run_demo(
         "reply_to_patient": service_result.get("reply_to_patient"),
         "output_dir": str(demo_dir),
         "summary_path": str(demo_dir / "summary.json"),
+        "summary_markdown_path": str(demo_dir / "summary.md"),
         "readiness_path": str(demo_dir / "readiness.json"),
         "input_manifest_path": str(demo_dir / "input_manifest.json"),
         "response_path": str(demo_dir / "response.json"),
@@ -114,6 +115,7 @@ def run_demo(
         },
     }
     _write_json(demo_dir / "summary.json", summary)
+    _write_markdown_summary(demo_dir / "summary.md", summary)
     return summary
 
 
@@ -147,6 +149,57 @@ def main(argv: list[str] | None = None) -> int:
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _write_markdown_summary(path: Path, summary: dict[str, Any]) -> None:
+    lines = [
+        "# FHN Real VLM Multi-View Validation",
+        "",
+        "This artifact summarizes candidate visual evidence only; it is not clinical diagnosis.",
+        "",
+        "## Routing",
+        "",
+        f"- case_id: {summary.get('case_id') or '-'}",
+        f"- selected_skill: {summary.get('selected_skill') or '-'}",
+        f"- selected_vision_mode: {summary.get('selected_vision_mode') or '-'}",
+        f"- evidence_item_count: {summary.get('evidence_item_count', 0)}",
+        "",
+        "## Evidence Gate Counts",
+        "",
+        *_format_count_lines("diagnosis_usable_level", summary.get("evidence_item_status_counts")),
+        "",
+        "## Execution Modes",
+        "",
+        *_format_count_lines("execution_mode", summary.get("execution_mode_counts")),
+        "",
+        "## Diagnosis Usability",
+        "",
+        *_format_count_lines("diagnosis_usable", summary.get("diagnosis_usable_counts")),
+        "",
+        "## Target Counts",
+        "",
+        *_format_count_lines("target", summary.get("target_counts")),
+        "",
+        "## Visual Fact Usage",
+        "",
+        *_format_count_lines("visual_fact_usage", summary.get("visual_fact_usage_counts")),
+        "",
+        "## Artifact Paths",
+        "",
+        f"- response: {summary.get('response_path') or '-'}",
+        f"- evidence_bundle: {summary.get('evidence_bundle_path') or '-'}",
+        f"- visual_evidence_bundle: {summary.get('visual_evidence_bundle_path') or '-'}",
+        f"- diagnosis_report: {summary.get('diagnosis_report_path') or '-'}",
+        f"- audit: {summary.get('audit_path') or '-'}",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _format_count_lines(label: str, counts: Any) -> list[str]:
+    if not isinstance(counts, dict) or not counts:
+        return [f"- {label}: none"]
+    return [f"- {key}: {value}" for key, value in sorted(counts.items())]
 
 
 def _count_by_key(items: list[dict[str, Any]], key: str) -> dict[str, int]:

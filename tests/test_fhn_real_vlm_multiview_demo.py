@@ -128,6 +128,7 @@ class FhnRealVlmMultiViewDemoTest(unittest.TestCase):
             self.assertTrue((output_dir / "diagnosis_report.json").exists())
             self.assertTrue((output_dir / "audit.json").exists())
             self.assertTrue((output_dir / "input_manifest.json").exists())
+            self.assertTrue((output_dir / "summary.md").exists())
 
             summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["case_id"], "case_real_vlm_demo")
@@ -139,6 +140,14 @@ class FhnRealVlmMultiViewDemoTest(unittest.TestCase):
             self.assertEqual(summary["diagnosis_usable_counts"]["usable"], 2)
             self.assertEqual(summary["diagnosis_usable_counts"]["not_usable"], 1)
             self.assertEqual(summary["visual_fact_usage_counts"], {"used_count": 2, "excluded_count": 1})
+            self.assertEqual(summary["summary_markdown_path"], str(output_dir / "summary.md"))
+            markdown = (output_dir / "summary.md").read_text(encoding="utf-8")
+            self.assertIn("# FHN Real VLM Multi-View Validation", markdown)
+            self.assertIn("candidate_support: 2", markdown)
+            self.assertIn("measurement_only: 1", markdown)
+            self.assertIn("used_count: 2", markdown)
+            self.assertIn("excluded_count: 1", markdown)
+            self.assertIn("not clinical diagnosis", markdown)
 
     def test_cli_dry_run_prints_json_summary(self):
         with TemporaryDirectory() as tmpdir:
