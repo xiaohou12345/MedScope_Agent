@@ -68,6 +68,7 @@ MedScope 不是简单把系统拆成很多 Agent。更准确的说法是：
 详细说明：
 
 - [docs/architecture/boundaries.md](docs/architecture/boundaries.md)
+- [docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md](docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md)
 - [docs/FHN_REAL_VLM_VALIDATION_20260604.md](docs/FHN_REAL_VLM_VALIDATION_20260604.md)
 - [docs/DUAL_PATH_AGENT_FRAMEWORK.md](docs/DUAL_PATH_AGENT_FRAMEWORK.md)
 - [docs/AGENT_FLOW.zh-CN.md](docs/AGENT_FLOW.zh-CN.md)
@@ -318,7 +319,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 421 tests in 58.289s
+Ran 425 tests in 63.011s
 OK
 ```
 
@@ -347,14 +348,16 @@ node --check web/app.js
 - `benchmarks/segmentation/` 已经把专病分割验证入口和 web demo 分离，支持通用二值病灶 mask 的 Dice/IoU，并能对 metric-ready case 输出质量门通过/失败统计。
 - Skill 自动升级被正确阻断，但后续如果要做 self-evolving，需要严格保留人工审核和 validation gate。
 - 当前系统是科研 demo，不是临床验证系统。
+- 当前 goal 收敛范围已经明确：真实 FHN 数据、真实 mask、metric-ready 真实 benchmark 后置，等数据到位后再接入。见 [docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md](docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md)。
 
 建议下一步：
 
-1. 向 `benchmarks/segmentation/` 增加真实 FHN 标注 benchmark case，使用 `evaluator_type: binary_mask` 并配置 `metric_gates`，让 Dice/IoU 不只停留在 readiness 检查。
+1. 先把当前 MVP goal 收敛到架构说明、患者端报告/QA、evidence bundle 审计和 benchmark 基础设施。
 2. 把公开安全 fixture 扩展成覆盖上传、QA、memory audit 的小型脚本 demo suite。
-3. 如果进入固定部署，再增加锁文件或 pinned environment export。
-4. 专病模型接入必须继续走 visual backend contract 和 quality gate。
-5. 保持 clinical skill 更新必须经过人工审核和验证门。
+3. 等真实 FHN 标注数据和 mask 到位后，再向 `benchmarks/segmentation/` 增加 `evaluator_type: binary_mask` 和 `metric_gates`。
+4. 如果进入固定部署，再增加锁文件或 pinned environment export。
+5. 专病模型接入必须继续走 visual backend contract 和 quality gate。
+6. 保持 clinical skill 更新必须经过人工审核和验证门。
 
 ## 医疗安全和隐私
 

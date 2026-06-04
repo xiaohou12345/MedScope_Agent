@@ -57,6 +57,8 @@ The lower layer behaves like a controlled runtime for medical evidence tasks:
 See:
 
 - [docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md](docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md)
+- [docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md](docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md)
+- [docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md](docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md)
 - [docs/FHN_REAL_VLM_VALIDATION_20260604.md](docs/FHN_REAL_VLM_VALIDATION_20260604.md)
 - [docs/architecture/boundaries.md](docs/architecture/boundaries.md)
 - [docs/DUAL_PATH_AGENT_FRAMEWORK.md](docs/DUAL_PATH_AGENT_FRAMEWORK.md)
@@ -323,7 +325,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 421 tests in 58.289s
+Ran 425 tests in 63.011s
 OK
 ```
 
@@ -352,14 +354,16 @@ Important limitations:
 - Dependency groups are now declared in `pyproject.toml`; there is still no lockfile, so exact reproducibility across machines is not pinned.
 - Skill review and candidate promotion are intentionally blocked from updating formal skills automatically.
 - The project is a research prototype, not a clinically validated diagnostic system.
+- Current goal closure explicitly defers real FHN data, real masks, and a metric-ready real benchmark until those data are available. See [docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md](docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md).
 
 Recommended next engineering steps:
 
-1. Add real labeled FHN benchmark cases to `benchmarks/segmentation/` with `evaluator_type: binary_mask` and manifest `metric_gates` so Dice/IoU metrics can run beyond readiness checks.
+1. Close the current MVP goal around architecture clarity, patient-facing report/QA behavior, evidence bundle audit, and benchmark infrastructure.
 2. Expand public-safe fixtures into a small scripted demo suite that covers upload, QA, and memory audit.
-3. Add a lockfile or pinned environment export if exact deployment reproducibility becomes necessary.
-4. Keep specialist model integration behind the visual backend contract and quality gate.
-5. Keep all clinical rule updates behind review and validation gates.
+3. After real FHN labeled data and masks are obtained, add benchmark cases to `benchmarks/segmentation/` with `evaluator_type: binary_mask` and manifest `metric_gates`.
+4. Add a lockfile or pinned environment export if exact deployment reproducibility becomes necessary.
+5. Keep specialist model integration behind the visual backend contract and quality gate.
+6. Keep all clinical rule updates behind review and validation gates.
 
 ## Safety and Privacy
 

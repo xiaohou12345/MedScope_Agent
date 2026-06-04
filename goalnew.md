@@ -9271,6 +9271,71 @@ python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_real_vlm_m
 
 结果：标准 memory audit、真实 demo audit、真实/标准 demo QA audit 和前端静态展示测试均已通过。
 
+### 2026-06-05 Current Goal Closure Scope 调整
+
+本轮目标边界重新固定：真实 FHN 数据、真实 reference mask、真实 metric-ready benchmark manifest 由用户后续获取，本轮不再把这些内容作为整轮 goal 的收敛条件。
+
+新增/调整：
+
+- 新增 `docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md`
+  - 明确 current goal 包含：五 Agent 证据链、FHN evidence protocol 样板、visual execution strategy、structured evidence bundle、bounded diagnosis report、QA、memory audit、segmentation benchmark 基础设施。
+  - 明确 current goal 不包含：真实 FHN 标注数据、真实 mask、metric-ready 真实 benchmark、临床可靠分割质量宣称。
+  - 明确真实数据到位后的下一阶段接入方式：放入 `benchmarks/segmentation/`，使用 `evaluator_type: binary_mask`、`reference_mask_path`、`prediction_mask_path` 和 `metric_gates`。
+- README / 中文 README 的推荐下一步从“真实 FHN benchmark case 是当前紧邻工程项”改为“先收敛当前 MVP；等真实数据到位后再接入 benchmark”。
+- 新增 `tests/test_goal_closure_scope.py`，防止 README 或 scope 文档再次把 deferred real-data validation 写成本轮必需项。
+
+当前口径：
+
+- 可以说：MedScope Agent MVP 的 evidence-bounded 架构、FHN evidence protocol 样板和 benchmark 基础设施已经具备可汇报基础。
+- 不能说：已经完成真实 FHN benchmark、已经完成 metric-ready 真实 benchmark、X 光病灶分割质量已经临床验证。
+
+验证：
+
+```bash
+python -m unittest tests.test_goal_closure_scope -v
+```
+
+结果：目标边界测试 `2` 个通过。
+
+全量回归：
+
+```bash
+python -m unittest discover -v
+```
+
+结果：`423` 个测试通过，耗时 `66.161s`。
+
+### 2026-06-05 Current MVP Demo Runbook 补齐
+
+本轮目标：真实 FHN 数据和 mask 已明确后置后，需要补一个不依赖真实 FHN 标注数据的当前 MVP 演示 runbook，让组会或 fresh clone 使用者知道如何展示“上传/输入 -> 自动 skill routing -> 视觉证据 -> 诊断报告 -> evidence bundle -> memory audit -> follow-up QA”的主线。
+
+新增/调整：
+
+- 新增 `docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md`
+  - 固定当前可演示链路：patient input + image upload -> automatic skill routing -> visual evidence -> diagnosis report -> evidence bundle -> memory audit -> follow-up QA。
+  - 说明 `python -m scripts.prepare_public_demo_fixture` 生成公开安全合成输入，不是临床图像或 benchmark。
+  - 说明 `python -m scripts.end_to_end_demo --suite` 用于展示当前 MVP 主线，而不是宣称视觉模型质量。
+  - 说明 optional FHN no-mask demo 仍是 candidate evidence，不是 validated segmentation。
+  - 明确 real FHN data and masks are deferred。
+- README / 中文 README 增加 current MVP demo runbook 入口。
+- 新增 `tests/test_current_mvp_demo_runbook.py`，确保 runbook 覆盖 upload、automatic skill routing、visual evidence、diagnosis report、evidence bundle、memory audit、follow-up QA 和 deferred data boundary。
+
+验证：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook -v
+```
+
+结果：runbook 文档测试 `2` 个通过。
+
+全量回归：
+
+```bash
+python -m unittest discover -v
+```
+
+结果：`425` 个测试通过，耗时 `63.011s`。
+
 补充验证：
 
 ```bash
