@@ -30,7 +30,20 @@ class FakeService:
                         "target": "sclerotic_band",
                         "execution_mode": "vlm_only",
                         "diagnosis_usable_level": "candidate_support",
-                    }
+                        "diagnosis_usable": True,
+                    },
+                    {
+                        "target": "cystic_change",
+                        "execution_mode": "vlm_only",
+                        "diagnosis_usable_level": "candidate_support",
+                        "diagnosis_usable": True,
+                    },
+                    {
+                        "target": "collapse",
+                        "execution_mode": "measurement_only",
+                        "diagnosis_usable_level": "not_usable",
+                        "diagnosis_usable": False,
+                    },
                 ],
             },
             "evidence_bundle": {
@@ -47,7 +60,10 @@ class FakeService:
                 },
             },
             "memory_audit": {"case_id": "case_real_vlm_demo", "agents_traced": ["GaoDoctorAgent"]},
-            "report": {"diagnostic_tendency": "候选证据，需复核"},
+            "report": {
+                "diagnostic_tendency": "候选证据，需复核",
+                "visual_fact_usage": {"used_count": 2, "excluded_count": 1},
+            },
         }
 
 
@@ -116,7 +132,13 @@ class FhnRealVlmMultiViewDemoTest(unittest.TestCase):
             summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["case_id"], "case_real_vlm_demo")
             self.assertEqual(summary["selected_vision_mode"], "real_vlm_validation")
-            self.assertEqual(summary["evidence_item_count"], 1)
+            self.assertEqual(summary["evidence_item_count"], 3)
+            self.assertEqual(summary["evidence_item_status_counts"]["candidate_support"], 2)
+            self.assertEqual(summary["evidence_item_status_counts"]["not_usable"], 1)
+            self.assertEqual(summary["execution_mode_counts"]["measurement_only"], 1)
+            self.assertEqual(summary["diagnosis_usable_counts"]["usable"], 2)
+            self.assertEqual(summary["diagnosis_usable_counts"]["not_usable"], 1)
+            self.assertEqual(summary["visual_fact_usage_counts"], {"used_count": 2, "excluded_count": 1})
 
     def test_cli_dry_run_prints_json_summary(self):
         with TemporaryDirectory() as tmpdir:
