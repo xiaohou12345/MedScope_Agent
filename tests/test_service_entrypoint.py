@@ -74,6 +74,86 @@ class FakeAlignmentPlanner:
         }
 
 
+class MissingSkillTool:
+    def load_guideline_skill(self, disease_key):
+        raise FileNotFoundError(disease_key)
+
+    def prepare_skill(self, **kwargs):
+        return {
+            "skill_id": f"{kwargs['disease_key']}_proposal_v0.1",
+            "disease_name": kwargs["disease_name"],
+            "skill_type": "data_mined_hypothesis",
+            "source_type": "internal_dataset_summary",
+            "evidence_level": "low",
+        }
+
+
+class ProposalSkillTool(MissingSkillTool):
+    def __init__(self):
+        self.prepare_calls = []
+
+    def prepare_skill(self, **kwargs):
+        self.prepare_calls.append(kwargs)
+        return {
+            "skill_id": f"{kwargs['disease_key']}_proposal_v0.1",
+            "disease_name": kwargs["disease_name"],
+            "skill_type": "data_mined_hypothesis",
+            "source_type": "internal_dataset_summary",
+            "evidence_level": "low",
+            "quality_control": {
+                "formal_skill_status": "proposal_only",
+                "can_enter_formal_guideline_skill": False,
+            },
+            "safety_gate": {
+                "mode_required": "hypothesis_validation",
+            },
+        }
+
+
+class IncompleteLocalSkillTool(ProposalSkillTool):
+    def load_guideline_skill(self, disease_key):
+        return {
+            "skill_id": f"{disease_key}_guideline_v0.1",
+            "disease_name": "不完整本地 skill",
+            "skill_type": "guideline_based",
+            "source_type": "guideline",
+            "evidence_level": "medium",
+        }
+
+
+class InvalidVisualProtocolSkillTool(ProposalSkillTool):
+    def load_guideline_skill(self, disease_key):
+        return {
+            "skill_id": f"{disease_key}_guideline_v0.1",
+            "disease_name": "无效 visual protocol skill",
+            "skill_type": "guideline_based",
+            "source_type": "guideline",
+            "evidence_level": "medium",
+            "visual_protocol": {
+                "disease_target": disease_key,
+                "alignment_tasks": [],
+            },
+        }
+
+
+class InvalidEvidenceProtocolSkillTool(ProposalSkillTool):
+    def load_guideline_skill(self, disease_key):
+        return {
+            "skill_id": f"{disease_key}_guideline_v0.1",
+            "disease_name": "无效多维 evidence protocol skill",
+            "skill_type": "guideline_based",
+            "source_type": "guideline",
+            "evidence_level": "medium",
+            "imaging_evidence_protocol": {
+                "disease_target": disease_key,
+                "finding_targets": [],
+            },
+            "quantitative_evidence_protocol": {
+                "image_feature_quantification": [],
+            },
+        }
+
+
 class FakeNoMaskVisualRunner:
     def __init__(self):
         self.calls = []
@@ -177,6 +257,27 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
             ],
         )
         self.assertEqual(call["patient_info"]["image_series"][1]["view_hint"], "frog_lateral")
+
+    def test_service_infers_generic_lateral_view_for_multi_image_case_group(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        service.handle_request(
+            {
+                "patient_message": "左髋疼痛，上传正位和侧位 X 光",
+                "image_paths": [
+                    "output/real/onfh_pair/ap_detail_idiopathic_onfh.jpg",
+                    "output/real/onfh_pair/lateral_idiopathic_onfh.jpg",
+                ],
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        call = fake_doctor.calls[0]
+        self.assertEqual(
+            [item["view_hint"] for item in call["patient_info"]["image_series"]],
+            ["ap_pelvis", "lateral"],
+        )
 
     def test_service_routes_qa_payload_through_same_front_door(self):
         fake_doctor = FakeGaoDoctor()
@@ -320,7 +421,7 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
 
             result = service.handle_request(
                 {
-                    "patient_message": "左髋疼痛三个月，想根据这张 X 光判断股骨头坏死风险",
+                    "patient_message": "左髋疼痛三个月，走路加重，帮我看看这张 X 光有没有问题",
                     "image_path": "data/images/demo_xray.png",
                     "patient_info": {"symptoms": ["髋关节疼痛"]},
                 }
@@ -333,6 +434,14 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
             self.assertEqual(routing["selected_skill"], "femoral_head_necrosis")
             self.assertEqual(routing["selected_vision_mode"], "no_mask_skill")
             self.assertEqual(routing["source"], "auto")
+            self.assertEqual(routing["primary_hypothesis"], "femoral_head_necrosis")
+            self.assertEqual(routing["initial_evidence_status"], "requires_evidence_acquisition")
+            self.assertEqual(routing["routing_evidence_status"], "requires_evidence_acquisition")
+            self.assertIn(
+                "osteoarthritis_or_degenerative_hip_disease",
+                routing["differential_skill_candidates"],
+            )
+            self.assertIn("left hip pain", routing["skill_search_reason"])
             self.assertEqual(len(no_mask_runner.calls), 1)
 
     def test_service_auto_selects_ipf_skill_from_hrct_chest_clues(self):
@@ -385,6 +494,141 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
         self.assertEqual(result["routing_decision"]["skill_builder_action"], "none")
         self.assertEqual(result["routing_decision"]["matched_clues"], [])
 
+    def test_service_does_not_mark_missing_local_skill_as_loaded(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(
+            gaodoctor_agent=fake_doctor,
+            skill_tool=MissingSkillTool(),
+        )
+
+        result = service.handle_request(
+            {
+                "patient_message": "左髋疼痛，考虑罕见髋部疾病，请根据指南评估",
+                "image_path": "output/fake/uploads/rare_hip_xray.png",
+                "disease_key": "rare_hip_disorder",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        routing = result["routing_decision"]
+        self.assertEqual(routing["selected_skill"], "rare_hip_disorder")
+        self.assertEqual(routing["primary_hypothesis"], "rare_hip_disorder")
+        self.assertEqual(routing["skill_builder_action"], "search_or_generate_skill")
+        self.assertIn("local skill", routing["skill_search_reason"])
+
+    def test_service_returns_proposal_only_skill_when_local_skill_is_missing(self):
+        fake_doctor = FakeGaoDoctor()
+        proposal_tool = ProposalSkillTool()
+        service = MedScopeService(
+            gaodoctor_agent=fake_doctor,
+            skill_tool=proposal_tool,
+        )
+
+        result = service.handle_request(
+            {
+                "patient_message": "左髋疼痛，考虑罕见髋部疾病，请根据指南评估",
+                "image_path": "output/fake/uploads/rare_hip_xray.png",
+                "disease_key": "rare_hip_disorder",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        self.assertEqual(result["intent"], "skill_proposal")
+        self.assertEqual(result["analysis_status"], "skill_proposal_required")
+        self.assertEqual(result["routing_decision"]["skill_builder_action"], "search_or_generate_skill")
+        self.assertEqual(result["skill_builder_proposal"]["skill_id"], "rare_hip_disorder_proposal_v0.1")
+        self.assertFalse(result["skill_builder_proposal"]["formal_update_allowed"])
+        self.assertFalse(result["skill_builder_proposal"]["diagnosis_allowed"])
+        self.assertEqual(proposal_tool.prepare_calls[0]["disease_key"], "rare_hip_disorder")
+        self.assertFalse(proposal_tool.prepare_calls[0]["persist"])
+        self.assertEqual(fake_doctor.calls, [])
+
+    def test_service_returns_proposal_only_when_local_skill_lacks_protocol(self):
+        fake_doctor = FakeGaoDoctor()
+        skill_tool = IncompleteLocalSkillTool()
+        service = MedScopeService(
+            gaodoctor_agent=fake_doctor,
+            skill_tool=skill_tool,
+        )
+
+        result = service.handle_request(
+            {
+                "patient_message": "左髋疼痛，上传 X 光，请评估这个不完整 skill",
+                "image_path": "output/fake/uploads/left_hip_xray.png",
+                "disease_key": "incomplete_local_skill",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        self.assertEqual(result["intent"], "skill_proposal")
+        self.assertEqual(result["analysis_status"], "skill_proposal_required")
+        self.assertEqual(result["routing_decision"]["selected_skill"], "incomplete_local_skill")
+        self.assertEqual(result["routing_decision"]["skill_builder_action"], "search_or_generate_skill")
+        self.assertIn("required protocol", result["routing_decision"]["skill_search_reason"])
+        self.assertEqual(skill_tool.prepare_calls[0]["disease_key"], "incomplete_local_skill")
+        self.assertFalse(skill_tool.prepare_calls[0]["persist"])
+        self.assertEqual(fake_doctor.calls, [])
+
+    def test_service_returns_proposal_only_when_local_visual_protocol_is_invalid(self):
+        fake_doctor = FakeGaoDoctor()
+        skill_tool = InvalidVisualProtocolSkillTool()
+        service = MedScopeService(
+            gaodoctor_agent=fake_doctor,
+            skill_tool=skill_tool,
+        )
+
+        result = service.handle_request(
+            {
+                "patient_message": "左髋疼痛，上传 X 光，请评估这个 protocol 无效的 skill",
+                "image_path": "output/fake/uploads/left_hip_xray.png",
+                "disease_key": "invalid_visual_protocol_skill",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        self.assertEqual(result["intent"], "skill_proposal")
+        self.assertEqual(result["analysis_status"], "skill_proposal_required")
+        self.assertEqual(
+            result["routing_decision"]["skill_builder_action"],
+            "search_or_generate_skill",
+        )
+        self.assertIn("invalid visual_protocol", result["routing_decision"]["skill_search_reason"])
+        self.assertEqual(skill_tool.prepare_calls[0]["disease_key"], "invalid_visual_protocol_skill")
+        self.assertEqual(fake_doctor.calls, [])
+
+    def test_service_returns_proposal_only_when_local_evidence_protocol_is_invalid(self):
+        fake_doctor = FakeGaoDoctor()
+        skill_tool = InvalidEvidenceProtocolSkillTool()
+        service = MedScopeService(
+            gaodoctor_agent=fake_doctor,
+            skill_tool=skill_tool,
+        )
+
+        result = service.handle_request(
+            {
+                "patient_message": "左髋疼痛，上传 X 光，请评估这个 evidence protocol 无效的 skill",
+                "image_path": "output/fake/uploads/left_hip_xray.png",
+                "disease_key": "invalid_evidence_protocol_skill",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        self.assertEqual(result["intent"], "skill_proposal")
+        self.assertEqual(result["analysis_status"], "skill_proposal_required")
+        self.assertEqual(
+            result["routing_decision"]["skill_builder_action"],
+            "search_or_generate_skill",
+        )
+        self.assertIn(
+            "invalid imaging_evidence_protocol",
+            result["routing_decision"]["skill_search_reason"],
+        )
+        self.assertEqual(
+            skill_tool.prepare_calls[0]["disease_key"],
+            "invalid_evidence_protocol_skill",
+        )
+        self.assertEqual(fake_doctor.calls, [])
+
     def test_service_auto_selects_femoral_head_skill_from_hip_xray_clues(self):
         fake_doctor = FakeGaoDoctor()
         service = MedScopeService(gaodoctor_agent=fake_doctor)
@@ -404,6 +648,89 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
         self.assertEqual(result["routing_decision"]["source"], "auto")
         self.assertEqual(result["routing_decision"]["skill_builder_action"], "load_existing_skill")
         self.assertIn("髋", result["routing_decision"]["matched_clues"])
+        self.assertEqual(result["routing_decision"]["primary_hypothesis"], "femoral_head_necrosis")
+        self.assertEqual(
+            result["routing_decision"]["initial_evidence_status"],
+            "requires_evidence_acquisition",
+        )
+        self.assertEqual(
+            result["routing_decision"]["routing_evidence_status"],
+            "requires_evidence_acquisition",
+        )
+        self.assertIn(
+            "osteoarthritis_or_degenerative_hip_disease",
+            result["routing_decision"]["differential_skill_candidates"],
+        )
+        hypotheses = result["routing_decision"]["clinical_hypotheses"]
+        self.assertEqual(hypotheses[0]["role"], "primary")
+        self.assertEqual(hypotheses[0]["disease_key"], "femoral_head_necrosis")
+        self.assertEqual(hypotheses[0]["status"], "requires_evidence_acquisition")
+        self.assertIn("symptom", hypotheses[0]["reason"])
+        self.assertIn(
+            "osteoarthritis_or_degenerative_hip_disease",
+            [item["disease_key"] for item in hypotheses if item["role"] == "differential"],
+        )
+
+    def test_service_routes_fhn_as_hypothesis_not_default_positive_disease(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        result = service.handle_request(
+            {
+                "patient_message": "右髋疼痛，怀疑股骨头坏死，上传 X 光片",
+                "image_path": "output/fake/uploads/right_hip_ap_xray.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        routing = result["routing_decision"]
+        self.assertEqual(routing["primary_hypothesis"], "femoral_head_necrosis")
+        self.assertEqual(routing["selected_skill"], "femoral_head_necrosis")
+        self.assertEqual(routing["initial_evidence_status"], "requires_evidence_acquisition")
+        self.assertNotEqual(routing["initial_evidence_status"], "supported")
+        self.assertIn("clinical hypothesis", routing["skill_search_reason"])
+
+    def test_service_preserves_prompt_clinical_context_for_fhn_diagnosis(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        service.handle_request(
+            {
+                "patient_message": "右髋疼痛三个月，长期激素治疗，偶尔饮酒，上传 X 光片",
+                "image_path": "output/fake/uploads/right_hip_ap_xray.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        forwarded_info = fake_doctor.calls[0]["patient_info"]
+        self.assertIn("clinical_context", forwarded_info)
+        self.assertIn("长期激素治疗", forwarded_info["clinical_context"])
+        self.assertIn("偶尔饮酒", forwarded_info["clinical_context"])
+        self.assertEqual(
+            forwarded_info["clinical_context_source"],
+            "patient_message",
+        )
+
+    def test_service_marks_fhn_with_degenerative_clues_for_bounded_differential_review(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        result = service.handle_request(
+            {
+                "patient_message": "左髋疼痛，X 光有关节间隙变窄和退变，也担心股骨头坏死",
+                "image_path": "output/fake/uploads/left_hip_ap_xray.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        routing = result["routing_decision"]
+        self.assertEqual(routing["primary_hypothesis"], "femoral_head_necrosis")
+        self.assertIn(
+            "osteoarthritis_or_degenerative_hip_disease",
+            routing["differential_skill_candidates"],
+        )
+        self.assertEqual(routing["initial_evidence_status"], "requires_differential_review")
+        self.assertEqual(routing["routing_evidence_status"], "requires_differential_review")
         self.assertEqual(result["alignment_plan"]["analysis_status"], "partial_evidence")
 
     def test_service_auto_selects_fhn_no_mask_mode_for_uploaded_hip_image_without_prompt_keywords(self):

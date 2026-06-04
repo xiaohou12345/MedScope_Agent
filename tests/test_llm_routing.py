@@ -230,7 +230,8 @@ class LlmRoutingTest(unittest.TestCase):
                 },
             )
 
-            self.assertIn("疑似早期股骨头坏死", result["reply_to_patient"])
+            self.assertIn("影像证据不足", result["reply_to_patient"])
+            self.assertIn("MRI", result["reply_to_patient"])
             self.assertIn("影像上看到", result["reply_to_patient"])
 
     def test_gaodoctor_uses_llm_for_follow_up_qa_with_evidence_bundle(self):
@@ -296,10 +297,12 @@ class LlmRoutingTest(unittest.TestCase):
             )
             saved_case = memory.get_case_by_id(case_id)
             qa_entry = saved_case["patient_memory"]["qa_history"][0]
+            system_prompt = model_client.calls[0]["messages"][0]["content"]
             user_payload = model_client.calls[0]["messages"][1]["content"]
 
             self.assertEqual(answer, "LLM 基于证据回答：缺少 T1ce 时不能判断强化肿瘤为阴性。")
             self.assertEqual(model_client.calls[0]["task"], "follow_up_qa")
+            self.assertIn("integrated_reasoning_evidence", system_prompt)
             self.assertIn("evidence_bundle", user_payload)
             self.assertIn("为什么增强肿瘤没有结果？", user_payload)
             self.assertIn("Requires T1ce modality", user_payload)
@@ -497,6 +500,57 @@ class LlmRoutingTest(unittest.TestCase):
 
             self.assertEqual(answer, "无法确定。当前证据不足，不能只凭这张 X 光确诊。")
             self.assertNotIn("**", answer)
+
+    def test_gaodoctor_follow_up_llm_answer_rewrites_patient_unfriendly_visual_terms(self):
+        model_client = RecordingModelClient(
+            response=ChatResponse(
+                content=(
+                    "目前无法确诊。测量级定位遮罩目前未评估，"
+                    "分割图像显示缺失，这不能解释为阴性。"
+                ),
+                model="fake-model",
+                route="test",
+            )
+        )
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            case_id = "case_qa_patient_terms"
+            memory.save_case_memory(
+                case_id=case_id,
+                patient_memory={
+                    "patient_id": "patient_001",
+                    "patient_message": "右髋疼痛，上传 X 光",
+                    "patient_info": {"symptoms": ["髋关节疼痛"]},
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "image_path": "hip.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "visual_evidence": {"segmentation_quality": "candidate"},
+                },
+                skill_memory={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "selected_skill": "femoral_head_necrosis",
+                },
+                reasoning_memory={
+                    "diagnostic_tendency": "疑似股骨头坏死候选影像表现",
+                    "key_evidence": ["股骨头上缘轮廓轻度不规则候选区"],
+                    "uncertainty": ["单纯 X 光证据不足，建议补充 MRI/CT"],
+                },
+            )
+            doctor = GaoDoctorAgent(
+                memory_manager=memory,
+                prompt_runner=PromptRunner(model_client=model_client),
+            )
+
+            answer = doctor.answer_follow_up(case_id=case_id, question="这张图片能确定吗？")
+
+            self.assertIn("可用于测量的分割结果", answer)
+            self.assertIn("分割对照图", answer)
+            self.assertNotIn("遮罩", answer)
+            self.assertNotIn("分割图像显示缺失", answer)
 
     def test_gaodoctor_rejects_follow_up_llm_answer_that_uses_excluded_visual_fact(self):
         model_client = RecordingModelClient(
@@ -698,6 +752,149 @@ class LlmRoutingTest(unittest.TestCase):
             self.assertLess(len(answer), 240)
             self.assertNotIn("未作为独立依据的视觉事实", answer)
             self.assertNotIn("not_diagnosis_usable", answer)
+
+    def test_gaodoctor_follow_up_template_uses_integrated_reasoning_for_diagnosis_question(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            case_id = "case_qa_integrated_reasoning"
+            memory.save_case_memory(
+                case_id=case_id,
+                patient_memory={
+                    "patient_message": "右髋疼痛，上传 X 光",
+                    "patient_info": {"symptoms": ["髋关节疼痛"]},
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "image_path": "hip.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "visual_evidence": {},
+                },
+                skill_memory={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "selected_skill": "femoral_head_necrosis",
+                },
+                reasoning_memory={
+                    "diagnostic_tendency": "影像证据不足，需进一步评估",
+                    "key_evidence": [
+                        "股骨头塌陷：右侧股骨头上缘轮廓轻度不规则候选区；未生成测量级 mask。",
+                        "硬化带：右侧股骨头上外侧见带状密度增高候选影；未生成测量级 mask。",
+                    ],
+                    "uncertainty": [
+                        "视觉证据字段 segmentation_display 当前为 missing：Segmentation did not complete.",
+                    ],
+                    "report": {
+                        "integrated_reasoning_summary": {
+                            "target_disease": "femoral_head_necrosis",
+                            "evidence_status": "insufficient",
+                            "can_confirm_target_disease": False,
+                            "imaging_support": {
+                                "supported_targets": [],
+                                "nonspecific_or_unusable_targets": ["collapse"],
+                                "missing_targets": ["early_osteonecrosis"],
+                                "usable_item_count": 0,
+                            },
+                            "quantitative_support": {
+                                "strong_quantitative_support_count": 0,
+                                "measurement_targets_not_usable": ["collapse"],
+                                "exploratory_targets": ["trabecular_blurring"],
+                            },
+                            "clinical_risk_support": {
+                                "provided_risk_factors": [],
+                                "missing_clinical_context": [],
+                                "can_confirm_without_imaging": False,
+                            },
+                            "missing_evidence": {
+                                "missing_required_targets": ["early_osteonecrosis"],
+                            },
+                            "recommended_next_step": [
+                                "建议完善双髋 MRI T1/T2/STIR 检查。",
+                            ],
+                        }
+                    },
+                },
+            )
+            doctor = GaoDoctorAgent(memory_manager=memory)
+
+            answer = doctor.answer_follow_up(case_id=case_id, question="这张图片是股骨头坏死吗")
+
+            self.assertTrue(answer.startswith("目前不能仅凭这张 X 光确诊股骨头坏死"))
+            self.assertIn("早期股骨头坏死证据不足", answer)
+            self.assertIn("MRI", answer)
+            self.assertLess(len(answer), 220)
+            self.assertNotIn("未生成测量级 mask", answer)
+            self.assertNotIn("segmentation_display", answer)
+            self.assertNotIn("missing", answer)
+
+    def test_gaodoctor_follow_up_template_uses_integrated_reasoning_for_next_step_question(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            case_id = "case_qa_integrated_next_step"
+            memory.save_case_memory(
+                case_id=case_id,
+                patient_memory={
+                    "patient_message": "右髋疼痛，上传 X 光",
+                    "patient_info": {"symptoms": ["髋关节疼痛"]},
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "image_path": "hip.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "visual_evidence": {},
+                },
+                skill_memory={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "selected_skill": "femoral_head_necrosis",
+                },
+                reasoning_memory={
+                    "diagnostic_tendency": "影像证据不足，需进一步评估",
+                    "key_evidence": [
+                        "硬化带：右侧股骨头上外侧见带状密度增高候选影；未生成测量级 mask。",
+                    ],
+                    "uncertainty": [
+                        "视觉证据字段 segmentation_display 当前为 missing：Segmentation did not complete.",
+                    ],
+                    "report": {
+                        "integrated_reasoning_summary": {
+                            "target_disease": "femoral_head_necrosis",
+                            "evidence_status": "insufficient",
+                            "can_confirm_target_disease": False,
+                            "imaging_support": {
+                                "supported_targets": [],
+                                "nonspecific_or_unusable_targets": ["sclerotic_band"],
+                                "missing_targets": ["early_osteonecrosis"],
+                            },
+                            "quantitative_support": {
+                                "strong_quantitative_support_count": 0,
+                                "measurement_targets_not_usable": ["collapse"],
+                                "exploratory_targets": ["trabecular_blurring"],
+                            },
+                            "missing_evidence": {
+                                "missing_required_targets": ["early_osteonecrosis"],
+                            },
+                            "recommended_next_step": [
+                                "建议完善双髋 MRI T1/T2/STIR 检查。",
+                                "建议由骨科或影像科医生结合临床体征复核。",
+                            ],
+                        }
+                    },
+                },
+            )
+            doctor = GaoDoctorAgent(memory_manager=memory)
+
+            answer = doctor.answer_follow_up(case_id=case_id, question="下一步应该做什么？")
+
+            self.assertTrue(answer.startswith("下一步建议"))
+            self.assertIn("MRI", answer)
+            self.assertIn("骨科或影像科医生", answer)
+            self.assertIn("不能仅凭当前 X 光确认", answer)
+            self.assertLess(len(answer), 220)
+            self.assertNotIn("未生成测量级 mask", answer)
+            self.assertNotIn("segmentation_display", answer)
+            self.assertNotIn("missing", answer)
 
     def test_gaodoctor_follow_up_identity_question_does_not_dump_case_evidence(self):
         with TemporaryDirectory() as tmpdir:

@@ -219,6 +219,219 @@
       ]
     }
   },
+  "imaging_evidence_protocol": {
+    "disease_target": "femoral_head_necrosis",
+    "clinical_focus": "股骨头坏死影像证据采集协议",
+    "available_modalities": ["X-ray"],
+    "anatomical_roi": [
+      {
+        "target": "femoral_head",
+        "display_name": "股骨头",
+        "role": "primary_roi",
+        "required_for": ["candidate_area_ratio", "collapse_measurement", "left_right_asymmetry"]
+      },
+      {
+        "target": "articular_surface",
+        "display_name": "股骨头关节面",
+        "role": "contour_or_landmark",
+        "required_for": ["collapse_depth", "sphericity", "surface_depression"]
+      }
+    ],
+    "finding_targets": [
+      {
+        "target": "sclerotic_band",
+        "display_name": "硬化带",
+        "description": "股骨头内带状或横颈线样密度增高候选区域。",
+        "required_modalities": ["X-ray"],
+        "execution_mode": "vlm_plus_segmenter",
+        "evidence_type": "candidate_mask",
+        "localization_mode": "bbox",
+        "segmentation_mode": "candidate_mask",
+        "diagnosis_usable_level": "candidate_support",
+        "measurement_dependencies": ["femoral_head_roi", "candidate_mask_qc"],
+        "measurement_usable": false,
+        "quality_requirements": ["prompt_box_alignment", "candidate_mask_qc", "anatomical_roi_alignment"],
+        "limitations": ["候选 mask 只能作为候选支持，不能单独确诊。"]
+      },
+      {
+        "target": "cystic_change",
+        "display_name": "囊性变",
+        "description": "股骨头内局灶透亮、小圆形或不规则囊样候选区域。",
+        "required_modalities": ["X-ray"],
+        "execution_mode": "vlm_plus_segmenter",
+        "evidence_type": "candidate_mask",
+        "localization_mode": "bbox",
+        "segmentation_mode": "candidate_mask",
+        "diagnosis_usable_level": "candidate_support",
+        "measurement_dependencies": ["femoral_head_roi", "candidate_mask_qc"],
+        "measurement_usable": false,
+        "quality_requirements": ["prompt_box_alignment", "candidate_mask_qc", "anatomical_roi_alignment"],
+        "limitations": ["透亮候选区可能为投照、重叠或退变相关非特异表现。"]
+      },
+      {
+        "target": "trabecular_blurring",
+        "display_name": "骨小梁模糊或局灶性骨质疏松",
+        "description": "股骨头内骨小梁纹理不清或局部骨密度减低候选区域。",
+        "required_modalities": ["X-ray"],
+        "execution_mode": "vlm_only",
+        "evidence_type": "visual_observation",
+        "localization_mode": "score",
+        "segmentation_mode": "none",
+        "diagnosis_usable_level": "observation_only",
+        "measurement_dependencies": [],
+        "measurement_usable": false,
+        "limitations": ["当前不稳定适合 mask；仅作为观察级或探索性纹理提示。"]
+      },
+      {
+        "target": "collapse",
+        "display_name": "股骨头塌陷",
+        "description": "股骨头轮廓变扁、塌陷、新月征或关节面下沉候选征象。",
+        "required_modalities": ["X-ray"],
+        "execution_mode": "measurement_only",
+        "evidence_type": "anatomical_measurement",
+        "localization_mode": "measurement",
+        "segmentation_mode": "none",
+        "diagnosis_usable_level": "measurement_support",
+        "measurement_dependencies": ["femoral_head_roi", "contour", "articular_surface_contour", "landmark_quality"],
+        "measurement_usable": false,
+        "quality_requirements": ["roi_quality", "contour_quality", "landmark_quality"],
+        "limitations": ["缺少可靠 ROI/contour/landmark 时 measurement_usable 必须为 false。"]
+      },
+      {
+        "target": "early_osteonecrosis",
+        "display_name": "早期股骨头坏死",
+        "description": "早期坏死可能 X 光阴性，需 MRI 骨髓信号评估。",
+        "required_modalities": ["MRI T1", "MRI T2", "MRI STIR"],
+        "execution_mode": "insufficient_input",
+        "evidence_type": "visual_observation",
+        "localization_mode": "score",
+        "segmentation_mode": "none",
+        "diagnosis_usable_level": "not_usable",
+        "measurement_dependencies": [],
+        "measurement_usable": false,
+        "limitations": ["X-ray only 时不能可靠判断或排除早期股骨头坏死。"]
+      }
+    ]
+  },
+  "quantitative_evidence_protocol": {
+    "image_feature_quantification": [
+      {
+        "feature_name": "texture_disorder_score",
+        "target": "trabecular_blurring",
+        "status": "exploratory",
+        "validation_status": "requires_validation",
+        "diagnosis_usable": false,
+        "diagnosis_usable_level": "exploratory_only"
+      },
+      {
+        "feature_name": "trabecular_irregularity_score",
+        "target": "trabecular_blurring",
+        "status": "exploratory",
+        "validation_status": "requires_validation",
+        "diagnosis_usable": false,
+        "diagnosis_usable_level": "exploratory_only"
+      },
+      {
+        "feature_name": "sclerosis_pattern_score",
+        "target": "sclerotic_band",
+        "status": "exploratory",
+        "validation_status": "requires_validation",
+        "diagnosis_usable": false,
+        "diagnosis_usable_level": "exploratory_only"
+      }
+    ],
+    "measurement_evidence": [
+      {
+        "measurement_name": "femoral_head_collapse_depth",
+        "target": "collapse",
+        "requires": ["femoral_head_roi", "articular_surface_contour", "landmark_quality"],
+        "measurement_usable_default": false
+      },
+      {
+        "measurement_name": "suspected_necrotic_area_ratio",
+        "target": "sclerotic_band_or_cystic_change",
+        "requires": ["femoral_head_roi", "candidate_mask_qc"],
+        "measurement_usable_default": false
+      },
+      {
+        "measurement_name": "left_right_asymmetry",
+        "target": "bilateral_femoral_heads",
+        "requires": ["bilateral_roi_alignment"],
+        "measurement_usable_default": false
+      }
+    ]
+  },
+  "differential_diagnosis_protocol": {
+    "mode": "bounded_considerations",
+    "candidates": [
+      {
+        "condition": "osteoarthritis_or_degenerative_hip_disease",
+        "display_name": "骨关节炎或退行性髋关节病变",
+        "consider_when": ["joint_space_narrowing", "osteophyte", "acetabular_change"],
+        "role": "supports_alternative_diagnosis"
+      },
+      {
+        "condition": "developmental_dysplasia_related_degeneration",
+        "display_name": "发育性髋臼发育不良相关退变",
+        "consider_when": ["acetabular_dysplasia", "shallow_acetabulum"],
+        "role": "supports_alternative_diagnosis"
+      },
+      {
+        "condition": "post_traumatic_change",
+        "display_name": "外伤后改变",
+        "consider_when": ["trauma_history", "fracture_or_deformity"],
+        "role": "cannot_exclude"
+      },
+      {
+        "condition": "infection_or_inflammatory_arthritis",
+        "display_name": "感染或炎症性关节炎",
+        "consider_when": ["fever", "inflammatory_pain", "marked_joint_destruction"],
+        "role": "cannot_exclude_if_clinical_context_suggests"
+      },
+      {
+        "condition": "tumor_like_lesion",
+        "display_name": "肿瘤样骨病变",
+        "consider_when": ["aggressive_bone_destruction", "soft_tissue_mass"],
+        "role": "cannot_exclude_if_aggressive_features"
+      }
+    ],
+    "output_labels": [
+      "supports_target_disease",
+      "supports_alternative_diagnosis",
+      "nonspecific_finding",
+      "missing_required_evidence",
+      "cannot_exclude"
+    ]
+  },
+  "clinical_context_protocol": {
+    "risk_factors": [
+      "corticosteroid_use",
+      "alcohol_use",
+      "trauma_history",
+      "hematologic_disease",
+      "autoimmune_disease"
+    ],
+    "clinical_fields": ["age", "symptom_duration", "pain_pattern"],
+    "missing_policy": "missing_clinical_context",
+    "reasoning_rule": "临床风险因素只能改变 pre-test likelihood / suspicion level，不能替代影像证据确诊。"
+  },
+  "integrated_reasoning_protocol": {
+    "required_sections": [
+      "imaging_support",
+      "quantitative_support",
+      "differential_considerations",
+      "clinical_risk_support",
+      "missing_evidence",
+      "modality_limitation",
+      "recommended_next_step"
+    ],
+    "safety_rules": [
+      "missing evidence must not be treated as negative evidence",
+      "nonspecific finding must not be treated as confirmed disease evidence",
+      "X-ray only cannot reliably rule out early osteonecrosis",
+      "clinical risk factor cannot replace imaging confirmation"
+    ]
+  },
   "report_requirements": {
     "include": ["诊断倾向", "影像依据", "分期判断", "不确定性说明", "建议进一步检查", "治疗建议"]
   }

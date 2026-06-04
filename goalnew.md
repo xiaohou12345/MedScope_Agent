@@ -5998,6 +5998,1296 @@ node --check web/app.js
 
 结果：前端静态资源测试与 JS 语法检查已通过。
 
+### 2026-06-04 FHN Evidence Protocol MVP 收敛交付入口补齐
+
+本轮目标：上一轮已经把 FHN 多图 Evidence Protocol MVP 的阶段报告、交付清单和本地演示材料整理到 `output/real`，但 `output/` 被 `.gitignore` 忽略，直接同步 GitHub 时这些入口文档不会被提交。因此需要补一个可跟踪的阶段入口，保证项目首页能看见当前阶段成果。
+
+新增/调整：
+
+- 新增 `docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md`
+  - 作为 Git 可跟踪的当前阶段入口
+  - 说明 FHN 样板 evidence protocol MVP 的范围
+  - 串联 skill protocol、visual execution strategy、evidence bundle、bounded diagnosis、multi-image input 和 memory audit
+  - 明确 `output/real` 中的本地演示产物路径
+  - 明确不能夸大的边界：不是临床诊断系统、不是稳定 X 光分割、不是严格 AP + frog-lateral benchmark
+  - 给出下一轮建议 goal：真实 VLM、多体位数据、ROI/landmark 质量门控、APTR/FPTR 测量、Skill Builder proposal gate
+- 更新 `README.md`
+  - 在架构文档列表中加入 `docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md`
+- 更新 `output/real/MedScope项目关键成果整理/README.md`
+  - 增加当前阶段入口
+  - 指向阶段收敛报告、交付清单、AP+lateral 样例和数据源审计
+- 新增本地展示索引：
+  - `output/real/MedScope项目关键成果整理/06_架构汇报与阶段文档/当前阶段入口索引_20260604.md`
+  - 该文件用于本地汇报材料组织，不随 Git 默认提交
+
+验证：
+
+```bash
+git check-ignore -v output/real/MedScope项目关键成果整理/06_架构汇报与阶段文档/当前阶段入口索引_20260604.md
+git check-ignore -v docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md
+rg -n "FHN_EVIDENCE_PROTOCOL_MVP_20260604|391 tests|Reporting Boundary|Recommended Next Goals" README.md docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md
+git diff --check
+```
+
+结果：
+
+- `output/real/...` 确认被 `.gitignore: output/` 忽略，适合作为本地展示材料。
+- `docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md` 未被忽略，后续 GitHub 同步可见。
+- README 已链接到该阶段入口。
+- `git diff --check` 通过。
+
+当前收敛判断：
+
+- 如果本轮目标是 FHN Evidence Protocol MVP 的演示和代码交付边界，已经可以收敛。
+- 下一轮不建议继续塞到本 goal，建议单独开真实 VLM / 多体位数据 / 测量协议 goal。
+
+### 2026-06-04 FHN Evidence Protocol MVP 提交前审计清单
+
+本轮目标：在不直接提交、不同步服务器的前提下，明确当前 `features/hsh` 分支中哪些文件应该进入 FHN Evidence Protocol MVP 阶段提交，哪些本地演示产物不应该被默认提交。
+
+新增：
+
+- `docs/PRE_COMMIT_AUDIT_20260604.md`
+
+该文档记录：
+
+- 推荐提交标题：`feat: add FHN evidence protocol MVP`
+- 应提交的文件分组：
+  - README / docs / goalnew
+  - 三个核心 Agent
+  - API / service 边界
+  - contracts / memory
+  - FHN skill 与 visual tools
+  - web 前端
+  - 对应 unittest
+- 不建议默认提交的文件：
+  - `output/` 和 `outputs/`
+  - 本地医学数据、DICOM/NIfTI、模型权重
+  - `.env*`、API key、服务器认证信息
+- 提交前验证命令：
+  - `node --check web/app.js`
+  - `python -m unittest discover -v`
+  - `git diff --check`
+- 建议的显式 `git add` 文件列表，避免使用 `git add .`
+
+验证：
+
+```bash
+git check-ignore -v docs/PRE_COMMIT_AUDIT_20260604.md
+rg -n "Recommended Commit Title|Files That Should Be Included|Files That Should Not Be Added|Verification Commands Before Commit|Suggested Staging Command" docs/PRE_COMMIT_AUDIT_20260604.md
+git diff --check
+```
+
+结果：
+
+- `docs/PRE_COMMIT_AUDIT_20260604.md` 未被忽略。
+- 审计清单关键章节存在。
+- `git diff --check` 通过。
+
+### 2026-06-04 多图上传病例组验收
+
+本轮目标：验证前端一次上传多张同一患者影像时，不再只按单张图处理，而是把多张图作为同一病例的一组影像证据传入后续 agent 主线。
+
+验收结果：
+
+- 使用两张本地股骨头坏死相关 X 光样例执行真实前端上传
+- 前端上传状态显示：`已上传 2 张同一病例影像`
+- `buildCasePayload()` 生成：
+  - `image_paths`：包含两张上传后的影像路径
+  - `patient_info.image_series`：包含 `image_001`、`image_002`
+  - 每张影像带 `view_hint`
+- 上传后报告区保持 `等待分析结果`，不会自动运行分析
+- 分析前 QA 仍处于禁用状态
+
+验收产物：
+
+- `output/fake/frontend_runtime_checks/multi_upload_payload_check.png`
+- `output/fake/frontend_runtime_checks/multi_upload_payload_check.json`
+
+当前语义：
+
+- 多图输入已经具备前端 payload 基础
+- 后续可继续扩展为“正位/AP + 蛙式位/frog lateral”协同诊断
+- 当前验收只确认输入链路，不把两张 AP 样例误解释为完整临床多体位诊断证据
+
+### 2026-06-04 多图后端主线收敛审计
+
+本轮目标：在前端多图 payload 验收之后，继续确认后端是否真正把多张影像作为同一病例证据组传入 agent 主线，而不是只在 UI 层支持多图。
+
+审计结论：
+
+- `MedScopeService._normalize_image_payload()` 会把 `image_paths` 规范化，并在缺少 `patient_info.image_series` 时自动补齐：
+  - `image_001`
+  - `image_002`
+  - `view_hint`
+- `GaoDoctorAgent._run_multi_view_no_mask_skill_visual_pipeline()` 会逐张调用 no-mask visual pipeline
+- `GaoDoctorAgent._annotate_visual_result_image_context()` 会给每张图的 finding / segmentation result / visual tool plan 注入：
+  - `image_id`
+  - `view_hint`
+  - `source_image_path`
+- `GaoDoctorAgent._merge_multi_view_visual_results()` 会合并多张图的视觉证据，并记录：
+  - `per_image_results`
+  - `analyzed_image_count`
+  - `multi_view_candidate`
+- `DiagnosisAgent` 会在报告证据和 `visual_fact_usage` 中保留多视角来源，例如：
+  - `骨盆正位/AP：硬化带`
+  - `蛙式侧位：囊性变`
+- `MemoryManager` 的 lesion gallery 会保留每个病灶图对应的 `image_id`、`view_hint` 和中文视角标签
+
+验证：
+
+```bash
+python -m unittest tests.test_mvp_flow.MedScopeMvpFlowTest.test_gaodoctor_runs_multi_view_fhn_no_mask_pipeline_and_merges_evidence -v
+python -m unittest tests.test_diagnosis_llm_workflow.DiagnosisLlmWorkflowTest.test_diagnosis_agent_preserves_multiview_source_in_report_and_fact_usage -v
+python -m unittest tests.test_memory_manager.MemoryManagerQueryTest.test_lesion_gallery_preserves_multiview_source_context -v
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_accepts_multi_image_case_group_and_uses_first_image_as_primary tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_fhn_no_mask_mode_for_uploaded_hip_image_without_prompt_keywords -v
+```
+
+结果：以上多图后端主线测试均通过。
+
+当前边界：
+
+- 已支持“同一患者多张影像”作为一组证据传入 agent 主线
+- 已支持 AP / frog lateral 级别的 view provenance 保留
+- 当前仍不是精准 X 光自动诊断系统；视觉定位质量仍取决于 VLM / MedSAM2 / QC
+- 下一阶段若继续做多体位协同，需要重点补真实 AP+蛙式位数据样例和跨视角一致性规则
+
+### 2026-06-04 AP + 蛙式位真实样例数据源审计
+
+本轮目标：在多图输入链路已经打通之后，查清当前是否已有可严谨用于展示的“同一患者 AP + 蛙式位”股骨头坏死 X 光配对样例，避免把单张 AP 图或论文面板图误包装成多体位临床数据。
+
+新增 artifact：
+
+- `output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/多体位AP蛙式位数据源审计.md`
+
+审计结论：
+
+- 本地 `onfh_ap_xray_demo_set` 已有 Wikimedia Commons 来源的 AP pelvis / AP hip detail 图像。
+- 本地 `fhn_multifinding_source` 有股骨头坏死相关 X 光论文图或 AP 图。
+- 本轮进一步从 Wikimedia Commons 同病例页面补齐 AP detail + lateral 候选集：
+  - `output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/`
+  - `manifest.json`
+  - `ap_detail_idiopathic_onfh.jpg`
+  - `lateral_idiopathic_onfh.jpg`
+- 当前仍未发现明确标注为同一患者 `frog_lateral` / `lauenstein` / `蛙式位` 的原始 X 光配对文件。
+- 公开论文可支持 AP + frog-leg lateral 的医学必要性，但不能直接等同于可复用原始影像数据集。
+
+已记录的公开来源：
+
+- Wikimedia Commons ONFH X-ray category：适合 AP 单图演示。
+- `Osteonecrosis of the femoral head: diagnosis and classification systems`：支持 frog-leg lateral 对 crescent sign / subchondral fracture 的观察价值。
+- `Combining frog-leg lateral view may serve as a more sensitive X-ray position in monitoring collapse in ONFH`：支持 AP + frog 共同监测 collapse。
+- `The Preserved Thickness Ratio of the Femoral Head Contributes to the Collapse Predictor of Osteonecrosis`：支持 APTR / FPTR 这类多体位量化 protocol 的后续设计。
+
+当前边界：
+
+- 多图工程链路已经支持 AP + frog provenance。
+- 真实演示数据已有一个 CC0 AP + lateral 同病例候选，但仍缺一个去标识化、同一患者、明确蛙式位的 AP + 蛙式位 X 光配对样例。
+- 如果短期使用开放论文 figure panel，只能标记为 `paper_figure_demo`，不能标记为 dataset 或 benchmark。
+- Service 与前端上传状态已补普通 `lateral` 侧位识别，避免 AP+lateral 候选集显示为 unknown。
+
+验证：
+
+```bash
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_infers_generic_lateral_view_for_multi_image_case_group -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_upload_status_summarizes_multiview_inputs -v
+```
+
+结果：Service lateral view inference 与前端 lateral view label 测试通过。
+
+推荐下一步：
+
+- 先用 `onfh_ap_lateral_cc0_pair` 跑一次“同病例 AP+lateral 多图输入”真实演示。
+- 同时继续找或请求一组真实去标识化 AP + 蛙式位病例。
+- 若暂时没有严格 AP+frog 数据，先在 skill 中补 APTR / FPTR measurement protocol 占位，标记 `requires_landmark_quality` 与 `not_usable_until_validated`。
+
+### 2026-06-04 CC0 AP + lateral 多图 Agent 演示
+
+本轮目标：用刚整理的 Wikimedia Commons CC0 同病例 AP + lateral 股骨头坏死 X 光候选集，跑一次可复现的多图 agent 主线演示，验证真实开放图片输入下的 Service -> GaoDoctorAgent -> evidence bundle -> DiagnosisAgent -> Memory audit 闭环。
+
+输入数据：
+
+- `output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/ap_detail_idiopathic_onfh.jpg`
+- `output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/lateral_idiopathic_onfh.jpg`
+- manifest：`output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/manifest.json`
+
+演示输出：
+
+- `output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/agent_multiview_demo/README.md`
+- `output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/agent_multiview_demo/artifacts/summary.json`
+- `output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/agent_multiview_demo/artifacts/response.json`
+- `output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/agent_multiview_demo/artifacts/evidence_bundle.json`
+- `output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/agent_multiview_demo/artifacts/audit.json`
+- memory：`output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/agent_multiview_demo/memory/cases/case_20260604_153214_371735.json`
+
+视觉候选图输出：
+
+- `output/fake/gaodoctor_fhn_no_mask/case_20260604_153214_371735/image_001/ap_pelvis_overlay.png`
+- `output/fake/gaodoctor_fhn_no_mask/case_20260604_153214_371735/image_001/ap_pelvis_1_sclerotic_band_comparison.png`
+- `output/fake/gaodoctor_fhn_no_mask/case_20260604_153214_371735/image_001/ap_pelvis_2_cystic_change_comparison.png`
+- `output/fake/gaodoctor_fhn_no_mask/case_20260604_153214_371735/image_002/lateral_overlay.png`
+- `output/fake/gaodoctor_fhn_no_mask/case_20260604_153214_371735/image_002/lateral_1_sclerotic_band_comparison.png`
+- `output/fake/gaodoctor_fhn_no_mask/case_20260604_153214_371735/image_002/lateral_2_collapse_comparison.png`
+
+运行结果：
+
+- `routing_decision.selected_skill = femoral_head_necrosis`
+- `routing_decision.selected_vision_mode = no_mask_skill`
+- `analysis_status = partial_evidence`
+- `runner_call_count = 2`
+- `per_image_result_count = 2`
+- `provided_views = ["ap_pelvis", "lateral"]`
+- `missing_views = ["frog_lateral"]`
+- `finding_count = 4`
+- 诊断倾向：`疑似股骨头坏死影像表现，需 MRI 和影像科复核`
+
+边界说明：
+
+- 输入图片是真实 CC0 开放 X 光图像。
+- 本次 visual runner 是 deterministic candidate demo，不是真实 VLM，也不是临床验证分割。
+- 该演示验证的是多图输入、视角 provenance、evidence bundle、诊断约束和 memory audit 主线。
+- 由于 lateral 不是明确 frog-leg lateral，系统正确记录 `missing_views = ["frog_lateral"]`，没有把普通侧位冒充蛙式位。
+
+验证：
+
+```bash
+python - <<'PY'
+from pathlib import Path
+import json
+base = Path('output/real/MedScope项目关键成果整理/02_股骨头坏死数据与X光样例/onfh_ap_lateral_cc0_pair/agent_multiview_demo')
+summary = json.loads((base / 'artifacts/summary.json').read_text(encoding='utf-8'))
+bundle = json.loads((base / 'artifacts/evidence_bundle.json').read_text(encoding='utf-8'))
+response = json.loads((base / 'artifacts/response.json').read_text(encoding='utf-8'))
+assert summary['status'] == 'ok'
+assert summary['runner_call_count'] == 2
+assert summary['per_image_result_count'] == 2
+assert summary['image_context']['view_coverage']['provided_views'] == ['ap_pelvis', 'lateral']
+assert 'frog_lateral' in summary['image_context']['view_coverage']['missing_views']
+assert bundle['image_evidence']['visual_evidence_bundle']['numeric_evidence']['finding_count'] == 4
+assert response['routing_decision']['selected_skill'] == 'femoral_head_necrosis'
+assert response['routing_decision']['selected_vision_mode'] == 'no_mask_skill'
+PY
+```
+
+结果：演示 artifact 检查通过。
+
+### 2026-06-04 前端患者报告收敛与 FHN no-mask 交互复验
+
+本轮目标：真实点击 `FHN no-mask` 样例时，样例按钮只应载入病例输入，不应自动分析；点击 `运行分析` 后，右侧患者报告不应先展示 `分析路径 / 候选假设队列` 等底层 routing 信息，而应优先展示面向患者的结论、主要依据和下一步。
+
+新增/调整：
+
+- `runFhnNoMaskSample()` 保持只载入样例、清空旧结果、提示点击运行分析
+- `renderReport()` 在存在结构化患者摘要时，只把 `patientSummaryHtml` 渲染到右侧报告
+- routing / differential / evidence protocol 详情继续保留在 payload、debug 区、evidence bundle 和 memory audit 中，不作为患者主报告前缀
+- 新增前端入口测试，防止患者报告重新混入 `${routingSummaryHtml}${patientSummaryHtml}`
+- 重新用 Playwright 跑 FHN no-mask 真实交互，确认：
+  - 点击样例后报告仍是 `等待分析结果`
+  - 点击运行后状态为 `分析完成`
+  - 报告以 `患者诊断摘要` 开头
+  - 报告不包含 `分析路径`
+  - QA 在分析完成后解锁
+  - 影像发现仍可见
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_friendly_routing_and_differential_sections -v
+python -m unittest tests.test_http_entrypoint -v
+```
+
+运行态产物：
+
+- `output/fake/frontend_runtime_checks/fhn_after_patient_report_fix.png`
+- `output/fake/frontend_runtime_checks/fhn_patient_report_fix_check.json`
+
+### 2026-06-04 患者摘要缺失证据字段中文化
+
+本轮目标：上一轮 FHN no-mask 真实交互中，患者报告已经不再显示 routing 详情，但 `主要依据` 里仍可能出现 `measurement_grade_mask`、`segmentation_display` 这类内部 evidence 字段名，不适合暴露给普通用户。
+
+新增/调整：
+
+- 新增 `patientMissingEvidenceName()`，把内部缺失证据 key 映射成患者可读名词短语
+- `patientDiagnosisEvidenceItems()` 的 `仍缺少` 列表改用患者缺失证据映射，而不是 `humanFindingName()`
+- 避免出现 `仍缺少：缺少...` 的重复文案
+- 保留底层字段在 evidence bundle / audit 中用于审计，不改变后端结构化证据
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_hides_internal_missing_evidence_keys_from_patient_summary -v
+python -m unittest tests.test_http_entrypoint -v
+```
+
+运行态产物：
+
+- `output/fake/frontend_runtime_checks/fhn_after_missing_key_wording_fix.png`
+- `output/fake/frontend_runtime_checks/fhn_missing_key_wording_fix_check.json`
+
+### 2026-06-04 患者摘要 Finding 去重
+
+本轮目标：FHN no-mask 真实交互中，同一征象可能来自左右侧或多个候选区域，底层 evidence bundle 需要保留多区域事实，但患者报告的 `主要依据` 不应显示 `硬化带、硬化带` 这类重复文本，避免误解为多条独立强证据。
+
+新增/调整：
+
+- 新增 `uniquePatientFindingNames()`，先把 finding target 转为患者可读名称，再去重，最多展示 3 类
+- `patientDiagnosisEvidenceItems()` 的 `可参考发现` 和 `仅作提示` 都改用患者展示去重结果
+- 底层 evidence bundle、visual fact usage、memory audit 仍保留原始多区域/多侧别记录
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_deduplicates_patient_summary_finding_names -v
+python -m unittest tests.test_http_entrypoint -v
+```
+
+运行态产物：
+
+- `output/fake/frontend_runtime_checks/fhn_after_patient_finding_dedup.png`
+- `output/fake/frontend_runtime_checks/fhn_patient_finding_dedup_check.json`
+
+### 2026-06-04 追问 QA 患者术语清洗
+
+本轮目标：分析完成后的追问回答已经受 evidence bundle 约束，但真实交互里 LLM 仍可能输出 `测量级定位遮罩`、`分割图像显示缺失` 等偏工程化术语。患者端回答应保持简洁、无 markdown、无内部 key、无工程术语。
+
+新增/调整：
+
+- `_sanitize_patient_follow_up_answer()` 增加患者术语替换：
+  - `测量级定位遮罩` / `测量级 mask` -> `可用于测量的分割结果`
+  - `定位遮罩` / `遮罩` -> `分割结果`
+  - `分割图像显示缺失` -> `分割对照图缺失`
+- 新增 LLM routing 单测，确认追问回答不会向患者暴露不友好的视觉技术术语
+- 真实浏览器复验 FHN no-mask 后追问 `这张图片是股骨头坏死吗`：
+  - 状态为 `已回答`
+  - 无 markdown 加粗
+  - 无 `measurement_grade_mask` / `segmentation_display` / `alignment_plan`
+  - 无 `遮罩` 或 `分割图像显示缺失`
+  - 回答保持结论优先、简洁
+
+验证：
+
+```bash
+python -m unittest tests.test_llm_routing.LlmRoutingTest.test_gaodoctor_follow_up_llm_answer_rewrites_patient_unfriendly_visual_terms -v
+python -m unittest tests.test_llm_routing -v
+```
+
+运行态产物：
+
+- `output/fake/frontend_runtime_checks/fhn_followup_qa_patient_terms_fix.png`
+- `output/fake/frontend_runtime_checks/fhn_followup_qa_patient_terms_fix_check.json`
+
+### 2026-06-03 前端演示状态稳定性收尾
+
+本轮目标：收紧互动前端的病例切换和追问状态，避免用户上传新图或载入样例后仍看到上一例旧结果；实时分析未完成前不允许追问；如果视觉后端没有返回标注/分割图，影像区至少展示上传的原始输入图像。
+
+新增/调整：
+
+- `uploadFiles()` 上传新影像后调用 `resetViews()`，清空上一例报告、视觉输出、evidence bundle、memory audit 和 QA history。
+- 上传新图时继续清除样例专用状态：
+  - `useSampleMask`
+  - `sampleDiseaseKey`
+  - `sampleVisionMode`
+  - `demoCaseSlug`
+  - `realDemoMode`
+- `showCaseThinking()` 现在会同步清空旧 lesion figure，并把 alignment panel 也切换为 thinking 状态。
+- `updateQaControls()` 收紧 QA 控件：
+  - 没有完成病例分析时不能追问。
+  - 病例分析中不能追问。
+  - QA thinking 中输入框锁定，发送按钮保留为“撤回”，避免重复发送。
+- `renderVisualOutput()` 新增输入图像兜底展示：
+  - 没有 multi-view / VLM annotation / segmentation 输出时，展示上传的 `output/...` 原图。
+  - 支持 `visualBundle.image_context.image_series`、`payload.image_paths`、`payload.image_path`。
+  - 多图上传时可按体位展示输入图像。
+
+当前语义：
+
+- 点击样例或上传新图只是准备输入，不再保留旧病例结果。
+- 必须点击“运行分析”后才会生成新报告和 QA 可用状态。
+- 如果视觉模型/分割模型没有产生可展示结果，用户也能在影像区域看到本次输入图像，不会误以为图片丢失。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_clears_stale_outputs_and_gates_qa_during_new_analysis tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_falls_back_to_uploaded_input_image_when_no_visual_output_exists -v
+node --check web/app.js
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_upload_status_summarizes_multiview_inputs tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_friendly_routing_and_differential_sections -v
+python -m unittest tests.test_http_entrypoint -v
+```
+
+结果：新增前端状态测试通过；JS 语法检查通过；相关静态前端测试通过；HTTP entrypoint `41` 个 unittest 通过。
+
+### 2026-06-03 患者可见诊断报告压缩为三块式摘要
+
+本轮目标：右侧诊断报告不再默认展示完整 protocol 细节，避免患者看到过多底层字段和多层 evidence 分类。患者可见报告应聚焦“结论、主要依据、下一步”，详细 evidence protocol 继续保留在 Evidence Bundle / Memory Audit 中用于审计。
+
+新增/调整：
+
+- `renderReport()` 在存在结构化报告时改为渲染：
+  - `renderRoutingClinicalSummary(payload)`
+  - `renderPatientDiagnosisSummary(payload)`
+- 新增 `renderPatientDiagnosisSummary()`，固定输出三块：
+  - `结论`
+  - `主要依据`
+  - `下一步`
+- 新增辅助函数：
+  - `patientDiagnosisConclusion(payload)`
+  - `patientDiagnosisEvidenceItems(payload)`
+  - `patientDiagnosisNextSteps(payload)`
+- 三块式摘要最多展示 3 条主要依据和 3 条下一步建议。
+- `renderEvidenceProtocolReport()` 保留，但不再作为右侧患者报告的默认入口。
+
+当前语义：
+
+- 患者看到的是短报告，不会被“影像证据 / 量化证据 / 临床风险因素 / 缺失证据”等多块细节淹没。
+- 详细结构化证据仍可通过 Evidence Bundle、Memory Audit、Agent Trace 查看。
+- 对 FHN X-ray 场景，报告会优先说明“证据不足，不能仅凭当前资料确认”，再列主要依据和建议 MRI / 专科复核等下一步。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_friendly_routing_and_differential_sections tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_diagnosis_report_as_three_block_summary -v
+node --check web/app.js
+python -m unittest tests.test_http_entrypoint -v
+```
+
+结果：新增三块式患者报告测试通过；JS 语法检查通过；HTTP entrypoint `42` 个 unittest 通过。
+
+### 2026-06-03 QA 患者回答前端兜底清洗与分段
+
+本轮目标：后端 follow-up QA 已经会去掉 Markdown 粗体并限制长度，但前端仍直接把 answer 放进一个 `<p>`，对 demo artifact / 错误回答 / 非标准来源缺少兜底清洗。需要让追问区在患者可见层面也保持简洁、可读，不出现 `**无法确定**` 这类 Markdown 符号或长段挤在一起。
+
+新增/调整：
+
+- `updateQaItem()` 不再直接拼接 `<p>${answer}</p>`，改为调用 `renderPatientQaAnswer(answer)`。
+- 新增 `renderPatientQaAnswer()`：
+  - 使用 `.qa-answer` 容器展示追问回答。
+  - 将回答拆成最多 3 段。
+  - 空回答显示 `-`。
+- 新增 `patientQaAnswerParagraphs()`：
+  - 去除 `**` 和 `__`。
+  - 压缩多余空白。
+  - 优先按中文/英文句末标点切分。
+  - 长句兜底按分号切分，最多展示 3 段。
+- `web/app.css` 新增 `.qa-answer` 样式，让多段回答保持间距。
+
+当前语义：
+
+- 后端仍负责 evidence-bound QA 约束和主要安全校验。
+- 前端只做患者可见格式兜底，不改变医学含义。
+- QA thinking、撤回和 memory audit 更新逻辑保持不变。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_qa_answer_with_patient_safe_clean_paragraphs -v
+node --check web/app.js
+python -m unittest tests.test_http_entrypoint -v
+```
+
+结果：新增 QA 前端清洗测试通过；JS 语法检查通过；HTTP entrypoint `43` 个 unittest 通过。
+
+### 2026-06-03 前端静态资源 Cache Buster 更新
+
+本轮目标：前端这几轮连续修改了患者报告、QA 展示、多图上传和旧结果清理，但 `web/index.html` 仍引用旧的 `app.js?v=skill-review-20260528`，浏览器或服务器部署后可能继续加载旧 JS，导致用户看到的仍是旧行为。
+
+新增/调整：
+
+- `web/index.html` 的 CSS 引用改为：
+  - `/static/app.css?v=frontend-demo-20260603`
+- `web/index.html` 的 JS 引用改为：
+  - `/static/app.js?v=frontend-demo-20260603`
+- 新增测试确认：
+  - 根页面不再包含旧 `skill-review-20260528`
+  - CSS / JS 都带当前 cache buster
+  - `/static/app.css?v=frontend-demo-20260603` 可正常服务
+  - `/static/app.js?v=frontend-demo-20260603` 可正常服务
+
+当前语义：
+
+- 本地和服务器刷新页面时更容易拿到最新前端代码。
+- 不改变 API、诊断逻辑或 evidence bundle，只解决浏览器缓存导致的前端版本错位。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_root_frontend_assets_use_current_cache_buster tests.test_http_entrypoint.HttpEntrypointTest.test_root_serves_interactive_frontend -v
+node --check web/app.js
+python -m unittest tests.test_http_entrypoint -v
+```
+
+结果：新增 cache buster 测试通过；JS 语法检查通过；HTTP entrypoint `44` 个 unittest 通过。
+
+### 2026-06-03 Evidence Gateway 快照移入开发调试区
+
+本轮目标：`Evidence Gateway 快照` 是审计/开发演示入口，不是患者病例输入样例。它之前和“载入标准样例 / VLM+MedSAM2 样例 / X 光证据不足样例 / FHN no-mask 样例”放在同一组按钮里，容易让主输入区显得混杂。
+
+新增/调整：
+
+- `web/index.html` 中移除病例输入区的 `Evidence Gateway 快照`按钮。
+- 将同一个 `id=evidenceGatewaySnapshotButton` 的按钮移动到 `开发调试信息` details 内。
+- 新增说明文字：`审计演示入口，不作为患者病例输入`。
+- 保持按钮 id 不变，因此 `web/app.js` 的事件绑定和快照读取逻辑不变。
+- `web/app.css` 新增 `.debug-actions`，用于调试区按钮行布局。
+
+当前语义：
+
+- 主输入区只保留患者/演示病例相关入口。
+- Evidence Gateway 快照被明确归到开发审计入口。
+- 运行时功能不变，只调整信息架构和演示边界。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_root_keeps_evidence_gateway_snapshot_inside_debug_section tests.test_http_entrypoint.HttpEntrypointTest.test_root_serves_interactive_frontend -v
+node --check web/app.js
+python -m unittest tests.test_http_entrypoint -v
+```
+
+结果：新增 DOM 位置测试通过；JS 语法检查通过；HTTP entrypoint `45` 个 unittest 通过。
+
+### 2026-06-03 前端演示收口全量回归
+
+本轮目标：前端连续完成了多项演示层收口，包括旧结果清理、QA 锁定与撤回、输入图像兜底、三块式患者报告、QA 前端清洗、cache buster 更新，以及 Evidence Gateway 快照移入开发调试区。需要用全量测试确认这些演示层修改没有破坏后端主线、FHN evidence protocol、Service 前门、Memory/Audit 和视觉工具链。
+
+验证：
+
+```bash
+node --check web/app.js
+python -m unittest tests.test_http_entrypoint -v
+python -m unittest discover -v
+```
+
+结果：前端 JS 语法检查通过；HTTP entrypoint `45` 个 unittest 通过；全量 `387` 个 unittest 通过。
+
+### 2026-06-03 FHN Integrated Reasoning Summary
+
+本轮目标：`DiagnosisAgent` 已经分别输出影像证据、量化证据、鉴别考虑、临床上下文、缺失证据和下一步建议，但缺少一个把这些多维 evidence 汇总成患者可读诊断边界的结构。为跑通 `skill schema -> visual execution strategy -> structured evidence_bundle -> bounded diagnosis report` 的最后一段，需要在 FHN 样板路径中增加受约束综合推理摘要。
+
+新增/调整：
+
+- `DiagnosisDoctorAgent._build_bounded_fhn_assessment()` 新增 `integrated_reasoning_summary`。
+- 新增 `_integrated_fhn_reasoning_summary()`，汇总：
+  - `imaging_support`
+  - `quantitative_support`
+  - `differential_considerations`
+  - `clinical_risk_support`
+  - `missing_evidence`
+  - `modality_limitation`
+  - `recommended_next_step`
+- 综合摘要显式输出 `can_confirm_target_disease`，避免把探索性纹理特征、质量不足测量或临床风险因素误当作确诊依据。
+- 前端 `renderEvidenceProtocolReport()` 新增“综合推理”区块，只展示患者可理解的结论边界、影像支持、量化支持、临床风险、缺失证据和下一步建议，不暴露底层执行字段。
+
+当前语义：
+
+- `integrated_reasoning_summary` 不重新诊断，只整合已经由 evidence bundle 和 skill protocol 约束过的字段。
+- FHN X-ray 场景下，如果 `early_osteonecrosis` 缺 MRI 支持，综合摘要会保持“不能确认目标疾病”。
+- `collapse` 等 measurement-only 证据必须有可用 ROI/contour/landmark 质量，质量不足时只进入不可用测量列表。
+- `trabecular_blurring` 等探索性影像特征只能进入 exploratory targets，不能升级为强诊断证据。
+
+验证：
+
+```bash
+python -m unittest tests.test_fhn_evidence_protocol.FemoralHeadEvidenceProtocolTest.test_diagnosis_report_adds_integrated_reasoning_summary_from_multidimensional_evidence -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_friendly_routing_and_differential_sections -v
+node --check web/app.js
+python -m unittest tests.test_fhn_evidence_protocol tests.test_http_entrypoint tests.test_service_entrypoint -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：目标 DiagnosisAgent 测试通过；前端静态展示测试通过；JS 语法检查通过；FHN、HTTP、Service 相关 `80` 个 unittest 通过；diff 空白检查通过；全量 `378` 个 unittest 通过。
+
+### 2026-06-03 Integrated Reasoning Evidence Bundle 审计
+
+本轮目标：上一阶段 `DiagnosisAgent` 已经生成 `integrated_reasoning_summary`，前端报告也能展示“综合推理”。但 Evidence Bundle / Memory 审计层还不能单独追踪这个综合推理摘要，导致 QA、Memory Audit 和演示追溯时只能看到分散的影像、量化、鉴别、临床上下文字段。为完成 `bounded diagnosis report -> evidence bundle audit` 的闭环，需要把综合推理也显式进入 evidence bundle。
+
+新增/调整：
+
+- `MemoryManager.get_evidence_bundle()` 新增顶层 `integrated_reasoning_evidence`。
+- 新增 `_integrated_reasoning_evidence()`，从 `reasoning_memory.report.integrated_reasoning_summary` 提取：
+  - target disease
+  - evidence status
+  - supported / nonspecific / missing targets
+  - strong quantitative support count
+  - unusable measurement targets
+  - exploratory targets
+  - clinical risk factors
+  - recommended next steps
+- `integrated_reasoning_evidence` 明确标记：
+  - `diagnosis_usable=false`
+  - `diagnosis_usable_level=bounded_summary_only`
+  - `can_create_new_evidence=false`
+- 前端 Evidence Bundle 面板新增“综合推理审计”区块，展示综合推理边界状态，不把它混同为新的影像证据。
+
+当前语义：
+
+- 综合推理审计只说明 DiagnosisAgent 如何整合已有 evidence，不创建新 finding。
+- 如果测量质量不足、MRI 缺失或探索性特征未验证，审计层会保留这些限制，不能升级为诊断支持。
+- Memory / QA / 前端 trace 可以从同一个 evidence bundle 中追踪“报告结论是怎么被约束出来的”。
+
+验证：
+
+```bash
+python -m unittest tests.test_memory_manager.MemoryManagerQueryTest.test_get_evidence_bundle_exposes_integrated_reasoning_evidence -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_friendly_routing_and_differential_sections -v
+node --check web/app.js
+python -m unittest tests.test_memory_manager tests.test_http_entrypoint tests.test_service_entrypoint tests.test_fhn_evidence_protocol -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：目标 MemoryManager 测试通过；前端静态展示测试通过；JS 语法检查通过；Memory、HTTP、Service、FHN 相关 `102` 个 unittest 通过；diff 空白检查通过；全量 `379` 个 unittest 通过。
+
+### 2026-06-03 Follow-up QA 使用 Integrated Reasoning Evidence
+
+本轮目标：Evidence Bundle 已经有 `integrated_reasoning_evidence`，但 follow-up QA 的模板兜底仍主要读取 `reasoning_evidence.key_evidence` 和 `uncertainty`，容易把“未生成测量级 mask”“segmentation_display missing”等底层字段直接输出给患者。需要让追问回答优先使用综合推理审计给出结论边界，再用底层证据作为内部依据。
+
+新增/调整：
+
+- `GaoDoctorAgent._answer_diagnosis_confirmation_with_template()` 优先读取真实的 `integrated_reasoning_evidence`。
+- 新增 `_has_integrated_reasoning_content()`，避免空壳 integrated evidence 误触发新模板，保持旧病例兼容。
+- 新增 `_answer_diagnosis_confirmation_from_integrated_reasoning()`，用于回答“这张图是不是某病”类追问：
+  - 先给出能否确诊的结论
+  - 简明说明缺失证据或可参考支持证据
+  - 给出下一步检查建议
+  - 不输出底层 JSON key、mask 状态或 segmentation 技术字段
+- LLM follow-up system prompt 增加规则：如果 evidence bundle 中存在 `integrated_reasoning_evidence`，必须优先用它判断结论边界；视觉、量化和鉴别字段只作为解释依据。
+
+当前语义：
+
+- QA 不重新诊断，也不看原图，只基于 evidence bundle。
+- 对 FHN X-ray 问“是不是股骨头坏死”时，如果综合审计显示 early osteonecrosis 缺 MRI，回答会明确“不能仅凭 X 光确诊，需要 MRI 更可靠评估”。
+- 对没有真实 integrated summary 的旧病例，仍走原来的兼容模板，不改变已有追问行为。
+
+验证：
+
+```bash
+python -m unittest tests.test_llm_routing.LlmRoutingTest.test_gaodoctor_follow_up_template_uses_integrated_reasoning_for_diagnosis_question -v
+python -m unittest tests.test_llm_routing.LlmRoutingTest.test_gaodoctor_uses_llm_for_follow_up_qa_with_evidence_bundle -v
+python -m unittest tests.test_llm_routing.LlmRoutingTest.test_gaodoctor_follow_up_template_answers_diagnosis_question_with_conclusion_first -v
+python -m unittest tests.test_llm_routing tests.test_mvp_flow tests.test_service_entrypoint tests.test_memory_manager -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：目标 QA 模板测试通过；LLM follow-up 约束测试通过；旧诊断确认模板兼容测试通过；QA、MVP、Service、Memory 相关 `83` 个 unittest 通过；diff 空白检查通过；全量 `380` 个 unittest 通过。
+
+### 2026-06-03 普通 Follow-up QA 也优先使用 Integrated Reasoning
+
+本轮目标：上一阶段已让“这张图是不是某病”类诊断确认追问优先使用 `integrated_reasoning_evidence`，但普通追问如“下一步应该做什么”仍会落回 `key_evidence` / `uncertainty` 模板，可能重新暴露“未生成测量级 mask”“segmentation_display missing”等底层字段。需要让普通追问也优先使用综合推理审计。
+
+新增/调整：
+
+- `GaoDoctorAgent._answer_follow_up_with_template()` 在身份、预后、诊断确认之外，优先检查真实的 `integrated_reasoning_evidence`。
+- 新增 `_answer_general_follow_up_from_integrated_reasoning()`，用于普通追问：
+  - 优先输出 `recommended_next_step`
+  - 结合 `missing_required_targets` 和 `evidence_status` 说明为什么证据不足
+  - 不复述底层 mask / segmentation / JSON key
+- 保持旧病例兼容：没有真实 integrated summary 时仍使用原始 key evidence 模板。
+
+当前语义：
+
+- “下一步应该做什么”会得到短回答：建议补充 MRI / 专科复核，并说明不能仅凭当前 X 光确认早期股骨头坏死。
+- QA 仍不重新诊断、不看原图，只消费 evidence bundle。
+- `excluded visual fact`、LLM fallback、旧病例诊断确认等路径保持原行为。
+
+验证：
+
+```bash
+python -m unittest tests.test_llm_routing.LlmRoutingTest.test_gaodoctor_follow_up_template_uses_integrated_reasoning_for_next_step_question -v
+python -m unittest tests.test_llm_routing.LlmRoutingTest.test_gaodoctor_follow_up_template_explains_excluded_visual_fact_reason tests.test_llm_routing.LlmRoutingTest.test_gaodoctor_follow_up_qa_falls_back_when_llm_fails tests.test_llm_routing.LlmRoutingTest.test_gaodoctor_follow_up_template_answers_diagnosis_question_with_conclusion_first -v
+git diff --check
+python -m unittest tests.test_llm_routing tests.test_mvp_flow tests.test_service_entrypoint tests.test_memory_manager -v
+python -m unittest discover -v
+```
+
+结果：目标普通 QA 模板测试通过；旧 QA 模板相关测试通过；diff 空白检查通过；QA、MVP、Service、Memory 相关 `84` 个 unittest 通过；全量 `381` 个 unittest 通过。
+
+### 2026-06-03 Orchestrator 本地 Skill 边界收紧
+
+本轮目标：修正 `selected_skill` 的语义边界。Orchestrator 生成 primary hypothesis / selected skill 只代表“应该优先检查这个方向”，不能自动等价于“本地正式 guideline skill 已存在并已加载”。
+
+新增/调整：
+
+- `SkillRoutingDecision` 支持由 Orchestrator 显式传入 `skill_builder_action`
+- `skill_builder_action` 合法值保持受控：
+  - `none`
+  - `load_existing_skill`
+  - `search_or_generate_skill`
+- `MedScopeService` 在构建 routing decision 时先尝试加载本地 skill：
+  - 本地 skill 存在：`load_existing_skill`
+  - 本地 skill 缺失：`search_or_generate_skill`
+  - 没有 primary hypothesis：`none`
+- `skill_search_reason` 在本地 skill 缺失时明确说明：
+  - 当前只是 primary clinical hypothesis
+  - local skill 未找到
+  - 应由 Skill Builder 搜索指南并生成 proposal skill 后再进入受约束诊断
+- 新增测试覆盖：显式选择 `rare_hip_disorder` 但本地 skill 缺失时，不能标记为 `load_existing_skill`
+
+当前语义：
+
+- 用户不需要先指定疾病，Orchestrator 可以从症状、部位、模态生成 clinical hypotheses
+- 选中 hypothesis 只是 skill routing / evidence acquisition 的入口，不是诊断结论
+- 本地 skill 是否存在由 service 边界真实检查
+- Skill Builder 路径和已有正式 skill 路径被明确区分
+
+验证：
+
+```bash
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_does_not_mark_missing_local_skill_as_loaded -v
+python -m unittest tests.test_contracts tests.test_service_entrypoint -v
+```
+
+结果：新增边界测试、contracts 测试与 service 入口回归测试均已通过。
+
+补充验证：
+
+```bash
+python -m unittest tests.test_contracts tests.test_service_entrypoint tests.test_alignment_planner tests.test_mvp_flow tests.test_http_entrypoint -v
+python -m unittest discover -v
+git diff --check
+```
+
+结果：相关 `97` 个 unittest、全量 `366` 个 unittest 与 diff 空白检查均已通过。
+
+### 2026-06-03 缺失本地 Skill 的 Proposal-only 安全分支
+
+本轮目标：上一阶段已经把 `selected_skill` 和 `load_existing_skill` 解耦，但如果本地正式 skill 缺失，Service 仍可能继续进入 GaoDoctor / Vision / Diagnosis 链路。该行为不安全，因为 hypothesis 不能替代已审核 guideline skill。
+
+新增/调整：
+
+- `MedScopeService.handle_request()` 在 routing 后新增早停分支：
+  - `skill_builder_action == search_or_generate_skill` 时不再进入 alignment / VisionAgent / DiagnosisAgent
+  - 改为调用 `SkillBuilderTool.prepare_skill(..., persist=False)`
+  - 返回 `intent=skill_proposal`
+  - 返回 `analysis_status=skill_proposal_required`
+- proposal-only 响应明确包含：
+  - `skill_builder_proposal`
+  - `formal_update_allowed=false`
+  - `diagnosis_allowed=false`
+  - `review_required=true`
+  - `missing_evidence: formal_guideline_skill`
+  - 下一步建议：搜索指南、人工审核、审核后再运行视觉与诊断
+- `prepare_skill(..., persist=False)` 复用现有 Skill Builder 能力：
+  - 有指南来源时可生成 guideline candidate
+  - 无指南来源时退回 data-mined hypothesis
+  - 均不写入正式 `skills/*.yaml`
+- HTTP `/v1/medscope` 现在会把该 proposal-only payload 原样返回给前端。
+- 前端 `renderReport()` 新增 `renderSkillProposalReport()`：
+  - 在普通 `reply_to_patient` 之前渲染 proposal 报告区
+  - 显示“Skill Builder 候选草案”
+  - 明确提示“不能直接诊断”
+  - 显示 `formal_update_allowed` 和 `diagnosis_allowed`
+
+当前语义：
+
+- Orchestrator 可以生成 clinical hypothesis。
+- 本地正式 skill 存在时，才进入标准 evidence acquisition 和 diagnosis。
+- 本地正式 skill 缺失时，只能进入 proposal-only Skill Builder 路径。
+- proposal skill 不能污染正式 skill 库，不能直接驱动诊断。
+
+验证：
+
+```bash
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_returns_proposal_only_skill_when_local_skill_is_missing -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_post_medscope_returns_skill_proposal_when_selected_skill_is_missing -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_skill_proposal_report_before_plain_reply -v
+python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_contracts tests.test_mvp_flow tests.test_guideline_skill_builder -v
+python -m unittest discover -v
+node --check web/app.js
+git diff --check
+```
+
+结果：目标 service / HTTP / frontend 测试通过，相关 `115` 个 unittest 通过，全量 `369` 个 unittest、JS 语法检查与 diff 空白检查均已通过。
+
+### 2026-06-03 本地 Skill 缺必要 Protocol 的 Proposal-only 分支
+
+本轮目标：上一阶段已处理“本地 skill 文件不存在”的情况，但还需要处理“本地 skill 文件存在、却缺少可执行/可推理 protocol”的情况。这样的 skill 不能因为文件存在就进入 VisionAgent / DiagnosisAgent。
+
+新增/调整：
+
+- `MedScopeService._skill_builder_action_for()` 现在不只检查文件是否存在，还检查本地 skill 是否具备必要 protocol。
+- 向后兼容的有效 protocol 字段包括：
+  - `visual_protocol`
+  - `imaging_evidence_protocol`
+  - `quantitative_evidence_protocol`
+  - `differential_diagnosis_protocol`
+  - `clinical_context_protocol`
+  - `integrated_reasoning_protocol`
+- 本地 skill 存在但这些 protocol 全部缺失时：
+  - `skill_builder_action=search_or_generate_skill`
+  - `skill_search_reason` 明确说明 `local skill is missing required protocol`
+  - Service 进入 proposal-only 分支
+  - 不调用 GaoDoctor / VisionAgent / DiagnosisAgent
+- 本地正式 skill 已具备 `visual_protocol` 或多维 protocol 时，仍保持 `load_existing_skill`，不影响 FHN、glioma、IPF 等现有主线。
+
+当前语义：
+
+- “本地有文件”不再等于“可以诊断”。
+- “本地有可执行/可推理 protocol 的正式 skill”才允许进入 evidence acquisition 和 diagnosis。
+- 缺 protocol 的 skill 只能进入 Skill Builder proposal / review 路径，避免后续 agent 基于空壳 skill 误推理。
+
+验证：
+
+```bash
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_returns_proposal_only_when_local_skill_lacks_protocol -v
+python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_contracts tests.test_mvp_flow tests.test_guideline_skill_builder tests.test_visual_protocol_validator -v
+python -m unittest discover -v
+node --check web/app.js
+git diff --check
+```
+
+结果：目标测试通过，相关 `124` 个 unittest 通过，全量 `370` 个 unittest、JS 语法检查与 diff 空白检查均已通过。
+
+### 2026-06-03 本地 Visual Protocol 有效性校验
+
+本轮目标：上一阶段只检查本地 skill 是否具备 protocol 字段，但 `visual_protocol` 可能是空壳或结构无效。无效 protocol 不能驱动 VisionAgent / DiagnosisAgent。
+
+新增/调整：
+
+- `MedScopeService` 接入 `VisualProtocolValidator`。
+- 对 `guideline_based` 且包含 `visual_protocol` 的本地 skill 做严格校验。
+- 无效 `visual_protocol` 会进入 proposal-only 分支：
+  - `skill_builder_action=search_or_generate_skill`
+  - `skill_search_reason` 包含 `invalid visual_protocol`
+  - 不调用 GaoDoctor / VisionAgent / DiagnosisAgent
+- 有效 `visual_protocol` 的正式 skill 仍保持 `load_existing_skill`。
+- 只包含多维 evidence protocol 的 skill 后续需要进一步校验；不能再只按“字段存在”视为可执行。
+
+当前语义：
+
+- “本地有 protocol 字段”不等于“可执行”。
+- `visual_protocol` 必须通过 contract validator，才能进入标准证据采集和诊断链路。
+- 无效 protocol 只允许进入 Skill Builder proposal / review，不允许形成诊断。
+
+验证：
+
+```bash
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_returns_proposal_only_when_local_visual_protocol_is_invalid -v
+python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_mvp_flow tests.test_visual_protocol_validator tests.test_guideline_skill_builder -v
+python -m unittest discover -v
+node --check web/app.js
+git diff --check
+```
+
+结果：目标测试通过，相关 `105` 个 unittest 通过，全量 `371` 个 unittest、JS 语法检查与 diff 空白检查均已通过。
+
+### 2026-06-03 多维 Evidence Protocol Readiness 校验
+
+本轮目标：上一阶段已经校验 `visual_protocol`，但多维 evidence protocol 也不能只看字段是否存在。尤其是 FHN 样板中，`quantitative_evidence_protocol`、`differential_diagnosis_protocol`、`clinical_context_protocol` 等字段只能作为诊断推理的补充约束，不能单独驱动 VisionAgent 做视觉证据采集。
+
+新增/调整：
+
+- `MedScopeService._skill_protocol_readiness()` 新增多维 protocol readiness 判定。
+- 新增 `_validate_imaging_evidence_protocol()`：
+  - `imaging_evidence_protocol` 必须是非空 dict
+  - 必须声明 `disease_target`
+  - 必须包含非空 `finding_targets`
+  - 每个 finding target 必须声明 `target` 和 `execution_mode`
+- 本地 skill 如果只有 supporting protocols：
+  - `quantitative_evidence_protocol`
+  - `differential_diagnosis_protocol`
+  - `clinical_context_protocol`
+  - `integrated_reasoning_protocol`
+  则不能进入标准诊断链路，会进入 proposal-only 分支。
+- 无效 `imaging_evidence_protocol` 会进入 proposal-only 分支：
+  - `skill_builder_action=search_or_generate_skill`
+  - `skill_search_reason` 包含 `invalid imaging_evidence_protocol`
+  - 不调用 GaoDoctor / VisionAgent / DiagnosisAgent
+- 有效 `visual_protocol` 或有效 `imaging_evidence_protocol` 才能让本地正式 skill 进入 evidence acquisition 和 diagnosis。
+
+当前语义：
+
+- “多维 protocol 字段存在”不等于“可诊断”。
+- `imaging_evidence_protocol` 是视觉证据采集的最低可执行入口；supporting protocols 只能补充量化、鉴别、临床上下文和综合推理。
+- FHN 当前仍以 `visual_protocol` + `imaging_evidence_protocol` 为主线，探索性量化和鉴别协议只作为受约束诊断报告的边界，不冒充稳定自动诊断能力。
+
+验证：
+
+```bash
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_returns_proposal_only_when_local_evidence_protocol_is_invalid -v
+python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_fhn_evidence_protocol tests.test_visual_protocol_validator tests.test_mvp_flow -v
+python -m unittest discover -v
+node --check web/app.js
+git diff --check
+```
+
+结果：目标测试通过，相关 `99` 个 unittest 通过，全量 `372` 个 unittest、JS 语法检查与 diff 空白检查均已通过。
+
+### 2026-06-03 Clinical Hypotheses Routing 输出
+
+本轮目标：用户不应该必须先说“我怀疑自己是股骨头坏死”，系统才能选择 FHN skill。Orchestrator 需要根据症状、部位和图像线索先生成候选 clinical hypotheses，再选择 primary skill 进入证据采集。
+
+新增/调整：
+
+- `SkillRoutingDecision` 新增 `clinical_hypotheses` 字段。
+- `MedScopeService._build_routing_decision()` 现在会输出：
+  - primary hypothesis
+  - differential candidates
+  - 每个 hypothesis 的 role / status / reason
+- FHN 场景中：
+  - `左髋疼痛 + X 光/hip image` 会生成 `femoral_head_necrosis` primary hypothesis
+  - 同时保留 `osteoarthritis_or_degenerative_hip_disease`、`post_traumatic_change`、`developmental_dysplasia_related_degeneration` 等 differential candidates
+  - reason 明确说明这是 symptom + image clues 触发的 evidence acquisition，不是诊断
+- `clinical_hypotheses` 会随 routing decision 进入 Service / HTTP / Memory 主线，不改变 DiagnosisAgent 的边界。
+
+当前语义：
+
+- Orchestrator 负责 hypothesis generation / skill routing，不负责最终诊断。
+- `selected_skill` 仍是本轮证据采集的 primary skill。
+- `clinical_hypotheses` 是候选假设队列，用来解释为什么查这个 skill，以及为什么保留鉴别方向。
+- DiagnosisAgent 仍然只基于 evidence_bundle + skill protocol 推理，不重新选 skill、不直接看原图。
+
+验证：
+
+```bash
+python -m unittest tests.test_contracts.ContractBoundaryTest.test_skill_routing_decision_contract_preserves_hypothesis_and_initial_evidence_status tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_femoral_head_skill_from_hip_xray_clues -v
+python -m unittest tests.test_contracts tests.test_service_entrypoint tests.test_http_entrypoint tests.test_memory_manager tests.test_mvp_flow -v
+```
+
+结果：目标测试通过，相关 `118` 个 unittest 通过。
+
+### 2026-06-03 Clinical Hypotheses 前端与 Memory Audit 展示
+
+本轮目标：上一阶段 `routing_decision` 已经输出 `clinical_hypotheses`，但前端和 memory audit 仍主要展示 `primary_hypothesis` / `differential_skill_candidates`，容易让用户误以为系统只是在选择一个疾病标签。本轮把候选假设队列显式接到展示层和审计层。
+
+新增/调整：
+
+- 前端 `renderRoutingClinicalSummary()` 新增“候选假设队列”展示。
+- 每个 hypothesis 显示：
+  - role：优先检查 / 鉴别保留
+  - disease key 的中文病种名
+  - status 的患者可读标签
+  - reason
+- 前端明确提示：这不是诊断结论，只是根据症状、部位和影像类型决定先检查哪些 evidence。
+- `MemoryManager.build_audit_summary()` 的 `memory_type_details.skill_memory` 新增：
+  - `clinical_hypotheses`
+  - `clinical_hypotheses_count`
+- Memory Audit 因此能追溯 Orchestrator 当时生成了哪些候选假设，以及哪些只是鉴别保留。
+
+当前语义：
+
+- 前端展示不改变诊断逻辑。
+- Orchestrator 的候选假设队列只解释 skill routing 和 evidence acquisition。
+- DiagnosisAgent 仍只使用 evidence_bundle + skill protocol 做受约束推理。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_friendly_routing_and_differential_sections tests.test_memory_manager.MemoryManagerQueryTest.test_build_audit_summary_writes_fake_output_report -v
+python -m unittest tests.test_http_entrypoint tests.test_memory_manager tests.test_service_entrypoint tests.test_mvp_flow -v
+```
+
+结果：目标测试通过，相关 `98` 个 unittest 通过。
+
+### 2026-06-03 DiagnosisAgent 消费 Clinical Hypotheses 边界
+
+本轮目标：`clinical_hypotheses` 已经进入 Orchestrator、前端和 Memory Audit，但 DiagnosisAgent 的结构化报告还没有显式说明这些 hypothesis 只是 routing/evidence acquisition 边界，不是诊断证据。本轮把该上下文接入报告。
+
+新增/调整：
+
+- `DiagnosisDoctorAgent.generate_report()` 新增可选 `routing_decision` 参数。
+- GaoDoctor 主线调用 DiagnosisAgent 时传入 `routing_decision`。
+- DiagnosisAgent 在报告中附加 `clinical_hypotheses_assessment`：
+  - `primary_hypothesis`
+  - `differential_retained`
+  - `hypotheses_are_diagnosis=false`
+  - role 说明：候选假设只指导 skill routing 和 evidence acquisition
+- `target_disease_assessment` 新增轻量边界字段：
+  - `routing_role=primary_hypothesis`
+  - `routing_boundary=Primary hypothesis must be supported by evidence_bundle before diagnosis.`
+
+当前语义：
+
+- DiagnosisAgent 仍不重新选 skill，不直接看原图。
+- clinical hypotheses 不会被计入 `supports_target_disease`。
+- 主假设评估仍由 evidence_bundle 的可用证据、缺失证据和质量门控决定。
+- 鉴别保留仍是 bounded differential considerations，不开放式改诊断。
+
+验证：
+
+```bash
+python -m unittest tests.test_fhn_evidence_protocol.FemoralHeadEvidenceProtocolTest.test_diagnosis_report_preserves_routing_hypotheses_without_treating_them_as_evidence -v
+python -m unittest tests.test_fhn_evidence_protocol tests.test_diagnosis_llm_workflow tests.test_mvp_flow tests.test_service_entrypoint -v
+```
+
+结果：目标测试通过，相关 `77` 个 unittest 通过。
+
+### 2026-06-03 前端报告展示 Clinical Hypotheses Assessment
+
+本轮目标：DiagnosisAgent 已经把 `clinical_hypotheses_assessment` 写入结构化报告，但前端报告区还需要把它解释成患者/演示者能理解的内容，而不是只在底层 JSON 或 Memory Audit 中出现。
+
+新增/调整：
+
+- `renderEvidenceProtocolReport()` 读取 `report.clinical_hypotheses_assessment`。
+- 新增 `renderClinicalHypothesesAssessment()` 展示：
+  - 主假设：当前优先检查的疾病方向。
+  - 鉴别保留：Orchestrator 保留的 bounded differential candidates。
+  - 明确边界：这些候选假设不是诊断证据，最终判断必须来自 evidence bundle 和指南约束。
+- 该展示只解释分析路径，不改变 DiagnosisAgent 的推理结果，也不把 hypothesis 升级为 evidence。
+
+当前语义：
+
+- 用户不需要先指定“我怀疑股骨头坏死”，系统可以根据症状、部位和图像生成候选假设。
+- 前端会同时展示“为什么优先查这个 skill”和“为什么还保留鉴别方向”。
+- 主假设仍不是诊断结论；诊断结论必须受 evidence bundle、缺失证据、质量门控和模态限制约束。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_friendly_routing_and_differential_sections -v
+python -m unittest tests.test_http_entrypoint tests.test_fhn_evidence_protocol tests.test_mvp_flow -v
+node --check web/app.js
+git diff --check
+python -m unittest discover -v
+```
+
+结果：前端静态展示目标测试通过；相关 `65` 个 unittest 通过；JS 语法检查通过；`git diff --check` 通过；全量 `373` 个 unittest 通过。
+
+### 2026-06-03 Prompt Clinical Context 进入 FHN 证据链路
+
+本轮目标：FHN skill 已经定义 `clinical_context_protocol`，DiagnosisAgent 也能按 `patient_info` 提取风险因素；但真实前端/HTTP 使用时，用户常把“长期激素、饮酒、外伤史”等病史直接写在患者描述里。如果 Service 不把这些自由文本线索保留到 `patient_info.clinical_context`，后续 DiagnosisAgent、MemoryManager 和 QA 的 evidence bundle 就无法稳定使用这部分临床上下文。
+
+新增/调整：
+
+- `MedScopeService._normalize_image_payload()` 在进入 GaoDoctor 前统一规范化 `patient_info`。
+- 新增 `_attach_prompt_clinical_context()`：
+  - 当用户描述中包含激素、饮酒、外伤、血液病、自身免疫等 FHN 风险线索时，将原始描述保存到 `patient_info.clinical_context`。
+  - 标记 `clinical_context_source=patient_message`，便于 Memory / QA 审计来源。
+  - 如果调用方已经显式提供 `risk_factors`、`history` 或 `clinical_context`，不覆盖已有结构化输入。
+- 该步骤只保留临床上下文，不改变 Orchestrator 的诊断边界，也不把风险因素当作影像确诊证据。
+
+当前语义：
+
+- 用户 prompt 中的风险因素可以被 DiagnosisAgent 的 `clinical_context_protocol` 使用。
+- 风险因素只能改变 suspicion / pre-test likelihood，不能替代影像证据确诊。
+- MemoryManager 的 evidence bundle 会通过 `patient_context.patient_info` 继续保留这段上下文，供后续 QA 在 evidence-bound 范围内回答。
+
+验证：
+
+```bash
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_preserves_prompt_clinical_context_for_fhn_diagnosis -v
+python -m unittest tests.test_service_entrypoint tests.test_fhn_evidence_protocol tests.test_memory_manager -v
+node --check web/app.js
+git diff --check
+python -m unittest discover -v
+```
+
+结果：目标测试通过；Service、FHN protocol、Memory 相关 `58` 个 unittest 通过；JS 语法检查通过；`git diff --check` 通过；全量 `374` 个 unittest 通过。
+
+### 2026-06-03 Clinical Context Evidence Bundle 显式化
+
+本轮目标：上一阶段已经把用户 prompt 中的风险因素保留到 `patient_info.clinical_context`，但 evidence bundle 里仍主要通过 `patient_context.patient_info` 间接暴露。为了符合多维 evidence protocol，临床上下文需要作为独立证据区块被 Memory / QA / 前端审计直接读取。
+
+新增/调整：
+
+- `MemoryManager.get_evidence_bundle()` 新增顶层 `clinical_context_evidence`。
+- 新增 `_clinical_context_evidence()` 汇总：
+  - `evidence_type=clinical_context`
+  - `source`
+  - `raw_context`
+  - `provided_risk_factors`
+  - `missing_clinical_context`
+  - `can_confirm_without_imaging`
+  - `diagnosis_usable=false`
+  - `diagnosis_usable_level=risk_modifier_only`
+- 前端 Evidence Bundle 面板新增“临床上下文证据”区块，直接展示风险因素、缺失病史和“仅风险修饰”级别。
+
+当前语义：
+
+- clinical context 是 evidence bundle 的一类证据，但不是影像证据，也不是确诊证据。
+- 风险因素可用于解释 suspicion level，不能绕过视觉 evidence、missing evidence 和 modality limitation。
+- QA 后续读取 evidence bundle 时，可以直接看到临床上下文证据来源与边界，而不需要解析底层 `patient_info`。
+
+验证：
+
+```bash
+python -m unittest tests.test_memory_manager.MemoryManagerQueryTest.test_get_evidence_bundle_exposes_clinical_context_evidence -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_friendly_routing_and_differential_sections -v
+python -m unittest tests.test_memory_manager tests.test_service_entrypoint tests.test_fhn_evidence_protocol -v
+python -m unittest tests.test_memory_manager tests.test_service_entrypoint tests.test_fhn_evidence_protocol tests.test_http_entrypoint -v
+node --check web/app.js
+git diff --check
+python -m unittest discover -v
+```
+
+结果：目标测试通过；Memory、Service、FHN protocol 相关 `59` 个 unittest 通过；加入 HTTP/前端后相关 `98` 个 unittest 通过；JS 语法检查通过；`git diff --check` 通过；全量 `375` 个 unittest 通过。
+
+### 2026-06-03 Differential Reasoning Evidence Bundle 显式化
+
+本轮目标：`differential_considerations` 已经由 DiagnosisAgent 生成，并在报告中展示；但它还没有作为 evidence bundle 的独立证据区块存在。这样 QA / Memory Audit / 前端 Evidence Bundle 只能从诊断报告间接读取鉴别逻辑，不符合多维 evidence protocol 中 `differential_reasoning` 应独立可审计的要求。
+
+新增/调整：
+
+- `MemoryManager.get_evidence_bundle()` 新增顶层 `differential_reasoning_evidence`。
+- 新增 `_differential_reasoning_evidence()` 汇总：
+  - `evidence_type=differential_reasoning`
+  - `primary_hypothesis`
+  - `routing_evidence_status`
+  - `differential_skill_candidates`
+  - `considerations`
+  - `diagnosis_usable=false`
+  - `diagnosis_usable_level=bounded_differential_only`
+  - `can_replace_primary_diagnosis=false`
+- 前端 Evidence Bundle 面板新增“鉴别推理证据”区块，展示主假设、routing evidence status、鉴别候选和不可替代主诊断的边界。
+
+当前语义：
+
+- 鉴别推理证据用于解释“为什么保留替代解释 / 非特异征象 / 证据不足”。
+- 它不是开放式新诊断，也不能因为存在候选鉴别就替代 primary hypothesis。
+- DiagnosisAgent 仍不看原图、不重新选 skill；该 evidence 只来自 routing decision 和受约束报告。
+
+验证：
+
+```bash
+python -m unittest tests.test_memory_manager.MemoryManagerQueryTest.test_get_evidence_bundle_exposes_differential_reasoning_evidence -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_friendly_routing_and_differential_sections -v
+python -m unittest tests.test_memory_manager tests.test_service_entrypoint tests.test_fhn_evidence_protocol tests.test_http_entrypoint -v
+node --check web/app.js
+git diff --check
+python -m unittest discover -v
+```
+
+结果：目标测试通过；Memory、Service、FHN、HTTP/前端相关 `99` 个 unittest 通过；JS 语法检查通过；`git diff --check` 通过；全量 `376` 个 unittest 通过。
+
+### 2026-06-03 Quantitative Evidence Bundle 显式化
+
+本轮目标：`quantitative_evidence_summary` 已经由 DiagnosisAgent 生成，但 evidence bundle 仍主要通过 `image_evidence.measurements` 和 report 间接暴露量化证据。为满足 `quantitative_evidence_protocol` 的安全链路，需要把 measurement evidence 与 exploratory image-feature quantification 明确拆出来，供 Memory / QA / 前端审计直接使用。
+
+新增/调整：
+
+- `MemoryManager.get_evidence_bundle()` 新增顶层 `quantitative_evidence`。
+- 新增 `_quantitative_evidence()` 汇总：
+  - `measurement_items`
+  - `exploratory_features`
+  - `strong_quantitative_support_count`
+  - `can_confirm_diagnosis`
+  - `diagnosis_usable_level`
+- 汇总优先读取 report 的 `quantitative_evidence_summary`，缺失时从 `visual_evidence_bundle.evidence_items` / `findings` 回填。
+- 前端 Evidence Bundle 面板新增“量化证据审计”区块，展示强量化支持计数、可诊断级别、measurement 数量和 exploratory feature 数量。
+
+当前语义：
+
+- `measurement_items` 只有在 `diagnosis_usable=true` 且 `measurement_usable=true` 时，才可能计入强量化支持。
+- `exploratory_features` 只能作为探索性提示，不能直接升级为确诊证据。
+- X-ray 场景下 ROI/contour/landmark 质量不足时，量化证据会保持 `not_usable_or_exploratory`。
+
+验证：
+
+```bash
+python -m unittest tests.test_memory_manager.MemoryManagerQueryTest.test_get_evidence_bundle_exposes_quantitative_evidence -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_patient_friendly_routing_and_differential_sections -v
+python -m unittest tests.test_memory_manager tests.test_service_entrypoint tests.test_fhn_evidence_protocol tests.test_http_entrypoint -v
+node --check web/app.js
+git diff --check
+python -m unittest discover -v
+```
+
+结果：目标测试通过；Memory、Service、FHN、HTTP/前端相关 `100` 个 unittest 通过；前端 JS 语法检查通过；diff 空白检查通过；全量 `377` 个 unittest 通过。
+
+### 2026-06-03 Readiness 错误报告区结构化展示
+
+本轮目标：真实上传或实时分析触发 MedSAM2 / API readiness 错误时，前端不能只把长错误塞到顶部状态栏；需要在影像发现、诊断报告、Evidence Bundle、Memory Audit 区域显示可读的结构化提示，让用户知道是部署配置问题，不是病例分析卡住。
+
+新增/调整：
+
+- `postMedScope()` / `postMedScopeQa()` 在 HTTP 非 2xx 时不再只抛普通字符串错误，而是通过 `buildApiError()` 保留：
+  - `error.apiPayload`
+  - `error.apiStatus`
+  - 原始 `error_type`
+  - `action_items`
+  - `routing_decision`
+  - `medsam2_configuration`
+- 新增 `renderStructuredErrorPanel()`：
+  - `medsam2_not_ready` 显示为“部署检查未通过”
+  - `action_items` 显示为“需要处理”
+  - `routing_decision` 显示本次自动选择的 skill / hypothesis / evidence status
+  - `medsam2_configuration` 显示关键配置是否存在
+- `renderCaseError()` 优先渲染结构化错误卡片。
+- 运行分析失败时，顶部状态栏只显示短提示，例如“分割后端未配置，详情见报告区”，避免长串底层配置文本挤占界面。
+
+当前语义：
+
+- 这不是新的诊断逻辑，只是把已有 readiness payload 做成患者/演示者可读的 UI。
+- 后端仍然通过 `503 + error_type=medsam2_not_ready` 表达部署未就绪。
+- 报告区会说明“这是部署检查未通过”，不会误导成医学诊断失败或病例阴性。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_readiness_errors_as_structured_panels -v
+node --check web/app.js
+python -m unittest tests.test_http_entrypoint -v
+python -m unittest discover -v
+```
+
+结果：新增结构化错误展示测试通过，JS 语法检查通过，HTTP 入口 `36` 个测试通过，全量 `364` 个 unittest 通过。
+
+### 2026-06-03 多体位上传状态摘要
+
+本轮目标：前端已支持一次上传多张同一患者影像，但上传完成提示只列文件名，不直观展示系统推断出的体位。对于股骨头坏死演示中的“骨盆正位 + 蛙式侧位”组合，用户需要在运行分析前看到每张图将作为哪一个体位进入 evidence bundle。
+
+新增/调整：
+
+- 新增 `formatUploadedImageSeriesStatus(uploaded)`。
+- 上传完成后，`uploadFiles()` 不再只显示文件名列表，而是显示：
+  - `image_001`
+  - 推断体位：`骨盆正位/AP`、`蛙式侧位`、`未知体位`
+  - 上传后的文件名
+- 体位推断复用现有 `inferViewHint()` 和 `imageViewLabel()`，与后续 `patient_info.image_series` / evidence bundle 展示保持一致。
+- 单图上传也显示 `image_001 · 体位 · 文件名`，避免用户不知道当前图像被当作什么视角处理。
+
+当前语义：
+
+- 这只是输入区可解释性增强，不改变后端路由或视觉执行。
+- 多图仍作为同一病例影像组输入；后端继续由 `image_series` 和 `view_hint` 组织多体位 evidence。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_upload_status_summarizes_multiview_inputs -v
+node --check web/app.js
+python -m unittest tests.test_http_entrypoint -v
+```
+
+结果：新增多体位上传状态测试通过，JS 语法检查通过，HTTP 入口 `37` 个测试通过。
+
+### 2026-06-03 Orchestrator Hypothesis Generation 语义修正
+
+本轮目标：修正“患者必须先说怀疑某个病才会调用对应 skill”的误解。更合理的流程是：患者只描述症状和上传图像时，Clinical Orchestrator 先生成 clinical hypothesis / differential candidates，再查本地 skill 库，已有 skill 就直接加载，缺失时才进入 Skill Builder / Guideline proposal。
+
+新增/调整：
+
+- `SkillRoutingDecision` 新增 `requires_evidence_acquisition` 状态。
+- 普通“左髋疼痛 + X 光”不再把路由状态写成 `insufficient`，而是：
+  - `primary_hypothesis=femoral_head_necrosis`
+  - `selected_skill=femoral_head_necrosis`
+  - `routing_evidence_status=requires_evidence_acquisition`
+  - `differential_skill_candidates` 包含退变、外伤后改变、发育性髋臼发育不良相关退变等受约束候选方向
+- 只有出现退变、外伤、感染、肿瘤样骨破坏等明确替代解释线索时，路由状态才升级为 `requires_differential_review`。
+- `skill_search_reason` 区分：
+  - 用户明确怀疑 FHN：作为 primary clinical hypothesis 加载已有 skill
+  - 用户未指定疾病：基于 hip pain + hip X-ray 生成候选假设并加载已有 skill
+- AlignmentPlanner 收紧了“早期/排除意图”判断：
+  - “X 光能不能判断早期股骨头坏死”仍触发证据不足安全门
+  - “帮我看看 X 光有没有问题”不再因为泛化的“有没有”而阻断 VisionAgent 采集候选征象
+- 前端 `routingEvidenceStatusLabel()` 增加“需要先采集证据”中文标签。
+
+当前语义：
+
+- Orchestrator 负责 hypothesis generation / skill routing，不直接诊断。
+- Skill Builder 不是每次都调用；已有正式 skill 时优先加载。
+- VisionAgent 不是自由诊断，而是在已有 skill 和 execution strategy 下采集结构化证据。
+- DiagnosisAgent 仍只消费 evidence bundle + guideline skill 做受约束推理。
+
+验证：
+
+```bash
+python -m unittest tests.test_contracts.ContractBoundaryTest.test_skill_routing_decision_contract_preserves_hypothesis_and_initial_evidence_status tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_persists_orchestrator_routing_scope_to_skill_memory tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_femoral_head_skill_from_hip_xray_clues tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_routes_fhn_as_hypothesis_not_default_positive_disease tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_marks_fhn_with_degenerative_clues_for_bounded_differential_review tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_builds_insufficient_alignment_for_early_fhn_xray_question -v
+```
+
+结果：目标 Orchestrator / Alignment 路由测试已通过。
+
 ### 2026-05-26 Phase B 真实 non-reference MedSAM2 评测收敛
 
 本轮目标：把真实 VLM box prompt + MedSAM2 分割结果纳入 Phase B 统一视觉证据评测，同时保持 Evidence Gateway 的 candidate-only 安全边界。

@@ -187,6 +187,7 @@ class GaoDoctorAgent:
             vision_mode=vision_mode,
             mask_path=mask_path,
             segmentation_prompt=segmentation_prompt,
+            image_series=case_input.patient_info.get("image_series", []),
         )
         report = self.diagnosis_agent.generate_report(
             case_id=case_id,
@@ -195,6 +196,7 @@ class GaoDoctorAgent:
             disease_skill=disease_skill,
             hypothesis_validation_mode=hypothesis_validation_mode,
             alignment_plan=alignment_plan,
+            routing_decision=routing_decision,
         )
 
         patient_memory = {
@@ -208,7 +210,12 @@ class GaoDoctorAgent:
             "qa_history": [],
         }
         visual_evidence = visual_result["visual_evidence"]
-        visual_evidence_bundle = self._build_visual_evidence_bundle(visual_result)
+        visual_evidence_bundle = self._build_visual_evidence_bundle(
+            visual_result,
+            disease_skill,
+            image_series=case_input.patient_info.get("image_series", []),
+            primary_image_path=case_input.image_path,
+        )
         image_memory = {
             "case_id": case_id,
             "image_id": "image_001",
@@ -509,8 +516,21 @@ class GaoDoctorAgent:
         vision_mode: str | None,
         mask_path: str | None,
         segmentation_prompt: dict[str, Any] | None,
+        image_series: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if disease_key == "femoral_head_necrosis" and vision_mode == "no_mask_skill":
+            normalized_series = self._normalize_input_image_series(
+                image_series=image_series or [],
+                primary_image_path=image_path,
+            )
+            if len(normalized_series) > 1:
+                return self._run_multi_view_no_mask_skill_visual_pipeline(
+                    case_id=case_id,
+                    image_series=normalized_series,
+                    patient_message=patient_message,
+                    disease_key=disease_key,
+                    disease_skill=disease_skill,
+                )
             return self._run_no_mask_skill_visual_pipeline(
                 case_id=case_id,
                 image_path=image_path,
@@ -567,6 +587,7 @@ class GaoDoctorAgent:
         patient_message: str,
         disease_key: str,
         disease_skill: dict[str, Any],
+        image_id: str | None = None,
     ) -> dict[str, Any]:
         runner = self.no_mask_visual_pipeline_runner
         if runner is None:
@@ -578,6 +599,8 @@ class GaoDoctorAgent:
             _load_dotenv_local()
             runner = run_no_mask_skill_visual_pipeline_demo
         output_dir = Path("output/fake/gaodoctor_fhn_no_mask") / case_id
+        if image_id:
+            output_dir = output_dir / image_id
         summary = runner(
             image_path=image_path,
             output_dir=output_dir,
@@ -594,7 +617,162 @@ class GaoDoctorAgent:
             raise RuntimeError("FHN no-mask visual pipeline did not return visual_analysis_result")
         return visual_result
 
-    def _build_visual_evidence_bundle(self, visual_result: dict[str, Any]) -> dict[str, Any]:
+    def _run_multi_view_no_mask_skill_visual_pipeline(
+        self,
+        *,
+        case_id: str,
+        image_series: list[dict[str, Any]],
+        patient_message: str,
+        disease_key: str,
+        disease_skill: dict[str, Any],
+    ) -> dict[str, Any]:
+        per_image_results = []
+        for item in image_series:
+            visual_result = self._run_no_mask_skill_visual_pipeline(
+                case_id=case_id,
+                image_path=str(item["image_path"]),
+                patient_message=patient_message,
+                disease_key=disease_key,
+                disease_skill=disease_skill,
+                image_id=str(item["image_id"]),
+            )
+            per_image_results.append(
+                self._annotate_visual_result_image_context(
+                    visual_result=visual_result,
+                    image_id=str(item["image_id"]),
+                    view_hint=str(item.get("view_hint") or "unknown"),
+                )
+            )
+        return self._merge_multi_view_visual_results(per_image_results)
+
+    def _normalize_input_image_series(
+        self,
+        *,
+        image_series: list[dict[str, Any]],
+        primary_image_path: str,
+    ) -> list[dict[str, str]]:
+        normalized = [
+            {
+                "image_id": str(item.get("image_id") or f"image_{index + 1:03d}"),
+                "image_path": str(item.get("image_path") or ""),
+                "view_hint": str(item.get("view_hint") or "unknown"),
+            }
+            for index, item in enumerate(image_series)
+            if isinstance(item, dict) and item.get("image_path")
+        ]
+        if not normalized and primary_image_path:
+            normalized = [
+                {
+                    "image_id": "image_001",
+                    "image_path": primary_image_path,
+                    "view_hint": "unknown",
+                }
+            ]
+        return normalized
+
+    def _annotate_visual_result_image_context(
+        self,
+        *,
+        visual_result: dict[str, Any],
+        image_id: str,
+        view_hint: str,
+    ) -> dict[str, Any]:
+        annotated = dict(visual_result)
+        annotated["image_id"] = image_id
+        annotated["view_hint"] = view_hint
+        evidence = dict(annotated.get("visual_evidence") or {})
+        findings = []
+        for finding in evidence.get("findings") or []:
+            if not isinstance(finding, dict):
+                continue
+            annotated_finding = dict(finding)
+            annotated_finding["image_id"] = image_id
+            annotated_finding["view_hint"] = view_hint
+            annotated_finding["source_image_path"] = annotated.get("image_path")
+            finding_id = str(annotated_finding.get("finding_id") or annotated_finding.get("target") or "finding")
+            if not finding_id.startswith(f"{image_id}_"):
+                annotated_finding["finding_id"] = f"{image_id}_{finding_id}"
+            findings.append(annotated_finding)
+        evidence["findings"] = findings
+        evidence["segmentation_results"] = [
+            {**result, "image_id": image_id, "view_hint": view_hint}
+            for result in evidence.get("segmentation_results") or []
+            if isinstance(result, dict)
+        ]
+        evidence["visual_tool_plan"] = [
+            {**step, "image_id": image_id, "view_hint": view_hint}
+            for step in evidence.get("visual_tool_plan") or []
+            if isinstance(step, dict)
+        ]
+        annotated["visual_evidence"] = evidence
+        return annotated
+
+    def _merge_multi_view_visual_results(
+        self,
+        per_image_results: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if not per_image_results:
+            raise RuntimeError("multi-view visual pipeline did not return any image result")
+        primary = dict(per_image_results[0])
+        merged_evidence = dict(primary.get("visual_evidence") or {})
+        merged_findings = []
+        suspected_visual_findings = []
+        segmentation_results = []
+        visual_tool_plan = []
+        per_image_outputs = []
+        for result in per_image_results:
+            evidence = result.get("visual_evidence") or {}
+            image_id = result.get("image_id")
+            view_hint = result.get("view_hint")
+            merged_findings.extend(
+                dict(finding)
+                for finding in evidence.get("findings") or []
+                if isinstance(finding, dict)
+            )
+            suspected_visual_findings.extend(
+                f"{image_id}/{view_hint}: {item}"
+                for item in evidence.get("suspected_visual_findings") or []
+            )
+            segmentation_results.extend(
+                dict(item)
+                for item in evidence.get("segmentation_results") or []
+                if isinstance(item, dict)
+            )
+            visual_tool_plan.extend(
+                dict(item)
+                for item in evidence.get("visual_tool_plan") or []
+                if isinstance(item, dict)
+            )
+            per_image_outputs.append(
+                {
+                    "image_id": image_id,
+                    "view_hint": view_hint,
+                    "image_path": result.get("image_path"),
+                    "image_outputs": dict(result.get("image_outputs") or {}),
+                }
+            )
+        merged_evidence["findings"] = merged_findings
+        merged_evidence["suspected_visual_findings"] = suspected_visual_findings
+        merged_evidence["segmentation_results"] = segmentation_results
+        merged_evidence["visual_tool_plan"] = visual_tool_plan
+        merged_evidence["segmentation_quality"] = "multi_view_candidate"
+        measurements = dict(merged_evidence.get("measurements") or {})
+        measurements["analyzed_image_count"] = len(per_image_results)
+        merged_evidence["measurements"] = measurements
+        image_outputs = dict(primary.get("image_outputs") or {})
+        image_outputs["per_image_outputs"] = per_image_outputs
+        primary["image_outputs"] = image_outputs
+        primary["visual_evidence"] = merged_evidence
+        primary["multi_view_results"] = per_image_outputs
+        return primary
+
+    def _build_visual_evidence_bundle(
+        self,
+        visual_result: dict[str, Any],
+        disease_skill: dict[str, Any] | None = None,
+        image_series: list[dict[str, Any]] | None = None,
+        primary_image_path: str | None = None,
+    ) -> dict[str, Any]:
         evidence = dict(visual_result.get("visual_evidence") or {})
         findings = [
             dict(finding)
@@ -613,17 +791,52 @@ class GaoDoctorAgent:
             for warning in evidence.get("quality_warnings") or []
             if isinstance(warning, dict)
         ]
+        evidence_items = self._build_evidence_items(
+            evidence=evidence,
+            visual_result=visual_result,
+            disease_skill=disease_skill or {},
+        )
+        has_missing_protocol_completeness = any(
+            isinstance(status, dict) and status.get("status") in {"missing", "unassessed", "low_quality"}
+            for status in (evidence.get("completeness") or {}).values()
+        )
+        bundle_schema_version = (
+            "visual_evidence_bundle.v2"
+            if evidence.get("evidence_items") or has_missing_protocol_completeness
+            else "visual_evidence_bundle.v1"
+        )
+        image_context = {
+            "image_path": visual_result.get("image_path"),
+            "modality": visual_result.get("modality"),
+            "body_part": visual_result.get("body_part"),
+        }
+        image_context.update(
+            self._build_image_series_context(
+                image_series=image_series or [],
+                primary_image_path=primary_image_path or str(visual_result.get("image_path") or ""),
+                modality=str(visual_result.get("modality") or ""),
+                body_part=str(visual_result.get("body_part") or ""),
+                analyzed_image_paths=[
+                    str(item.get("image_path"))
+                    for item in visual_result.get("multi_view_results") or []
+                    if isinstance(item, dict) and item.get("image_path")
+                ],
+            )
+        )
         return {
-            "schema_version": "visual_evidence_bundle.v1",
+            "schema_version": bundle_schema_version,
+            "evidence_protocol_version": "visual_evidence_bundle.v2",
             "disease_target": evidence.get("disease_target"),
-            "image_context": {
-                "image_path": visual_result.get("image_path"),
-                "modality": visual_result.get("modality"),
-                "body_part": visual_result.get("body_part"),
-            },
+            "image_context": image_context,
             "image_outputs": dict(visual_result.get("image_outputs") or {}),
+            "per_image_results": [
+                dict(item)
+                for item in visual_result.get("multi_view_results") or []
+                if isinstance(item, dict)
+            ],
             "present_findings": present_findings,
             "findings": findings,
+            "evidence_items": evidence_items,
             "numeric_evidence": self._summarize_visual_numeric_evidence(findings),
             "structured_visual_facts": self._build_structured_visual_facts(findings),
             "text_evidence": list(evidence.get("suspected_visual_findings") or []),
@@ -645,6 +858,217 @@ class GaoDoctorAgent:
                 "overlapping findings; Diagnosis Agent should reason per finding."
             ),
         }
+
+    def _build_image_series_context(
+        self,
+        *,
+        image_series: list[dict[str, Any]],
+        primary_image_path: str,
+        modality: str,
+        body_part: str,
+        analyzed_image_paths: list[str] | None = None,
+    ) -> dict[str, Any]:
+        normalized_series = [
+            {
+                "image_id": str(item.get("image_id") or f"image_{index + 1:03d}"),
+                "image_path": str(item.get("image_path") or ""),
+                "view_hint": str(item.get("view_hint") or "unknown"),
+            }
+            for index, item in enumerate(image_series)
+            if isinstance(item, dict) and item.get("image_path")
+        ]
+        if not normalized_series and primary_image_path:
+            normalized_series = [
+                {
+                    "image_id": "image_001",
+                    "image_path": primary_image_path,
+                    "view_hint": "unknown",
+                }
+            ]
+        primary_image_id = self._primary_image_id(
+            image_series=normalized_series,
+            primary_image_path=primary_image_path,
+        )
+        provided_views = []
+        for item in normalized_series:
+            view = item.get("view_hint") or "unknown"
+            if view not in provided_views:
+                provided_views.append(view)
+        expected_views = (
+            ["ap_pelvis", "frog_lateral"]
+            if modality.lower() == "xray" and body_part.lower() == "hip"
+            else []
+        )
+        analyzed_paths = set(analyzed_image_paths or [])
+        analyzed_views = []
+        for item in normalized_series:
+            if item.get("image_path") not in analyzed_paths:
+                continue
+            view = item.get("view_hint") or "unknown"
+            if view not in analyzed_views:
+                analyzed_views.append(view)
+        analysis_scope = "single_image"
+        if len(normalized_series) > 1:
+            analysis_scope = (
+                "multi_view_execution"
+                if len(analyzed_paths) > 1
+                else "primary_image_only"
+            )
+        return {
+            "image_series": normalized_series,
+            "primary_image_id": primary_image_id,
+            "view_coverage": {
+                "provided_views": provided_views,
+                "analyzed_views": analyzed_views,
+                "expected_views": expected_views,
+                "missing_views": [
+                    view for view in expected_views if view not in provided_views
+                ],
+                "analysis_scope": analysis_scope,
+            },
+        }
+
+    def _primary_image_id(
+        self,
+        *,
+        image_series: list[dict[str, Any]],
+        primary_image_path: str,
+    ) -> str:
+        for item in image_series:
+            if item.get("image_path") == primary_image_path:
+                return str(item.get("image_id") or "image_001")
+        return str(image_series[0].get("image_id") or "image_001") if image_series else "image_001"
+
+    def _build_evidence_items(
+        self,
+        *,
+        evidence: dict[str, Any],
+        visual_result: dict[str, Any],
+        disease_skill: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        explicit_items = [
+            dict(item)
+            for item in evidence.get("evidence_items") or []
+            if isinstance(item, dict)
+        ]
+        if explicit_items:
+            return [self._normalize_evidence_item(item) for item in explicit_items]
+
+        protocol_by_target = self._evidence_protocol_by_target(disease_skill)
+        items = [
+            self._evidence_item_from_finding(
+                finding,
+                protocol_by_target.get(str(finding.get("target") or "")),
+            )
+            for finding in evidence.get("findings") or []
+            if isinstance(finding, dict)
+        ]
+        completeness = evidence.get("completeness") or {}
+        for target, status in completeness.items():
+            if not isinstance(status, dict) or status.get("status") not in {"missing", "unassessed"}:
+                continue
+            if any(item.get("target") == target for item in items):
+                continue
+            items.append(
+                {
+                    "target": str(target),
+                    "evidence_type": "visual_observation",
+                    "execution_mode": "insufficient_input"
+                    if status.get("status") == "missing"
+                    else "vlm_only",
+                    "visual_observation": {
+                        "status": status.get("status"),
+                        "reason": status.get("reason", "not assessed"),
+                    },
+                    "segmentation": {},
+                    "measurements": {},
+                    "quality": {"status": status.get("status")},
+                    "diagnosis_usable": False,
+                    "diagnosis_usable_level": "not_usable",
+                    "limitations": [status.get("reason", "not assessed")],
+                }
+            )
+        return [self._normalize_evidence_item(item) for item in items]
+
+    def _evidence_protocol_by_target(self, disease_skill: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        imaging_protocol = disease_skill.get("imaging_evidence_protocol") or {}
+        targets = imaging_protocol.get("finding_targets") or []
+        return {
+            str(item.get("target")): dict(item)
+            for item in targets
+            if isinstance(item, dict) and item.get("target")
+        }
+
+    def _evidence_item_from_finding(
+        self,
+        finding: dict[str, Any],
+        protocol_item: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        protocol_item = protocol_item or {}
+        diagnosis_level = str(
+            finding.get("diagnosis_usable_level")
+            or protocol_item.get("diagnosis_usable_level")
+            or ""
+        )
+        if not diagnosis_level:
+            diagnosis_level = (
+                "candidate_support"
+                if finding.get("diagnosis_usable", True)
+                else "not_usable"
+            )
+        evidence_type = str(finding.get("evidence_type") or protocol_item.get("evidence_type") or "")
+        if not evidence_type:
+            evidence_type = (
+                "anatomical_measurement"
+                if diagnosis_level == "measurement_support"
+                else "image_feature_quantification"
+                if diagnosis_level == "exploratory_only"
+                else "candidate_mask"
+            )
+        measurements = dict(finding.get("measurements") or {})
+        if protocol_item.get("measurement_dependencies"):
+            measurements.setdefault(
+                "measurement_dependencies",
+                list(protocol_item.get("measurement_dependencies") or []),
+            )
+        if "measurement_usable" not in measurements:
+            measurements["measurement_usable"] = bool(
+                finding.get(
+                    "measurement_usable",
+                    protocol_item.get("measurement_usable", False),
+                )
+            )
+        return {
+            "target": str(finding.get("target") or ""),
+            "image_id": finding.get("image_id"),
+            "view_hint": finding.get("view_hint"),
+            "display_name": finding.get("display_name") or finding.get("target"),
+            "evidence_type": evidence_type,
+            "execution_mode": finding.get("execution_mode") or protocol_item.get("execution_mode") or (
+                "measurement_only" if evidence_type == "anatomical_measurement" else "vlm_plus_segmenter"
+            ),
+            "visual_observation": {
+                "status": finding.get("status"),
+                "description": finding.get("description"),
+            },
+            "segmentation": dict(finding.get("segmentation") or {}),
+            "measurements": measurements,
+            "quality": dict(finding.get("quality") or {}),
+            "diagnosis_usable": bool(finding.get("diagnosis_usable", False)),
+            "diagnosis_usable_level": diagnosis_level,
+            "limitations": list(finding.get("limitations") or []),
+        }
+
+    def _normalize_evidence_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(item)
+        normalized.setdefault("visual_observation", {})
+        normalized.setdefault("segmentation", {})
+        normalized.setdefault("measurements", {})
+        normalized.setdefault("quality", {})
+        normalized.setdefault("diagnosis_usable", False)
+        normalized.setdefault("diagnosis_usable_level", "not_usable")
+        normalized.setdefault("limitations", [])
+        return normalized
 
     def _build_structured_visual_facts(
         self,
@@ -758,6 +1182,9 @@ class GaoDoctorAgent:
                 "你是高医生 Agent，负责回答患者对已保存病例的追问。"
                 "你只能使用 user_payload.evidence_bundle 中已有的证据回答。"
                 "不得新增影像发现、诊断结论、指南依据或治疗建议。"
+                "如果 evidence_bundle 中存在 integrated_reasoning_evidence，"
+                "必须优先用它判断能否确认疾病、证据是否不足、下一步建议是什么；"
+                "底层视觉、量化和鉴别字段只能作为解释依据。"
                 "如果 reasoning_evidence.visual_fact_usage 或 visual_fact_usage 中有 excluded facts，"
                 "不得把 excluded fact 说成独立诊断依据；必须说明其 exclusion_reason。"
                 "如果 evidence_bundle 中字段为 missing 或 unassessed，必须明确说明证据缺失，"
@@ -771,6 +1198,7 @@ class GaoDoctorAgent:
                 "evidence_bundle": evidence_bundle,
                 "required_safety_rules": [
                     "Only answer from evidence_bundle.",
+                    "Prefer integrated_reasoning_evidence for conclusion boundaries when present.",
                     "Do not invent visual findings.",
                     "Use visual_fact_usage.used as usable evidence.",
                     "Do not count visual_fact_usage.excluded as independent evidence.",
@@ -795,6 +1223,16 @@ class GaoDoctorAgent:
         compact = re.sub(r"\*\*(.*?)\*\*", r"\1", compact)
         compact = re.sub(r"__(.*?)__", r"\1", compact)
         compact = compact.replace("**", "").replace("__", "")
+        patient_term_replacements = {
+            "测量级定位遮罩": "可用于测量的分割结果",
+            "测量级 mask": "可用于测量的分割结果",
+            "测量级mask": "可用于测量的分割结果",
+            "定位遮罩": "分割结果",
+            "遮罩": "分割结果",
+            "分割图像显示缺失": "分割对照图缺失",
+        }
+        for technical_term, patient_term in patient_term_replacements.items():
+            compact = compact.replace(technical_term, patient_term)
         if len(compact) <= 360:
             return compact
         return compact[:357].rstrip() + "..."
@@ -901,6 +1339,14 @@ class GaoDoctorAgent:
             return self._answer_prognosis_follow_up_with_template(evidence_bundle)
         if self._is_diagnosis_confirmation_question(question):
             return self._answer_diagnosis_confirmation_with_template(evidence_bundle)
+        integrated = evidence_bundle.get("integrated_reasoning_evidence") or {}
+        if self._has_integrated_reasoning_content(integrated):
+            integrated_answer = self._answer_general_follow_up_from_integrated_reasoning(
+                evidence_bundle=evidence_bundle,
+                integrated=integrated,
+            )
+            if integrated_answer:
+                return integrated_answer
         reasoning_evidence = evidence_bundle["reasoning_evidence"]
         image_memory = evidence_bundle["image_evidence"]
         evidence_items = self._first_nonempty_items(reasoning_evidence["key_evidence"], limit=2)
@@ -914,6 +1360,39 @@ class GaoDoctorAgent:
             f"{fact_usage_text}"
             f"需要注意：{uncertainty}。"
         )
+
+    def _answer_general_follow_up_from_integrated_reasoning(
+        self,
+        *,
+        evidence_bundle: dict[str, Any],
+        integrated: dict[str, Any],
+    ) -> str:
+        image = evidence_bundle.get("image_evidence", {})
+        modality = str(image.get("modality") or "当前影像").upper()
+        image_label = "X 光" if modality in {"XRAY", "X-RAY", "X光"} else str(image.get("modality") or "当前影像")
+        next_steps = [
+            str(item).strip().rstrip("。")
+            for item in integrated.get("recommended_next_step") or []
+            if str(item).strip()
+        ]
+        if next_steps:
+            next_step_text = "；".join(next_steps[:2]) + "。"
+        else:
+            next_step_text = "建议带片给专科医生复核。"
+        evidence_status = str(integrated.get("evidence_status") or "")
+        missing_text = ""
+        missing_targets = [
+            str(target)
+            for target in integrated.get("missing_required_targets") or []
+            if target
+        ]
+        if "early_osteonecrosis" in missing_targets:
+            missing_text = f"目前不能仅凭当前 {image_label}确认早期股骨头坏死。"
+        elif evidence_status in {"insufficient", "requires_evidence_acquisition"}:
+            missing_text = "目前证据仍不足，不能把缺失证据当成阴性。"
+        if missing_text:
+            return f"下一步建议：{next_step_text}{missing_text}"
+        return f"下一步建议：{next_step_text}"
 
     def _is_identity_question(self, question: str) -> bool:
         normalized = question.strip().lower()
@@ -937,6 +1416,14 @@ class GaoDoctorAgent:
         self,
         evidence_bundle: dict[str, Any],
     ) -> str:
+        integrated = evidence_bundle.get("integrated_reasoning_evidence") or {}
+        if self._has_integrated_reasoning_content(integrated):
+            integrated_answer = self._answer_diagnosis_confirmation_from_integrated_reasoning(
+                evidence_bundle=evidence_bundle,
+                integrated=integrated,
+            )
+            if integrated_answer:
+                return integrated_answer
         reasoning = evidence_bundle.get("reasoning_evidence", {})
         image = evidence_bundle.get("image_evidence", {})
         skill = evidence_bundle.get("skill_evidence", {})
@@ -953,6 +1440,79 @@ class GaoDoctorAgent:
             f"需要注意：{uncertainty_text}。"
             "建议带片给骨科医生复核，并根据需要补充 MRI/CT。"
         )
+
+    def _has_integrated_reasoning_content(self, integrated: dict[str, Any]) -> bool:
+        if not isinstance(integrated, dict):
+            return False
+        scalar_keys = ["target_disease", "evidence_status"]
+        if any(str(integrated.get(key) or "").strip() for key in scalar_keys):
+            return True
+        list_keys = [
+            "supported_targets",
+            "nonspecific_or_unusable_targets",
+            "missing_required_targets",
+            "measurement_targets_not_usable",
+            "exploratory_targets",
+            "recommended_next_step",
+        ]
+        return any(integrated.get(key) for key in list_keys)
+
+    def _answer_diagnosis_confirmation_from_integrated_reasoning(
+        self,
+        *,
+        evidence_bundle: dict[str, Any],
+        integrated: dict[str, Any],
+    ) -> str:
+        image = evidence_bundle.get("image_evidence", {})
+        skill = evidence_bundle.get("skill_evidence", {})
+        disease = self._display_disease_name(skill)
+        modality = str(image.get("modality") or "当前影像").upper()
+        image_label = "X 光" if modality in {"XRAY", "X-RAY", "X光"} else str(image.get("modality") or "当前影像")
+        can_confirm = integrated.get("can_confirm_target_disease") is True
+        if can_confirm:
+            conclusion = f"当前证据支持{disease}，但仍需要线下医生结合完整检查确认。"
+        else:
+            conclusion = f"目前不能仅凭这张 {image_label}确诊{disease}。"
+        missing_targets = [
+            str(target)
+            for target in integrated.get("missing_required_targets") or []
+            if target
+        ]
+        missing_text = self._diagnosis_missing_targets_patient_text(missing_targets)
+        support_targets = [
+            str(target)
+            for target in integrated.get("supported_targets") or []
+            if target
+        ]
+        if support_targets:
+            evidence_text = "可参考的支持证据包括：" + "、".join(
+                self._finding_patient_name(target) for target in support_targets
+            ) + "。"
+        else:
+            evidence_text = missing_text or "当前没有足够的可诊断影像证据。"
+        next_steps = [
+            str(item).strip()
+            for item in integrated.get("recommended_next_step") or []
+            if str(item).strip()
+        ]
+        next_step = next_steps[0] if next_steps else "建议带片给骨科或影像科医生复核。"
+        return f"{conclusion}{evidence_text}{next_step}"
+
+    def _diagnosis_missing_targets_patient_text(self, missing_targets: list[str]) -> str:
+        if "early_osteonecrosis" in missing_targets:
+            return "早期股骨头坏死证据不足，需要 MRI 才能更可靠评估。"
+        if missing_targets:
+            return "仍缺少关键影像证据，不能把缺失当作阴性。"
+        return ""
+
+    def _finding_patient_name(self, target: str) -> str:
+        return {
+            "sclerotic_band": "硬化带",
+            "cystic_change": "囊性变",
+            "trabecular_blurring": "骨小梁模糊",
+            "collapse": "股骨头塌陷",
+            "early_osteonecrosis": "早期股骨头坏死",
+        }.get(target, target)
 
     def _display_disease_name(self, skill: dict[str, Any]) -> str:
         value = str(skill.get("selected_skill") or skill.get("used_skill") or "")
@@ -1037,7 +1597,17 @@ class GaoDoctorAgent:
             "image_right": "图像右侧",
         }.get(str(fact.get("laterality") or ""), "")
         name = str(fact.get("display_name") or fact.get("target") or "视觉事实")
-        return f"{laterality}{name}" if laterality and not name.startswith(laterality) else name
+        if laterality and not name.startswith(laterality):
+            name = f"{laterality}{name}"
+        view = self._view_hint_display_name(str(fact.get("view_hint") or ""))
+        return f"{view}：{name}" if view and not name.startswith(f"{view}：") else name
+
+    def _view_hint_display_name(self, view_hint: str) -> str:
+        return {
+            "ap_pelvis": "骨盆正位/AP",
+            "frog_lateral": "蛙式侧位",
+            "lateral": "侧位",
+        }.get(view_hint, "")
 
     def explain_saved_report(self, case_id: str) -> str:
         case_memory = self.memory_manager.load_case_memory(case_id)

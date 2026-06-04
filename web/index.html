@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MedScope Agent</title>
-    <link rel="stylesheet" href="/static/app.css" />
+    <link rel="stylesheet" href="/static/app.css?v=frontend-demo-20260603" />
   </head>
   <body>
     <main class="app-shell">
@@ -24,7 +24,6 @@
               <div class="sample-actions">
                 <button id="sampleGliomaButton" type="button">载入标准样例</button>
                 <button id="realVlmMedSAM2Button" type="button">载入 VLM+MedSAM2 样例</button>
-                <button id="evidenceGatewaySnapshotButton" type="button">Evidence Gateway 快照</button>
                 <button id="xrayInsufficientButton" type="button">载入 X 光证据不足样例</button>
                 <button id="fhnNoMaskButton" type="button">载入 FHN no-mask 样例</button>
               </div>
@@ -75,6 +74,10 @@
 
         <details class="debug-details">
           <summary>开发调试信息</summary>
+          <div class="debug-actions">
+            <span>审计演示入口，不作为患者病例输入</span>
+            <button id="evidenceGatewaySnapshotButton" type="button">Evidence Gateway 快照</button>
+          </div>
           <div class="trace-layout">
             <section id="alignmentPanel" class="panel trace-panel alignment-panel">
               <div class="panel-title">
@@ -134,6 +137,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=skill-review-20260528"></script>
+    <script src="/static/app.js?v=frontend-demo-20260603"></script>
   </body>
 </html>

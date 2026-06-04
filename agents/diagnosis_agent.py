@@ -59,6 +59,7 @@ class DiagnosisDoctorAgent:
         disease_skill: dict[str, Any] | None = None,
         hypothesis_validation_mode: bool | None = None,
         alignment_plan: dict[str, Any] | None = None,
+        routing_decision: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         skill = disease_skill or self.load_disease_skill()
         checked_visual_result = VisualAnalysisResult.from_dict(visual_result).to_dict()
@@ -84,6 +85,7 @@ class DiagnosisDoctorAgent:
             )
             self._attach_visual_fact_usage(report, evidence)
             self._attach_guideline_evidence(report, skill_descriptor)
+            self._attach_clinical_hypotheses_assessment(report, routing_decision)
             report["visual_input_contract"] = visual_input_contract
             return report
 
@@ -100,6 +102,7 @@ class DiagnosisDoctorAgent:
                 skill_descriptor=skill_descriptor,
             )
             self._attach_visual_fact_usage(report, evidence)
+            self._attach_clinical_hypotheses_assessment(report, routing_decision)
             report["visual_input_contract"] = visual_input_contract
             return report
 
@@ -116,6 +119,7 @@ class DiagnosisDoctorAgent:
                 self._apply_alignment_constraints(llm_report, checked_alignment_plan)
                 self._attach_visual_fact_usage(llm_report, evidence)
                 self._attach_guideline_evidence(llm_report, skill_descriptor)
+                self._attach_clinical_hypotheses_assessment(llm_report, routing_decision)
                 llm_report["visual_input_contract"] = visual_input_contract
                 return llm_report
         else:
@@ -132,6 +136,7 @@ class DiagnosisDoctorAgent:
         self._apply_alignment_constraints(report, checked_alignment_plan)
         self._attach_visual_fact_usage(report, evidence)
         self._attach_guideline_evidence(report, skill_descriptor)
+        self._attach_clinical_hypotheses_assessment(report, routing_decision)
         report["visual_input_contract"] = visual_input_contract
         return report
 
@@ -185,6 +190,57 @@ class DiagnosisDoctorAgent:
         report["visual_fact_usage"] = usage
         report["used_visual_facts"] = usage["used"]
         report["excluded_visual_facts"] = usage["excluded"]
+
+    def _attach_clinical_hypotheses_assessment(
+        self,
+        report: dict[str, Any],
+        routing_decision: dict[str, Any] | None,
+    ) -> None:
+        if not isinstance(routing_decision, dict):
+            return
+        hypotheses = [
+            dict(item)
+            for item in routing_decision.get("clinical_hypotheses") or []
+            if isinstance(item, dict)
+        ]
+        if not hypotheses and routing_decision.get("primary_hypothesis"):
+            hypotheses = [
+                {
+                    "disease_key": routing_decision.get("primary_hypothesis"),
+                    "role": "primary",
+                    "status": routing_decision.get("routing_evidence_status")
+                    or routing_decision.get("initial_evidence_status")
+                    or "requires_evidence_acquisition",
+                    "reason": routing_decision.get("skill_search_reason")
+                    or routing_decision.get("reason")
+                    or "Primary hypothesis selected by orchestrator.",
+                }
+            ]
+        if not hypotheses:
+            return
+        primary = next(
+            (item for item in hypotheses if item.get("role") == "primary"),
+            hypotheses[0],
+        )
+        differentials = [
+            item for item in hypotheses if item.get("role") == "differential"
+        ]
+        report["clinical_hypotheses_assessment"] = {
+            "primary_hypothesis": primary,
+            "differential_retained": differentials,
+            "hypotheses_are_diagnosis": False,
+            "role": (
+                "Clinical hypotheses guide skill routing and evidence acquisition; "
+                "they are not diagnostic evidence by themselves."
+            ),
+        }
+        target_assessment = report.get("target_disease_assessment")
+        if isinstance(target_assessment, dict):
+            target_assessment.setdefault("routing_role", "primary_hypothesis")
+            target_assessment.setdefault(
+                "routing_boundary",
+                "Primary hypothesis must be supported by evidence_bundle before diagnosis.",
+            )
 
     def _visual_fact_usage(self, evidence: dict[str, Any]) -> dict[str, Any]:
         facts = [
@@ -307,6 +363,11 @@ class DiagnosisDoctorAgent:
         visual_findings = list(evidence.get("suspected_visual_findings", []))
         usable_findings = self._usable_visual_findings(evidence)
         non_independent_notes = self._non_independent_finding_notes(evidence)
+        bounded_assessment = self._build_bounded_fhn_assessment(
+            patient_info=patient_info,
+            evidence=evidence,
+            skill_descriptor=skill_descriptor,
+        )
         fhn_xray_support = [
             finding
             for finding in usable_findings
@@ -336,6 +397,7 @@ class DiagnosisDoctorAgent:
             and not evidence.get("joint_space_narrowing", True)
             and evidence.get("texture_abnormality_score", 0) >= 0.7
             and "髋关节疼痛" in symptoms
+            and bounded_assessment["target_disease_assessment"]["evidence_status"] != "insufficient"
         )
         if fhn_xray_support and collapse_candidates:
             tendency = "疑似股骨头坏死影像表现，需 MRI 和影像科复核"
@@ -355,6 +417,9 @@ class DiagnosisDoctorAgent:
         else:
             tendency = "影像证据不足，需进一步评估"
             staging = "暂无法可靠分期"
+        if bounded_assessment["target_disease_assessment"]["evidence_status"] == "insufficient":
+            tendency = "影像证据不足，需进一步评估"
+            staging = "现有证据不能可靠判断早期股骨头坏死；X 光路径需 MRI 补充。"
 
         report_evidence = dict(evidence)
         report_evidence["suspected_visual_findings"] = visual_findings
@@ -379,7 +444,380 @@ class DiagnosisDoctorAgent:
             ],
         )
         report["used_skill"] = skill_descriptor
+        report.update(bounded_assessment)
         return report
+
+    def _build_bounded_fhn_assessment(
+        self,
+        *,
+        patient_info: dict[str, Any],
+        evidence: dict[str, Any],
+        skill_descriptor: dict[str, Any],
+    ) -> dict[str, Any]:
+        evidence_items = [
+            dict(item)
+            for item in evidence.get("evidence_items") or []
+            if isinstance(item, dict)
+        ]
+        if not evidence_items:
+            evidence_items = self._evidence_items_from_legacy_evidence(evidence)
+        missing = self._missing_evidence_items(evidence)
+        usable_support = [
+            item for item in evidence_items
+            if self._is_fhn_diagnosis_support_item(item)
+        ]
+        nonspecific = [
+            item for item in evidence_items
+            if not self._is_fhn_diagnosis_support_item(item)
+        ]
+        evidence_status = (
+            "supported"
+            if usable_support
+            else "insufficient"
+            if missing or nonspecific
+            else "legacy_observation"
+        )
+        risk_factors = self._clinical_risk_factors(patient_info, skill_descriptor)
+        differential = self._bounded_differential_considerations(
+            skill_descriptor=skill_descriptor,
+            nonspecific=nonspecific,
+            missing=missing,
+        )
+        modality_limitations = self._fhn_modality_limitations(evidence, missing)
+        recommendations = self._fhn_bounded_recommendations(missing, modality_limitations)
+        target_assessment = {
+            "target_disease": "femoral_head_necrosis",
+            "evidence_status": evidence_status,
+            "supports_target_disease": [
+                item.get("target") for item in usable_support if item.get("target")
+            ],
+            "nonspecific_or_unusable_findings": [
+                item.get("target") for item in nonspecific if item.get("target")
+            ],
+            "missing_required_evidence": [
+                item.get("target") for item in missing if item.get("target")
+            ],
+        }
+        imaging_summary = {
+            "usable_items": usable_support,
+            "nonspecific_items": nonspecific,
+            "missing_items": missing,
+        }
+        quantitative_summary = self._quantitative_evidence_summary(evidence_items)
+        clinical_context = {
+            "provided_risk_factors": risk_factors,
+            "missing_clinical_context": self._missing_clinical_context(patient_info, skill_descriptor),
+            "can_confirm_without_imaging": False,
+            "role": "clinical risk changes suspicion level only; it cannot confirm ONFH without imaging evidence.",
+        }
+        missing_evidence = [
+            item.get("visual_observation", {}).get("reason") or item.get("target")
+            for item in missing
+        ]
+        return {
+            "target_disease_assessment": target_assessment,
+            "imaging_evidence_summary": imaging_summary,
+            "quantitative_evidence_summary": quantitative_summary,
+            "differential_considerations": differential,
+            "clinical_context_assessment": clinical_context,
+            "missing_evidence": missing_evidence,
+            "modality_limitations": modality_limitations,
+            "recommendation": recommendations,
+            "integrated_reasoning_summary": self._integrated_fhn_reasoning_summary(
+                target_assessment=target_assessment,
+                imaging_summary=imaging_summary,
+                quantitative_summary=quantitative_summary,
+                differential_considerations=differential,
+                clinical_context=clinical_context,
+                modality_limitations=modality_limitations,
+                recommendations=recommendations,
+            ),
+        }
+
+    def _is_fhn_diagnosis_support_item(self, item: dict[str, Any]) -> bool:
+        if item.get("diagnosis_usable") is not True:
+            return False
+        level = str(item.get("diagnosis_usable_level") or "")
+        if level == "measurement_support":
+            measurements = item.get("measurements") or {}
+            return measurements.get("measurement_usable") is True
+        if level != "candidate_support":
+            return False
+
+        evidence_type = str(item.get("evidence_type") or "")
+        execution_mode = str(item.get("execution_mode") or "")
+        if evidence_type != "candidate_mask" and execution_mode != "vlm_plus_segmenter":
+            return True
+        return self._candidate_mask_qc_passed(item)
+
+    def _candidate_mask_qc_passed(self, item: dict[str, Any]) -> bool:
+        quality = item.get("quality") or {}
+        segmentation = item.get("segmentation") or {}
+        accepted_statuses = {"passed", "accepted", "usable", "diagnosis_usable", "high"}
+        rejected_statuses = {
+            "candidate_only",
+            "failed",
+            "low_quality",
+            "missing",
+            "not_run",
+            "requires_validation",
+            "unassessed",
+        }
+        observed_statuses = [
+            str(quality.get("qc_status") or ""),
+            str(quality.get("status") or ""),
+            str(quality.get("validation_status") or ""),
+            str(segmentation.get("qc_status") or ""),
+            str(segmentation.get("status") or ""),
+            str(segmentation.get("quality") or ""),
+        ]
+        if any(status in rejected_statuses for status in observed_statuses):
+            return False
+        if segmentation.get("diagnosis_usable") is True:
+            return True
+        return any(status in accepted_statuses for status in observed_statuses)
+
+    def _evidence_items_from_legacy_evidence(self, evidence: dict[str, Any]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for finding in evidence.get("findings") or []:
+            if not isinstance(finding, dict):
+                continue
+            level = str(finding.get("diagnosis_usable_level") or "")
+            if not level:
+                level = "candidate_support" if finding.get("diagnosis_usable", True) else "not_usable"
+            items.append(
+                {
+                    "target": finding.get("target"),
+                    "evidence_type": finding.get("evidence_type", "visual_observation"),
+                    "execution_mode": finding.get("execution_mode", "vlm_only"),
+                    "quality": dict(finding.get("quality") or {}),
+                    "diagnosis_usable": bool(finding.get("diagnosis_usable", False)),
+                    "diagnosis_usable_level": level,
+                    "measurements": dict(finding.get("measurements") or {}),
+                    "limitations": list(finding.get("limitations") or []),
+                }
+            )
+        return items
+
+    def _missing_evidence_items(self, evidence: dict[str, Any]) -> list[dict[str, Any]]:
+        missing: list[dict[str, Any]] = []
+        for target, status in (evidence.get("completeness") or {}).items():
+            if not isinstance(status, dict):
+                continue
+            if status.get("status") not in {"missing", "unassessed"}:
+                continue
+            missing.append(
+                {
+                    "target": str(target),
+                    "evidence_type": "visual_observation",
+                    "execution_mode": "insufficient_input",
+                    "visual_observation": {
+                        "status": status.get("status"),
+                        "reason": status.get("reason", "not assessed"),
+                    },
+                    "quality": {"status": status.get("status")},
+                    "diagnosis_usable": False,
+                    "diagnosis_usable_level": "not_usable",
+                    "limitations": [status.get("reason", "not assessed")],
+                }
+            )
+        return missing
+
+    def _quantitative_evidence_summary(self, evidence_items: list[dict[str, Any]]) -> dict[str, Any]:
+        exploratory = []
+        measurements = []
+        for item in evidence_items:
+            if item.get("evidence_type") == "image_feature_quantification" or item.get("diagnosis_usable_level") == "exploratory_only":
+                exploratory.append(item)
+            if item.get("evidence_type") == "anatomical_measurement":
+                measurements.append(item)
+        return {
+            "exploratory_features": exploratory,
+            "measurement_items": measurements,
+            "strong_quantitative_support_count": sum(
+                1
+                for item in measurements
+                if item.get("diagnosis_usable") is True
+                and (item.get("measurements") or {}).get("measurement_usable") is True
+            ),
+        }
+
+    def _integrated_fhn_reasoning_summary(
+        self,
+        *,
+        target_assessment: dict[str, Any],
+        imaging_summary: dict[str, Any],
+        quantitative_summary: dict[str, Any],
+        differential_considerations: list[dict[str, Any]],
+        clinical_context: dict[str, Any],
+        modality_limitations: list[str],
+        recommendations: list[str],
+    ) -> dict[str, Any]:
+        measurement_items = [
+            item
+            for item in quantitative_summary.get("measurement_items") or []
+            if isinstance(item, dict)
+        ]
+        exploratory_features = [
+            item
+            for item in quantitative_summary.get("exploratory_features") or []
+            if isinstance(item, dict)
+        ]
+        measurement_not_usable = [
+            str(item.get("target"))
+            for item in measurement_items
+            if item.get("target")
+            and (
+                item.get("diagnosis_usable") is not True
+                or (item.get("measurements") or {}).get("measurement_usable") is not True
+            )
+        ]
+        return {
+            "target_disease": target_assessment.get("target_disease"),
+            "evidence_status": target_assessment.get("evidence_status"),
+            "can_confirm_target_disease": (
+                target_assessment.get("evidence_status") == "supported"
+                and bool(target_assessment.get("supports_target_disease"))
+            ),
+            "imaging_support": {
+                "supported_targets": list(target_assessment.get("supports_target_disease") or []),
+                "nonspecific_or_unusable_targets": list(
+                    target_assessment.get("nonspecific_or_unusable_findings") or []
+                ),
+                "missing_targets": list(
+                    target_assessment.get("missing_required_evidence") or []
+                ),
+                "usable_item_count": len(imaging_summary.get("usable_items") or []),
+            },
+            "quantitative_support": {
+                "strong_quantitative_support_count": quantitative_summary.get(
+                    "strong_quantitative_support_count",
+                    0,
+                ),
+                "measurement_targets_not_usable": measurement_not_usable,
+                "exploratory_targets": [
+                    str(item.get("target"))
+                    for item in exploratory_features
+                    if item.get("target")
+                ],
+                "role": (
+                    "Measurement evidence requires usable ROI/contour/landmark quality; "
+                    "exploratory image features require validation and cannot confirm ONFH."
+                ),
+            },
+            "differential_considerations": {
+                "retained": list(differential_considerations),
+                "role": "Bounded differential considerations only; DiagnosisAgent does not select a new disease here.",
+            },
+            "clinical_risk_support": {
+                "provided_risk_factors": list(clinical_context.get("provided_risk_factors") or []),
+                "missing_clinical_context": list(
+                    clinical_context.get("missing_clinical_context") or []
+                ),
+                "can_confirm_without_imaging": False,
+            },
+            "missing_evidence": {
+                "missing_required_targets": list(
+                    target_assessment.get("missing_required_evidence") or []
+                ),
+            },
+            "modality_limitation": list(modality_limitations),
+            "recommended_next_step": list(recommendations),
+        }
+
+    def _clinical_risk_factors(
+        self,
+        patient_info: dict[str, Any],
+        skill_descriptor: dict[str, Any],
+    ) -> list[str]:
+        provided = []
+        raw_values = []
+        for key in ("risk_factors", "history", "clinical_context"):
+            value = patient_info.get(key)
+            if isinstance(value, list):
+                raw_values.extend(str(item) for item in value)
+            elif value:
+                raw_values.append(str(value))
+        text = " ".join(raw_values)
+        aliases = {
+            "corticosteroid_use": ["激素", "corticosteroid", "steroid"],
+            "alcohol_use": ["饮酒", "alcohol"],
+            "trauma_history": ["外伤", "trauma"],
+            "hematologic_disease": ["血液", "sickle", "镰状"],
+            "autoimmune_disease": ["自身免疫", "autoimmune"],
+        }
+        protocol = skill_descriptor.get("clinical_context_protocol") or {}
+        for factor in protocol.get("risk_factors") or []:
+            if any(alias in text for alias in aliases.get(str(factor), [str(factor)])):
+                provided.append(str(factor))
+        return provided
+
+    def _missing_clinical_context(
+        self,
+        patient_info: dict[str, Any],
+        skill_descriptor: dict[str, Any],
+    ) -> list[str]:
+        protocol = skill_descriptor.get("clinical_context_protocol") or {}
+        provided = set(self._clinical_risk_factors(patient_info, skill_descriptor))
+        return [
+            str(factor)
+            for factor in protocol.get("risk_factors") or []
+            if str(factor) not in provided
+        ]
+
+    def _bounded_differential_considerations(
+        self,
+        *,
+        skill_descriptor: dict[str, Any],
+        nonspecific: list[dict[str, Any]],
+        missing: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        protocol = skill_descriptor.get("differential_diagnosis_protocol") or {}
+        considerations = []
+        for candidate in protocol.get("candidates") or []:
+            if not isinstance(candidate, dict):
+                continue
+            considerations.append(
+                {
+                    "condition": candidate.get("condition"),
+                    "display_name": candidate.get("display_name"),
+                    "status": "cannot_exclude" if missing else "nonspecific_finding",
+                    "reason": (
+                        "当前存在缺失证据或非特异观察，不能开放式改诊断；仅提示需结合指南和临床复核。"
+                        if nonspecific or missing
+                        else "当前 evidence_bundle 未提供支持该替代解释的独立证据。"
+                    ),
+                }
+            )
+        return considerations
+
+    def _fhn_modality_limitations(
+        self,
+        evidence: dict[str, Any],
+        missing: list[dict[str, Any]],
+    ) -> list[str]:
+        limitations = [
+            "单纯 X 光对早期股骨头坏死敏感性有限。",
+            "X-ray only 不能可靠判断或排除 early osteonecrosis。",
+        ]
+        for item in missing:
+            reason = item.get("visual_observation", {}).get("reason")
+            if reason and reason not in limitations:
+                limitations.append(str(reason))
+        return limitations
+
+    def _fhn_bounded_recommendations(
+        self,
+        missing: list[dict[str, Any]],
+        modality_limitations: list[str],
+    ) -> list[str]:
+        recommendations = [
+            "建议完善双髋 MRI T1/T2/STIR 检查。",
+            "建议由骨科或影像科医生结合临床体征复核。",
+        ]
+        if not missing and not modality_limitations:
+            recommendations.append("如影像证据仍不一致，建议补充标准体位片或专科复核。")
+        return recommendations
 
     def _usable_visual_findings(self, evidence: dict[str, Any]) -> list[dict[str, str]]:
         structured_facts = [
@@ -441,9 +879,9 @@ class DiagnosisDoctorAgent:
         base_name = self._finding_display_name(str(fact.get("display_name") or target))
         laterality = str(fact.get("laterality") or "").strip()
         prefix = self._laterality_display_name(laterality)
-        if not prefix or base_name.startswith(prefix):
-            return base_name
-        return f"{prefix}{base_name}"
+        if prefix and not base_name.startswith(prefix):
+            base_name = f"{prefix}{base_name}"
+        return self._with_view_prefix(base_name, str(fact.get("view_hint") or ""))
 
     def _non_independent_finding_notes(self, evidence: dict[str, Any]) -> list[str]:
         notes: list[str] = []
@@ -509,9 +947,9 @@ class DiagnosisDoctorAgent:
         base_name = self._finding_display_name(str(finding.get("display_name") or target))
         laterality = self._finding_laterality(finding)
         prefix = self._laterality_display_name(laterality)
-        if not prefix or base_name.startswith(prefix):
-            return base_name
-        return f"{prefix}{base_name}"
+        if prefix and not base_name.startswith(prefix):
+            base_name = f"{prefix}{base_name}"
+        return self._with_view_prefix(base_name, str(finding.get("view_hint") or ""))
 
     def _finding_laterality(self, finding: dict[str, Any]) -> str:
         measurements = finding.get("measurements") or {}
@@ -532,6 +970,19 @@ class DiagnosisDoctorAgent:
             "image_left": "图像左侧",
             "image_right": "图像右侧",
         }.get(laterality, "")
+
+    def _with_view_prefix(self, name: str, view_hint: str) -> str:
+        view = self._view_hint_display_name(view_hint)
+        if not view or name.startswith(f"{view}："):
+            return name
+        return f"{view}：{name}"
+
+    def _view_hint_display_name(self, view_hint: str) -> str:
+        return {
+            "ap_pelvis": "骨盆正位/AP",
+            "frog_lateral": "蛙式侧位",
+            "lateral": "侧位",
+        }.get(view_hint, "")
 
     def _overlap_warning_target_for(
         self,

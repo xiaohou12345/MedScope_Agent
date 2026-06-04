@@ -232,15 +232,17 @@ class FakeNoMaskSkillPipeline:
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
         image_path = str(kwargs["image_path"])
+        view_token = "frog_lateral" if "frog" in image_path else "ap_pelvis" if "ap" in image_path else "single"
+        path_prefix = f"{view_token}_" if view_token != "single" else ""
         visual_result = {
             "image_path": image_path,
             "modality": "xray",
             "body_part": "hip",
             "image_outputs": {
                 "original_image_path": image_path,
-                "mask_path": "output/fake/fhn_no_mask/finding_mask.png",
-                "overlay_path": "output/fake/fhn_no_mask/finding_overlay.png",
-                "comparison_path": "output/fake/fhn_no_mask/finding_comparison.png",
+                "mask_path": f"output/fake/fhn_no_mask/{path_prefix}finding_mask.png",
+                "overlay_path": f"output/fake/fhn_no_mask/{path_prefix}finding_overlay.png",
+                "comparison_path": f"output/fake/fhn_no_mask/{path_prefix}finding_comparison.png",
             },
             "requested_targets": ["sclerotic_band", "cystic_change"],
             "requested_features": ["area_ratio_in_anatomy", "anatomy_match"],
@@ -272,7 +274,7 @@ class FakeNoMaskSkillPipeline:
                 },
                 "findings": [
                     {
-                        "finding_id": "finding_sclerotic_band",
+                        "finding_id": f"{view_token}_finding_sclerotic_band",
                         "target": "sclerotic_band",
                         "display_name": "硬化带",
                         "status": "candidate_present",
@@ -292,7 +294,7 @@ class FakeNoMaskSkillPipeline:
                         "diagnosis_usable": True,
                     },
                     {
-                        "finding_id": "finding_cystic_change",
+                        "finding_id": f"{view_token}_finding_cystic_change",
                         "target": "cystic_change",
                         "display_name": "囊性变",
                         "status": "candidate_present",
@@ -351,7 +353,8 @@ class MedScopeMvpFlowTest(unittest.TestCase):
 
             self.assertIn("reply_to_patient", result)
             self.assertIn("case_id", result)
-            self.assertIn("疑似早期股骨头坏死", result["reply_to_patient"])
+            self.assertIn("影像证据不足", result["reply_to_patient"])
+            self.assertIn("MRI", result["reply_to_patient"])
 
             case_file = Path(tmpdir) / "cases" / f"{result['case_id']}.json"
             self.assertTrue(case_file.exists())
@@ -369,7 +372,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             self.assertEqual(saved_case["patient_memory"]["patient_info"]["age"], 45)
             self.assertEqual(saved_case["patient_memory"]["symptoms"], ["髋关节疼痛", "活动受限"])
             self.assertEqual(saved_case["patient_memory"]["intent"], "diagnosis")
-            self.assertEqual(saved_case["image_memory"]["modality"], "xray")
+            self.assertEqual(saved_case["image_memory"]["modality"], "X-ray")
             self.assertIn("image_outputs", saved_case["image_memory"])
             self.assertIn("visual_evidence", saved_case["image_memory"])
             self.assertIn("measurements", saved_case["image_memory"])
@@ -388,13 +391,16 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             self.assertIn("report", saved_case["reasoning_memory"])
             self.assertEqual(
                 saved_case["reasoning_memory"]["diagnostic_tendency"],
-                "疑似早期股骨头坏死",
+                "影像证据不足，需进一步评估",
             )
             self.assertIn("visual_input_contract", saved_case["reasoning_memory"])
             self.assertIn("uncertainty", saved_case["reasoning_memory"])
+            image_bundle = saved_case["image_memory"]["visual_evidence_bundle"]
+            self.assertEqual(image_bundle["schema_version"], "visual_evidence_bundle.v2")
+            self.assertTrue(image_bundle["evidence_items"])
             bundle = memory.get_evidence_bundle(result["case_id"])
             self.assertEqual(bundle["patient_context"]["patient_message"], "左髋疼痛三个月，帮我看看片子")
-            self.assertEqual(bundle["reasoning_evidence"]["diagnostic_tendency"], "疑似早期股骨头坏死")
+            self.assertEqual(bundle["reasoning_evidence"]["diagnostic_tendency"], "影像证据不足，需进一步评估")
 
     def test_gaodoctor_persists_multifinding_visual_evidence_bundle_to_memory(self):
         with TemporaryDirectory() as tmpdir:
@@ -530,6 +536,78 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                 saved_case["skill_memory"]["selected_vision_mode"],
                 "no_mask_skill",
             )
+
+    def test_gaodoctor_runs_multi_view_fhn_no_mask_pipeline_and_merges_evidence(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            no_mask_runner = FakeNoMaskSkillPipeline()
+            doctor = GaoDoctorAgent(
+                memory_manager=memory,
+                no_mask_visual_pipeline_runner=no_mask_runner,
+            )
+
+            result = doctor.handle_patient_case(
+                patient_message="右髋疼痛，上传正位和蛙式位 X 光，请判断是否股骨头坏死",
+                image_path="output/fake/uploads/patient_ap_pelvis.png",
+                patient_info={
+                    "symptoms": ["髋关节疼痛"],
+                    "image_series": [
+                        {
+                            "image_id": "image_001",
+                            "image_path": "output/fake/uploads/patient_ap_pelvis.png",
+                            "view_hint": "ap_pelvis",
+                        },
+                        {
+                            "image_id": "image_002",
+                            "image_path": "output/fake/uploads/patient_frog_lateral.png",
+                            "view_hint": "frog_lateral",
+                        },
+                    ],
+                },
+                disease_key="femoral_head_necrosis",
+                vision_mode="no_mask_skill",
+            )
+
+            saved_case = json.loads(Path(result["case_memory_path"]).read_text(encoding="utf-8"))
+            image_bundle = saved_case["image_memory"]["visual_evidence_bundle"]
+            image_context = image_bundle["image_context"]
+
+        self.assertEqual(
+            [call["image_path"] for call in no_mask_runner.calls],
+            [
+                "output/fake/uploads/patient_ap_pelvis.png",
+                "output/fake/uploads/patient_frog_lateral.png",
+            ],
+        )
+        self.assertEqual(
+            [item["view_hint"] for item in image_context["image_series"]],
+            ["ap_pelvis", "frog_lateral"],
+        )
+        self.assertEqual(image_context["primary_image_id"], "image_001")
+        self.assertEqual(image_context["view_coverage"]["provided_views"], ["ap_pelvis", "frog_lateral"])
+        self.assertEqual(image_context["view_coverage"]["analysis_scope"], "multi_view_execution")
+        self.assertEqual(
+            image_context["view_coverage"]["analyzed_views"],
+            ["ap_pelvis", "frog_lateral"],
+        )
+        self.assertEqual(len(image_bundle["per_image_results"]), 2)
+        self.assertEqual(len(image_bundle["findings"]), 4)
+        self.assertEqual(image_bundle["numeric_evidence"]["finding_count"], 4)
+        self.assertEqual(image_bundle["numeric_evidence"]["total_area_px"], 400)
+        self.assertEqual(
+            {(finding["image_id"], finding["view_hint"]) for finding in image_bundle["findings"]},
+            {("image_001", "ap_pelvis"), ("image_002", "frog_lateral")},
+        )
+        self.assertEqual(
+            {
+                result["image_id"]: result["image_outputs"]["comparison_path"]
+                for result in image_bundle["per_image_results"]
+            },
+            {
+                "image_001": "output/fake/fhn_no_mask/ap_pelvis_finding_comparison.png",
+                "image_002": "output/fake/fhn_no_mask/frog_lateral_finding_comparison.png",
+            },
+        )
 
     def test_gaodoctor_persists_insufficient_image_skill_alignment_without_vision_run(self):
         with TemporaryDirectory() as tmpdir:

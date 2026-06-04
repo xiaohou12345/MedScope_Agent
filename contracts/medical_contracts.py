@@ -178,8 +178,28 @@ class SkillRoutingDecision:
     confidence: float
     matched_clues: list[str] = field(default_factory=list)
     agent_scope: str = "orchestrator_api"
+    primary_hypothesis: str | None = None
+    differential_skill_candidates: list[str] = field(default_factory=list)
+    clinical_hypotheses: list[dict[str, Any]] = field(default_factory=list)
+    skill_search_reason: str | None = None
+    initial_evidence_status: str = "insufficient"
+    routing_evidence_status: str | None = None
+    skill_builder_action: str | None = None
 
     ALLOWED_SOURCES: ClassVar[set[str]] = {"auto", "explicit", "default"}
+    ALLOWED_EVIDENCE_STATUSES: ClassVar[set[str]] = {
+        "supported",
+        "not_supported",
+        "insufficient",
+        "nonspecific",
+        "requires_evidence_acquisition",
+        "requires_differential_review",
+    }
+    ALLOWED_SKILL_BUILDER_ACTIONS: ClassVar[set[str]] = {
+        "none",
+        "load_existing_skill",
+        "search_or_generate_skill",
+    }
 
     def __post_init__(self) -> None:
         if self.source not in self.ALLOWED_SOURCES:
@@ -188,6 +208,16 @@ class SkillRoutingDecision:
             raise ValueError("routing confidence must be between 0 and 1")
         if self.agent_scope != "orchestrator_api":
             raise ValueError("skill routing decisions must stay in orchestrator_api scope")
+        if self.initial_evidence_status not in self.ALLOWED_EVIDENCE_STATUSES:
+            raise ValueError(
+                f"unsupported initial evidence status: {self.initial_evidence_status}"
+            )
+        effective_status = self.routing_evidence_status or self.initial_evidence_status
+        if effective_status not in self.ALLOWED_EVIDENCE_STATUSES:
+            raise ValueError(f"unsupported routing evidence status: {effective_status}")
+        effective_action = self.skill_builder_action or self._skill_builder_action()
+        if effective_action not in self.ALLOWED_SKILL_BUILDER_ACTIONS:
+            raise ValueError(f"unsupported skill builder action: {effective_action}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -198,7 +228,13 @@ class SkillRoutingDecision:
             "confidence": self.confidence,
             "matched_clues": list(self.matched_clues),
             "agent_scope": self.agent_scope,
-            "skill_builder_action": self._skill_builder_action(),
+            "skill_builder_action": self.skill_builder_action or self._skill_builder_action(),
+            "primary_hypothesis": self.primary_hypothesis,
+            "differential_skill_candidates": list(self.differential_skill_candidates),
+            "clinical_hypotheses": [dict(item) for item in self.clinical_hypotheses],
+            "skill_search_reason": self.skill_search_reason,
+            "initial_evidence_status": self.initial_evidence_status,
+            "routing_evidence_status": self.routing_evidence_status or self.initial_evidence_status,
         }
 
     def _skill_builder_action(self) -> str:
@@ -290,6 +326,9 @@ class VisualTask:
     localization_mode: str = "bbox"
     segmentation_mode: str = "candidate_mask"
     diagnosis_usable_level: str = "candidate_support"
+    evidence_type: str = "candidate_mask"
+    measurement_dependencies: list[str] = field(default_factory=list)
+    measurement_usable: bool = False
 
     ALLOWED_EXECUTION_MODES: ClassVar[set[str]] = {
         "vlm_only",
@@ -314,6 +353,16 @@ class VisualTask:
         "observation_only",
         "candidate_support",
         "measurement_support",
+        "exploratory_only",
+        "not_usable",
+    }
+    ALLOWED_EVIDENCE_TYPES: ClassVar[set[str]] = {
+        "visual_observation",
+        "candidate_mask",
+        "anatomical_measurement",
+        "image_feature_quantification",
+        "clinical_context",
+        "differential_reasoning",
     }
 
     def __post_init__(self) -> None:
@@ -333,6 +382,8 @@ class VisualTask:
             raise ValueError(
                 f"unsupported visual diagnosis_usable_level: {self.diagnosis_usable_level}"
             )
+        if self.evidence_type not in self.ALLOWED_EVIDENCE_TYPES:
+            raise ValueError(f"unsupported visual evidence_type: {self.evidence_type}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -346,6 +397,9 @@ class VisualTask:
             "localization_mode": self.localization_mode,
             "segmentation_mode": self.segmentation_mode,
             "diagnosis_usable_level": self.diagnosis_usable_level,
+            "evidence_type": self.evidence_type,
+            "measurement_dependencies": list(self.measurement_dependencies),
+            "measurement_usable": bool(self.measurement_usable),
         }
 
     @classmethod
@@ -376,6 +430,11 @@ class VisualTask:
             diagnosis_usable_level=str(
                 payload.get("diagnosis_usable_level") or "candidate_support"
             ),
+            evidence_type=str(payload.get("evidence_type") or cls._evidence_type_for_execution_mode(execution_mode)),
+            measurement_dependencies=[
+                str(item) for item in payload.get("measurement_dependencies") or []
+            ],
+            measurement_usable=bool(payload.get("measurement_usable", False)),
         )
 
     @staticmethod
@@ -396,6 +455,16 @@ class VisualTask:
                 normalized = normalized[len(prefix) :]
                 break
         return normalized or task_name
+
+    @staticmethod
+    def _evidence_type_for_execution_mode(execution_mode: str) -> str:
+        return {
+            "vlm_only": "visual_observation",
+            "vlm_plus_segmenter": "candidate_mask",
+            "specialist_segmenter": "candidate_mask",
+            "measurement_only": "anatomical_measurement",
+            "insufficient_input": "visual_observation",
+        }.get(execution_mode, "visual_observation")
 
 
 @dataclass(frozen=True)
@@ -576,6 +645,7 @@ class VisualEvidence:
     structured_visual_facts: list[dict[str, Any]] = field(default_factory=list)
     segmentation_results: list[dict[str, Any]] = field(default_factory=list)
     visual_tool_plan: list[dict[str, Any]] = field(default_factory=list)
+    evidence_items: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -623,6 +693,8 @@ class VisualEvidence:
             payload["segmentation_results"] = [dict(item) for item in self.segmentation_results]
         if self.visual_tool_plan:
             payload["visual_tool_plan"] = [dict(item) for item in self.visual_tool_plan]
+        if self.evidence_items:
+            payload["evidence_items"] = [dict(item) for item in self.evidence_items]
         return payload
 
     @classmethod
@@ -669,6 +741,9 @@ class VisualEvidence:
             ],
             visual_tool_plan=[
                 dict(item) for item in payload.get("visual_tool_plan", [])
+            ],
+            evidence_items=[
+                dict(item) for item in payload.get("evidence_items", [])
             ],
         )
 
@@ -750,6 +825,9 @@ class DiagnosisVisualInput:
             "visual_tool_plan": [
                 dict(item) for item in evidence.get("visual_tool_plan", [])
             ],
+            "evidence_items": [
+                dict(item) for item in evidence.get("evidence_items", [])
+            ],
             "segmentation_quality": evidence.get("segmentation_quality", "not_available"),
         }
 
@@ -777,6 +855,11 @@ class SkillDescriptor:
     guideline_extraction: dict[str, Any] = field(default_factory=dict)
     guideline_conflicts: list[dict[str, Any]] = field(default_factory=list)
     quality_control: dict[str, Any] = field(default_factory=dict)
+    imaging_evidence_protocol: dict[str, Any] = field(default_factory=dict)
+    quantitative_evidence_protocol: dict[str, Any] = field(default_factory=dict)
+    differential_diagnosis_protocol: dict[str, Any] = field(default_factory=dict)
+    clinical_context_protocol: dict[str, Any] = field(default_factory=dict)
+    integrated_reasoning_protocol: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.skill_type == "data_mined_hypothesis":
@@ -822,6 +905,16 @@ class SkillDescriptor:
             ]
         if self.quality_control:
             payload["quality_control"] = dict(self.quality_control)
+        for key in (
+            "imaging_evidence_protocol",
+            "quantitative_evidence_protocol",
+            "differential_diagnosis_protocol",
+            "clinical_context_protocol",
+            "integrated_reasoning_protocol",
+        ):
+            value = getattr(self, key)
+            if value:
+                payload[key] = dict(value)
         return payload
 
     def _default_path_type(self) -> str:
@@ -847,4 +940,9 @@ class SkillDescriptor:
             guideline_extraction=dict(skill.get("guideline_extraction", {})),
             guideline_conflicts=[dict(conflict) for conflict in skill.get("guideline_conflicts", [])],
             quality_control=dict(skill.get("quality_control", {})),
+            imaging_evidence_protocol=dict(skill.get("imaging_evidence_protocol", {})),
+            quantitative_evidence_protocol=dict(skill.get("quantitative_evidence_protocol", {})),
+            differential_diagnosis_protocol=dict(skill.get("differential_diagnosis_protocol", {})),
+            clinical_context_protocol=dict(skill.get("clinical_context_protocol", {})),
+            integrated_reasoning_protocol=dict(skill.get("integrated_reasoning_protocol", {})),
         )

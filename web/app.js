@@ -151,6 +151,9 @@ function inferViewHint(path, filename) {
   if (text.includes("frog") || text.includes("lauenstein") || text.includes("蛙")) {
     return "frog_lateral";
   }
+  if (text.includes("lateral") || text.includes("侧位")) {
+    return "lateral";
+  }
   if (text.includes("ap") || text.includes("pelvis") || text.includes("正位") || text.includes("卧")) {
     return "ap_pelvis";
   }
@@ -176,7 +179,7 @@ async function postMedScope(payload) {
     });
     const body = await parseJsonResponse(response);
     if (!response.ok) {
-      throw new Error(formatApiError(body, response.status));
+      throw buildApiError(body, response.status);
     }
     return body;
   } catch (error) {
@@ -198,7 +201,7 @@ async function postMedScopeQa(payload, signal) {
   });
   const body = await parseJsonResponse(response);
   if (!response.ok) {
-    throw new Error(formatApiError(body, response.status));
+    throw buildApiError(body, response.status);
   }
   return body;
 }
@@ -686,6 +689,24 @@ function formatApiError(body, status) {
   return parts.join("：");
 }
 
+function buildApiError(body, status) {
+  const error = new Error(formatApiError(body, status));
+  error.apiPayload = body || {};
+  error.apiStatus = status;
+  return error;
+}
+
+function shortApiErrorMessage(error, fallbackMessage = "病例分析失败") {
+  const body = error?.apiPayload || {};
+  if (body.error_type === "medsam2_not_ready") {
+    return "分割后端未配置，详情见报告区";
+  }
+  if (body.error_type) {
+    return `${fallbackMessage}：${body.error_type}`;
+  }
+  return error?.message || fallbackMessage;
+}
+
 async function uploadFile(file) {
   if (!file) {
     return null;
@@ -725,18 +746,40 @@ async function uploadFiles(fileList) {
   state.sampleVisionMode = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
-  const filenames = state.uploadedImageNames.join("、");
-  elements.uploadStatus.textContent = uploaded.length === 1
-    ? `已上传：${filenames}`
-    : `已上传 ${uploaded.length} 张同一病例影像：${filenames}`;
+  resetViews();
+  elements.uploadStatus.textContent = formatUploadedImageSeriesStatus(uploaded);
+}
+
+function formatUploadedImageSeriesStatus(uploaded) {
+  const items = Array.isArray(uploaded) ? uploaded : [];
+  if (!items.length) {
+    return "未上传影像";
+  }
+  const rows = items.map((item, index) => {
+    const imageId = index === 0 ? "image_001" : `image_${String(index + 1).padStart(3, "0")}`;
+    const filename = item.filename || item.image_path || `影像 ${index + 1}`;
+    const viewHint = inferViewHint(item.image_path || "", filename);
+    return `${imageId} · ${imageViewLabel(viewHint)} · ${filename}`;
+  });
+  if (rows.length === 1) {
+    return `已上传：${rows[0]}`;
+  }
+  return `已上传 ${rows.length} 张同一病例影像：${rows.join("；")}`;
 }
 
 async function checkHealth() {
   setStatus("检查中...");
   try {
-    const response = await fetch("/health");
+    const response = await fetch("/v1/readiness");
     const body = await response.json();
-    setStatus(body.status === "ok" ? "API 已连接" : "API 状态异常", body.status === "ok" ? "ok" : "warn");
+    const apiReady = body.api_route?.real_call_ready === true;
+    const medsamReady = body.medsam2?.real_call_ready === true;
+    const route = body.api_route?.active_route || "-";
+    const model = body.api_route?.model || "-";
+    const message = body.status === "ok"
+      ? `API 已连接 · route=${route} · model=${model} · 模型${apiReady ? "已配置" : "未配置"} · MedSAM2${medsamReady ? "已配置" : "未配置"}`
+      : "API 状态异常";
+    setStatus(message, body.status === "ok" ? (apiReady ? "ok" : "warn") : "warn");
   } catch (error) {
     setStatus(error.message, "error");
   }
@@ -1243,29 +1286,581 @@ function renderCitation(citation) {
 
 function renderReport(payload) {
   const report = payload.report || {};
+  const skillProposalHtml = renderSkillProposalReport(payload);
+  if (skillProposalHtml) {
+    elements.reportView.innerHTML = `${renderRoutingClinicalSummary(payload)}${skillProposalHtml}`;
+    return;
+  }
   if (!Object.keys(report).length && payload.reply_to_patient) {
     elements.reportView.innerHTML = `<div class="report-section"><p>${escapeHtml(payload.reply_to_patient)}</p></div>`;
     return;
   }
-  const sections = [
-    ["诊断倾向", report["诊断倾向"] || report.diagnostic_tendency],
-    ["影像依据", report["影像依据"]],
-    ["不确定性说明", report["不确定性说明"]],
-    ["建议进一步检查", report["建议进一步检查"]],
-    ["治疗建议", report["治疗建议"]],
-  ];
-  const reportHtml = sections
+  const patientSummaryHtml = renderPatientDiagnosisSummary(payload);
+  const hasStructuredReport = Boolean(patientSummaryHtml);
+  if (patientSummaryHtml) {
+    elements.reportView.innerHTML = patientSummaryHtml;
+    return;
+  }
+  const routingSummaryHtml = renderRoutingClinicalSummary(payload);
+  const reportHtml = renderLegacyReportSections(report, hasStructuredReport);
+  const differentialHtml = renderDifferentialConsiderations(payload);
+  const guidelineEvidenceHtml = renderGuidelineEvidence(payload);
+  elements.reportView.innerHTML =
+    routingSummaryHtml || reportHtml || differentialHtml || guidelineEvidenceHtml
+      ? `${routingSummaryHtml}${reportHtml}${differentialHtml}${guidelineEvidenceHtml}`
+      : '<div class="report-empty">无报告字段</div>';
+}
+
+function renderPatientDiagnosisSummary(payload) {
+  const report = payload.report || {};
+  const integrated = report.integrated_reasoning_summary || {};
+  const hasStructuredReport = Boolean(
+    Object.keys(integrated).length
+    || Object.keys(report.target_disease_assessment || {}).length
+    || Object.keys(report.imaging_evidence_summary || {}).length
+    || Array.isArray(report.recommendation)
+    || Array.isArray(report.missing_evidence)
+  );
+  if (!hasStructuredReport) {
+    return "";
+  }
+  const evidenceItems = patientDiagnosisEvidenceItems(payload).slice(0, 3);
+  const nextSteps = patientDiagnosisNextSteps(payload).slice(0, 3);
+  return `
+    <div class="report-section patient-diagnosis-summary" aria-label="患者诊断摘要">
+      <h3>患者诊断摘要</h3>
+      <div class="patient-summary-block">
+        <h4>结论</h4>
+        <p>${escapeHtml(patientDiagnosisConclusion(payload))}</p>
+      </div>
+      <div class="patient-summary-block">
+        <h4>主要依据</h4>
+        ${evidenceItems.length ? renderList(evidenceItems) : "<p>当前没有足够稳定的可诊断依据。</p>"}
+      </div>
+      <div class="patient-summary-block">
+        <h4>下一步</h4>
+        ${nextSteps.length ? renderList(nextSteps) : "<p>建议结合线下医生评估后决定补充检查。</p>"}
+      </div>
+    </div>
+  `;
+}
+
+function patientDiagnosisConclusion(payload) {
+  const report = payload.report || {};
+  const integrated = report.integrated_reasoning_summary || {};
+  const assessment = report.target_disease_assessment || {};
+  const targetDisease = integrated.target_disease || assessment.target_disease || payload.routing_decision?.primary_hypothesis;
+  const diseaseName = humanDiseaseName(targetDisease || "");
+  if (integrated.can_confirm_target_disease === true || assessment.can_confirm_target_disease === true) {
+    return diseaseName
+      ? `当前证据支持${diseaseName}方向，但仍需医生结合完整检查确认。`
+      : "当前证据支持目标疾病方向，但仍需医生结合完整检查确认。";
+  }
+  const status = integrated.evidence_status || assessment.evidence_status || payload.routing_decision?.routing_evidence_status;
+  if (status === "insufficient" || status === "requires_evidence_acquisition") {
+    return diseaseName
+      ? `目前证据不足，不能仅凭当前资料确认${diseaseName}。`
+      : "目前证据不足，不能仅凭当前资料确认目标疾病。";
+  }
+  return report.diagnostic_tendency || report["诊断倾向"] || payload.reply_to_patient || "当前报告未给出明确结论。";
+}
+
+function patientDiagnosisEvidenceItems(payload) {
+  const report = payload.report || {};
+  const integrated = report.integrated_reasoning_summary || {};
+  const imaging = integrated.imaging_support || report.imaging_evidence_summary || {};
+  const quantitative = integrated.quantitative_support || report.quantitative_evidence_summary || {};
+  const missing = integrated.missing_evidence || {};
+  const items = [];
+  const supportedTargets = Array.isArray(imaging.supported_targets)
+    ? imaging.supported_targets
+    : [];
+  if (supportedTargets.length) {
+    items.push(`可参考发现：${uniquePatientFindingNames(supportedTargets).join("、")}`);
+  }
+  const nonspecificTargets = Array.isArray(imaging.nonspecific_or_unusable_targets)
+    ? imaging.nonspecific_or_unusable_targets
+    : [];
+  if (nonspecificTargets.length) {
+    items.push(`仅作提示：${uniquePatientFindingNames(nonspecificTargets).join("、")} 不能单独作为确诊依据。`);
+  }
+  const strongCount = Number(quantitative.strong_quantitative_support_count || 0);
+  if (strongCount > 0) {
+    items.push(`稳定量化支持：${strongCount} 项。`);
+  } else {
+    items.push("当前没有稳定的量化证据可以直接支持确诊。");
+  }
+  const missingTargets = Array.isArray(missing.missing_required_targets)
+    ? missing.missing_required_targets
+    : [];
+  if (missingTargets.length) {
+    items.push(`仍缺少：${missingTargets.slice(0, 3).map(patientMissingEvidenceName).join("、")}。`);
+  }
+  return items;
+}
+
+function patientDiagnosisNextSteps(payload) {
+  const report = payload.report || {};
+  const integrated = report.integrated_reasoning_summary || {};
+  const integratedSteps = Array.isArray(integrated.recommended_next_step)
+    ? integrated.recommended_next_step
+    : [];
+  if (integratedSteps.length) {
+    return integratedSteps;
+  }
+  if (Array.isArray(report.recommendation) && report.recommendation.length) {
+    return report.recommendation;
+  }
+  const legacyNext = report["建议进一步检查"];
+  if (Array.isArray(legacyNext)) {
+    return legacyNext;
+  }
+  if (legacyNext) {
+    return [legacyNext];
+  }
+  return [];
+}
+
+function renderSkillProposalReport(payload) {
+  const proposal = payload.skill_builder_proposal || {};
+  if (!Object.keys(proposal).length) {
+    return "";
+  }
+  const missingEvidence = Array.isArray(payload.missing_evidence) ? payload.missing_evidence : [];
+  const limitations = Array.isArray(payload.modality_limitations) ? payload.modality_limitations : [];
+  const recommendations = Array.isArray(payload.recommendation) ? payload.recommendation : [];
+  return `
+    <div class="report-section report-skill-proposal">
+      <h3>Skill Builder 候选草案</h3>
+      <p>${escapeHtml(payload.reply_to_patient || "当前缺少本地正式 skill，已进入候选草案流程。")}</p>
+      ${renderMetricGrid({
+        selected_skill: proposal.selected_skill,
+        disease_name: proposal.disease_name,
+        skill_type: proposal.skill_type,
+        evidence_level: proposal.evidence_level,
+        formal_update_allowed: proposal.formal_update_allowed === true ? "是" : "否",
+        diagnosis_allowed: proposal.diagnosis_allowed === true ? "是" : "否",
+      })}
+      <p class="warning-text">不能直接诊断；候选 skill 需要指南来源与人工审核后才能进入正式诊断流程。</p>
+      ${missingEvidence.length ? `<h4>缺失依据</h4>${renderList(missingEvidence.map((item) => `${item.field || "evidence"}：${item.reason || item.status || "-"}`))}` : ""}
+      ${limitations.length ? `<h4>当前限制</h4>${renderList(limitations)}` : ""}
+      ${recommendations.length ? `<h4>建议下一步</h4>${renderList(recommendations)}` : ""}
+    </div>
+  `;
+}
+
+function renderLegacyReportSections(report, hasStructuredReport) {
+  const sections = hasStructuredReport
+    ? [
+        ["诊断倾向", report["诊断倾向"] || report.diagnostic_tendency],
+        ["治疗建议", report["治疗建议"]],
+      ]
+    : [
+        ["诊断倾向", report["诊断倾向"] || report.diagnostic_tendency],
+        ["影像依据", report["影像依据"]],
+        ["不确定性说明", report["不确定性说明"]],
+        ["建议进一步检查", report["建议进一步检查"]],
+        ["治疗建议", report["治疗建议"]],
+      ];
+  return sections
     .filter(([, value]) => value !== undefined && value !== null && value !== "")
     .map(([title, value]) => {
       const body = Array.isArray(value) ? renderList(value) : `<p>${escapeHtml(String(value))}</p>`;
       return `<div class="report-section"><h3>${escapeHtml(title)}</h3>${body}</div>`;
     })
     .join("");
-  const guidelineEvidenceHtml = renderGuidelineEvidence(payload);
-  elements.reportView.innerHTML =
-    reportHtml || guidelineEvidenceHtml
-      ? `${reportHtml}${guidelineEvidenceHtml}`
-      : '<div class="report-empty">无报告字段</div>';
+}
+
+function renderRoutingClinicalSummary(payload) {
+  const routing = payload.routing_decision
+    || payload.evidence_bundle?.skill_evidence?.routing_decision
+    || {};
+  const report = payload.report || {};
+  const assessment = report.target_disease_assessment || {};
+  const hypothesis = routing.primary_hypothesis || assessment.target_disease || routing.selected_skill;
+  const status = routing.routing_evidence_status
+    || routing.initial_evidence_status
+    || assessment.evidence_status;
+  if (!hypothesis && !status) {
+    return "";
+  }
+  const parts = [];
+  if (hypothesis) {
+    parts.push(`临床假设：${humanDiseaseName(hypothesis)}`);
+  }
+  if (status) {
+    parts.push(`证据状态：${routingEvidenceStatusLabel(status)}`);
+  }
+  const candidates = Array.isArray(routing.differential_skill_candidates)
+    ? routing.differential_skill_candidates
+    : [];
+  if (candidates.length) {
+    parts.push(`需要鉴别复核：${candidates.map(humanDiseaseName).join("、")}`);
+  }
+  const hypotheses = Array.isArray(routing.clinical_hypotheses)
+    ? routing.clinical_hypotheses
+    : [];
+  const hypothesisQueueHtml = hypotheses.length
+    ? `
+      <div class="hypothesis-queue">
+        <strong>候选假设队列</strong>
+        <ul>
+          ${hypotheses.map((item) => `
+            <li>
+              <span>${escapeHtml(hypothesisRoleLabel(item.role))}</span>
+              <b>${escapeHtml(humanDiseaseName(item.disease_key || item.target || ""))}</b>
+              <em>${escapeHtml(routingEvidenceStatusLabel(item.status || ""))}</em>
+              ${item.reason ? `<small>${escapeHtml(item.reason)}</small>` : ""}
+            </li>
+          `).join("")}
+        </ul>
+        <p class="muted">这不是诊断结论；只是根据症状、部位和影像类型决定先检查哪些 evidence。</p>
+      </div>
+    `
+    : "";
+  return `
+    <div class="report-section report-path-summary">
+      <h3>分析路径</h3>
+      <p>${escapeHtml(parts.join("；"))}</p>
+      ${hypothesisQueueHtml}
+    </div>
+  `;
+}
+
+function renderEvidenceProtocolReport(payload) {
+  const report = payload.report || {};
+  const integrated = report.integrated_reasoning_summary || {};
+  const hypotheses = report.clinical_hypotheses_assessment || {};
+  const imaging = report.imaging_evidence_summary || {};
+  const quantitative = report.quantitative_evidence_summary || {};
+  const clinical = report.clinical_context_assessment || {};
+  const missingEvidence = Array.isArray(report.missing_evidence) ? report.missing_evidence : [];
+  const modalityLimitations = Array.isArray(report.modality_limitations)
+    ? report.modality_limitations
+    : [];
+  const recommendations = Array.isArray(report.recommendation) ? report.recommendation : [];
+
+  const hasStructuredEvidence = Boolean(
+    Object.keys(integrated).length
+    || Object.keys(hypotheses).length
+    || Object.keys(imaging).length
+    || Object.keys(quantitative).length
+    || Object.keys(clinical).length
+    || missingEvidence.length
+    || modalityLimitations.length
+    || recommendations.length
+  );
+  if (!hasStructuredEvidence) {
+    return "";
+  }
+
+  const usableItems = Array.isArray(imaging.usable_items) ? imaging.usable_items : [];
+  const nonspecificItems = Array.isArray(imaging.nonspecific_items)
+    ? imaging.nonspecific_items
+    : [];
+  const missingItems = Array.isArray(imaging.missing_items) ? imaging.missing_items : [];
+  const measurementItems = Array.isArray(quantitative.measurement_items)
+    ? quantitative.measurement_items
+    : [];
+  const exploratoryFeatures = Array.isArray(quantitative.exploratory_features)
+    ? quantitative.exploratory_features
+    : [];
+
+  return `
+    ${renderIntegratedReasoningSummary(integrated)}
+    ${renderClinicalHypothesesAssessment(hypotheses)}
+    <div class="report-section evidence-protocol-report">
+      <h3>影像证据</h3>
+      ${usableItems.length ? `<h4>可参考发现</h4>${renderEvidenceProtocolItemList(usableItems, "usable")}` : ""}
+      ${nonspecificItems.length ? `<h4>仅作提示</h4>${renderEvidenceProtocolItemList(nonspecificItems, "limited")}` : ""}
+      ${!usableItems.length && !nonspecificItems.length ? "<p>当前没有可直接采用的影像证据。</p>" : ""}
+    </div>
+    <div class="report-section evidence-protocol-report">
+      <h3>量化证据</h3>
+      <p>${escapeHtml(quantitativeEvidencePatientSummary(quantitative))}</p>
+      ${measurementItems.length ? `<h4>可查看测量</h4>${renderEvidenceProtocolItemList(measurementItems, "measurement")}` : ""}
+      ${exploratoryFeatures.length ? `<h4>仅作提示</h4>${renderEvidenceProtocolItemList(exploratoryFeatures, "limited")}` : ""}
+      ${!measurementItems.length && !exploratoryFeatures.length ? "<p>当前没有稳定的量化证据。</p>" : ""}
+    </div>
+    <div class="report-section evidence-protocol-report">
+      <h3>临床风险因素</h3>
+      ${renderClinicalContextAssessment(clinical)}
+    </div>
+    <div class="report-section evidence-protocol-report">
+      <h3>缺失证据</h3>
+      ${missingItems.length ? renderEvidenceProtocolItemList(missingItems, "missing") : ""}
+      ${missingEvidence.length ? renderList(missingEvidence) : ""}
+      ${modalityLimitations.length ? `<h4>影像局限</h4>${renderList(modalityLimitations)}` : ""}
+      ${!missingItems.length && !missingEvidence.length && !modalityLimitations.length ? "<p>当前未报告额外缺失证据。</p>" : ""}
+    </div>
+    <div class="report-section evidence-protocol-report">
+      <h3>建议下一步</h3>
+      ${recommendations.length ? renderList(recommendations) : "<p>暂无下一步建议。</p>"}
+    </div>
+  `;
+}
+
+function renderIntegratedReasoningSummary(summary) {
+  if (!summary || !Object.keys(summary).length) {
+    return "";
+  }
+  const imaging = summary.imaging_support || {};
+  const quantitative = summary.quantitative_support || {};
+  const missing = summary.missing_evidence || {};
+  const clinical = summary.clinical_risk_support || {};
+  const recommendations = Array.isArray(summary.recommended_next_step)
+    ? summary.recommended_next_step
+    : [];
+  const supportedTargets = Array.isArray(imaging.supported_targets)
+    ? imaging.supported_targets
+    : [];
+  const missingTargets = Array.isArray(missing.missing_required_targets)
+    ? missing.missing_required_targets
+    : [];
+  const exploratoryTargets = Array.isArray(quantitative.exploratory_targets)
+    ? quantitative.exploratory_targets
+    : [];
+  const riskFactors = Array.isArray(clinical.provided_risk_factors)
+    ? clinical.provided_risk_factors
+    : [];
+  const conclusion = summary.can_confirm_target_disease === true
+    ? "当前证据支持目标疾病，但仍需医生结合完整检查确认。"
+    : "当前证据不能确认目标疾病。";
+  return `
+    <div class="report-section evidence-protocol-report">
+      <h3>综合推理</h3>
+      <p><strong>${escapeHtml(conclusion)}</strong></p>
+      <ul>
+        <li>证据状态：${escapeHtml(routingEvidenceStatusLabel(summary.evidence_status || ""))}</li>
+        <li>影像支持：${supportedTargets.length ? escapeHtml(supportedTargets.map(humanFindingName).join("、")) : "暂无可直接采用的支持证据"}</li>
+        <li>量化支持：${escapeHtml(quantitativeEvidencePatientSummary({
+          strong_quantitative_support_count: quantitative.strong_quantitative_support_count,
+        }))}</li>
+        <li>探索性提示：${exploratoryTargets.length ? escapeHtml(exploratoryTargets.map(humanFindingName).join("、")) : "无稳定可用的探索性量化提示"}</li>
+        <li>临床风险：${riskFactors.length ? escapeHtml(riskFactors.join("、")) : "未提供可确认风险因素"}</li>
+        <li>缺失证据：${missingTargets.length ? escapeHtml(missingTargets.map(humanFindingName).join("、")) : "未报告关键缺失证据"}</li>
+      </ul>
+      ${recommendations.length ? `<h4>下一步</h4>${renderList(recommendations.slice(0, 3))}` : ""}
+    </div>
+  `;
+}
+
+function renderClinicalHypothesesAssessment(assessment) {
+  if (!assessment || !Object.keys(assessment).length) {
+    return "";
+  }
+  const primary = assessment.primary_hypothesis || {};
+  const retained = Array.isArray(assessment.differential_retained)
+    ? assessment.differential_retained
+    : [];
+  return `
+    <div class="report-section evidence-protocol-report">
+      <h3>主假设评估</h3>
+      ${primary.disease_key ? `
+        <p>
+          当前优先检查：<strong>${escapeHtml(humanDiseaseName(primary.disease_key))}</strong>
+          ${primary.status ? `（${escapeHtml(routingEvidenceStatusLabel(primary.status))}）` : ""}
+        </p>
+      ` : "<p>当前没有明确主假设。</p>"}
+      ${retained.length ? `
+        <h4>鉴别保留</h4>
+        <ul>
+          ${retained.map((item) => `
+            <li>
+              <strong>${escapeHtml(humanDiseaseName(item.disease_key || item.condition || ""))}</strong>
+              ${item.reason ? `<span>${escapeHtml(item.reason)}</span>` : ""}
+            </li>
+          `).join("")}
+        </ul>
+      ` : ""}
+      <p class="muted">${assessment.hypotheses_are_diagnosis === false
+        ? "这些候选假设不是诊断证据；最终判断必须来自 evidence bundle 和指南约束。"
+        : "候选假设只用于解释分析路径，不能替代诊断证据。"
+      }</p>
+    </div>
+  `;
+}
+
+function uniquePatientFindingNames(targets) {
+  return Array.from(new Set(
+    targets.map(humanFindingName).filter(Boolean)
+  )).slice(0, 3);
+}
+
+function patientMissingEvidenceName(target) {
+  const labels = {
+    measurement_grade_mask: "可用于测量分级的病灶分割结果",
+    segmentation_display: "可展示的分割对照图",
+    roi_contour: "可靠的解剖轮廓",
+    landmark_quality: "可靠的关键点定位",
+    mri_required: "MRI 等进一步影像检查",
+    clinical_context: "关键病史信息",
+  };
+  return labels[target] || humanFindingName(target) || "必要证据";
+}
+
+function humanFindingName(target) {
+  const labels = {
+    sclerotic_band: "硬化带",
+    cystic_change: "囊性变",
+    trabecular_blurring: "骨小梁模糊",
+    collapse: "股骨头塌陷",
+    early_osteonecrosis: "早期股骨头坏死",
+  };
+  return labels[target] || target || "";
+}
+
+function quantitativeEvidencePatientSummary(quantitative) {
+  const supportCount = Number(quantitative.strong_quantitative_support_count || 0);
+  if (supportCount > 0) {
+    return `有 ${supportCount} 项测量可作为诊断参考。`;
+  }
+  return "当前量化结果不能确认疾病，只能辅助理解影像表现。";
+}
+
+function renderEvidenceProtocolItemList(items, role = "neutral") {
+  const visible = Array.isArray(items) ? items.filter(Boolean).slice(0, 8) : [];
+  if (!visible.length) {
+    return '<div class="trace-empty">无</div>';
+  }
+  return `
+    <ul>
+      ${visible.map((item) => `
+        <li>
+          <strong>${escapeHtml(evidenceProtocolItemTitle(item))}</strong>
+          <span>${escapeHtml(evidenceProtocolItemSummary(item, role))}</span>
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function evidenceProtocolItemTitle(item) {
+  const title = item.display_name
+    || item.target
+    || item.evidence_type
+    || item.finding_id
+    || "证据项";
+  const view = evidenceViewHintLabel(item.view_hint);
+  if (!view || String(title).startsWith(`${view}：`)) {
+    return title;
+  }
+  return `${view}：${title}`;
+}
+
+function evidenceViewHintLabel(viewHint) {
+  if (!viewHint || viewHint === "unknown") {
+    return "";
+  }
+  return imageViewLabel(viewHint);
+}
+
+function evidenceProtocolItemSummary(item, role = "neutral") {
+  const observation = item.visual_observation || {};
+  const limitations = Array.isArray(item.limitations) ? item.limitations : [];
+  const statusText = evidenceProtocolRoleLabel(item, role);
+  const parts = [
+    observation.description || observation.reason || item.evidence_text || item.description,
+    statusText,
+    limitations.length ? limitations[0] : "",
+  ].filter(Boolean);
+  return parts.join("；") || "-";
+}
+
+function evidenceProtocolRoleLabel(item, role) {
+  if (role === "usable") {
+    return "可作为诊断参考，但仍需医生结合完整检查判断";
+  }
+  if (role === "measurement") {
+    return item.diagnosis_usable === true
+      ? "测量可参考"
+      : "测量质量不足，不能确认";
+  }
+  if (role === "missing") {
+    return "缺少这部分证据，不能确认或排除";
+  }
+  if (role === "limited" || item.diagnosis_usable === false) {
+    return "仅作提示，不能确认";
+  }
+  return "";
+}
+
+function renderClinicalContextAssessment(clinical) {
+  if (!clinical || !Object.keys(clinical).length) {
+    return "<p>用户未提供明确临床风险因素；不能编造病史。</p>";
+  }
+  const riskFactors = Array.isArray(clinical.provided_risk_factors)
+    ? clinical.provided_risk_factors
+    : [];
+  const missingContext = Array.isArray(clinical.missing_clinical_context)
+    ? clinical.missing_clinical_context
+    : [];
+  return `
+    ${riskFactors.length ? `<h4>已提供</h4>${renderList(riskFactors)}` : "<p>未提供可确认的风险因素。</p>"}
+    ${missingContext.length ? `<h4>未提供</h4>${renderList(missingContext)}` : ""}
+    ${clinical.role ? `<p>${escapeHtml(clinical.role)}</p>` : ""}
+  `;
+}
+
+function renderDifferentialConsiderations(payload) {
+  const report = payload.report || {};
+  const considerations = Array.isArray(report.differential_considerations)
+    ? report.differential_considerations
+    : [];
+  const visible = considerations
+    .filter((item) => item && (item.display_name || item.condition || item.reason))
+    .slice(0, 4);
+  if (!visible.length) {
+    return "";
+  }
+  return `
+    <div class="report-section differential-considerations">
+      <h3>鉴别考虑</h3>
+      <ul>
+        ${visible.map((item) => `
+          <li>
+            <strong>${escapeHtml(item.display_name || humanDiseaseName(item.condition) || "替代解释")}</strong>
+            ${item.reason ? `<span>${escapeHtml(item.reason)}</span>` : ""}
+          </li>
+        `).join("")}
+      </ul>
+    </div>
+  `;
+}
+
+function routingEvidenceStatusLabel(status) {
+  const labels = {
+    supported: "有支持证据",
+    not_supported: "暂未支持",
+    insufficient: "证据不足",
+    nonspecific: "非特异发现",
+    requires_evidence_acquisition: "需要先采集证据",
+    requires_differential_review: "需要鉴别复核",
+    legacy_observation: "旧版观察证据",
+  };
+  return labels[status] || status;
+}
+
+function hypothesisRoleLabel(role) {
+  const labels = {
+    primary: "优先检查",
+    differential: "鉴别保留",
+  };
+  return labels[role] || role || "候选";
+}
+
+function humanDiseaseName(value) {
+  const labels = {
+    femoral_head_necrosis: "股骨头坏死",
+    diffuse_glioma_brats: "成人弥漫性胶质瘤",
+    idiopathic_pulmonary_fibrosis_hrct: "特发性肺纤维化",
+    osteoarthritis_or_degenerative_hip_disease: "骨关节炎或退行性髋关节病变",
+    developmental_dysplasia_related_degeneration: "发育性髋臼发育不良相关退变",
+    post_traumatic_change: "外伤后改变",
+    infection_or_inflammatory_arthritis: "感染或炎症性关节炎",
+    tumor_like_lesion: "肿瘤样骨病变",
+  };
+  return labels[value] || value || "";
 }
 
 function renderVisualOutput(payload) {
@@ -1309,18 +1904,107 @@ function renderVisualOutput(payload) {
     candidateGalleryHtml: displayState.segmentationDisplayAllowed ? renderCandidateLesionGallery(payload) : "",
     displayState,
   });
-  if (!vlmAnnotationHtml && !segmentationHtml) {
+  const multiViewHtml = renderMultiViewOutputGallery(visualBundle);
+  const inputImageHtml = (!multiViewHtml && !vlmAnnotationHtml && !segmentationHtml)
+    ? renderInputImageFallbackGallery(payload, visualBundle, originalPath)
+    : "";
+  if (!multiViewHtml && !vlmAnnotationHtml && !segmentationHtml && !inputImageHtml) {
     elements.lesionFigure.hidden = true;
     elements.lesionFigure.innerHTML = "";
     return;
   }
   elements.lesionFigure.innerHTML = `
     <div class="visual-output-tabs" aria-label="视觉输出模式">
+      ${multiViewHtml}
       ${vlmAnnotationHtml}
       ${segmentationHtml}
+      ${inputImageHtml}
     </div>
   `;
   elements.lesionFigure.hidden = false;
+}
+
+function renderInputImageFallbackGallery(payload, visualBundle = {}, originalPath = "-") {
+  const items = buildInputImageFallbackItems(payload, visualBundle, originalPath);
+  if (!items.length) {
+    return "";
+  }
+  return `
+    <section class="visual-mode-panel visual-mode-input" aria-label="输入图像">
+      <div class="visual-mode-head">
+        <strong>输入图像</strong>
+        <span>等待视觉输出</span>
+      </div>
+      <div class="target-overlay-grid">
+        ${items.map((item) => `
+          <button
+            class="target-overlay-card"
+            type="button"
+            data-lightbox-src="${escapeHtml(item.url)}"
+            data-lightbox-title="${escapeHtml(item.title)}"
+            data-lightbox-caption="${escapeHtml(item.caption)}"
+            aria-label="放大查看 ${escapeHtml(item.title)}"
+          >
+            <img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.title)}" />
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.imageId)}</span>
+            </div>
+            <p>${escapeHtml(item.caption)}</p>
+          </button>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function buildInputImageFallbackItems(payload, visualBundle = {}, originalPath = "-") {
+  const context = visualBundle.image_context || payload.evidence_bundle?.image_evidence?.image_context || {};
+  const series = Array.isArray(context.image_series) ? context.image_series : [];
+  const payloadSeries = Array.isArray(payload.patient_info?.image_series) ? payload.patient_info.image_series : [];
+  const payloadImagePaths = Array.isArray(payload.image_paths)
+    ? payload.image_paths
+    : (payload.image_path ? [payload.image_path] : []);
+  const rawItems = series.length
+    ? series
+    : payloadSeries.length
+      ? payloadSeries
+      : payloadImagePaths.length
+        ? payloadImagePaths.map((path, index) => ({
+          image_id: `image_${String(index + 1).padStart(3, "0")}`,
+          image_path: path,
+          view_hint: inferViewHint(path, state.uploadedImageNames[index] || ""),
+        }))
+        : (originalPath && originalPath !== "-" ? [{
+          image_id: "image_001",
+          image_path: originalPath,
+          view_hint: inferViewHint(originalPath, ""),
+        }] : []);
+  const seen = new Set();
+  return rawItems
+    .map((item, index) => {
+      const imagePath = typeof item === "string" ? item : item.image_path;
+      const url = outputImageUrl(imagePath);
+      const imageId = typeof item === "string"
+        ? `image_${String(index + 1).padStart(3, "0")}`
+        : item.image_id || `image_${String(index + 1).padStart(3, "0")}`;
+      const viewHint = typeof item === "string"
+        ? inferViewHint(item, state.uploadedImageNames[index] || "")
+        : item.view_hint || inferViewHint(imagePath, state.uploadedImageNames[index] || "");
+      return {
+        url,
+        imageId,
+        title: imageViewLabel(viewHint),
+        caption: "输入图像已上传；等待视觉 Agent 返回候选标注或分割结果。",
+      };
+    })
+    .filter((item) => {
+      if (!item.url || seen.has(item.url)) {
+        return false;
+      }
+      seen.add(item.url);
+      return true;
+    });
 }
 
 function renderPatientVisualSummary({visualBundle, displayState, modality, bodyPart, findingCount}) {
@@ -1699,6 +2383,79 @@ function buildVisualComparisonItems(paths) {
   ];
 }
 
+function renderMultiViewOutputGallery(visualBundle = {}) {
+  const items = buildMultiViewOutputItems(visualBundle);
+  if (!items.length) {
+    return "";
+  }
+  return `
+    <section class="visual-mode-panel visual-mode-multiview" aria-label="多体位视觉结果">
+      <div class="visual-mode-head">
+        <strong>多体位视觉结果</strong>
+        <span>按体位查看</span>
+      </div>
+      <div class="target-overlay-grid">
+        ${items.map((item) => `
+          <button
+            class="target-overlay-card"
+            type="button"
+            data-lightbox-src="${escapeHtml(item.url)}"
+            data-lightbox-title="${escapeHtml(item.title)}"
+            data-lightbox-caption="${escapeHtml(item.caption)}"
+            data-lightbox-regions="${escapeHtml(JSON.stringify(item.regions))}"
+            data-view-hint="${escapeHtml(item.viewHint)}"
+            aria-label="放大查看 ${escapeHtml(item.title)}"
+          >
+            <img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.title)}" />
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.imageId)}</span>
+            </div>
+            <p>${escapeHtml(item.caption)}</p>
+          </button>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function buildMultiViewOutputItems(visualBundle = {}) {
+  const results = Array.isArray(visualBundle.per_image_results)
+    ? visualBundle.per_image_results
+    : Array.isArray(visualBundle.image_outputs?.per_image_outputs)
+      ? visualBundle.image_outputs.per_image_outputs
+      : [];
+  const findings = Array.isArray(visualBundle.findings) ? visualBundle.findings : [];
+  return results
+    .map((result, index) => {
+      const imageOutputs = result.image_outputs || result;
+      const url = outputImageUrl(imageOutputs.comparison_path)
+        || outputImageUrl(imageOutputs.vlm_annotation_path)
+        || outputImageUrl(imageOutputs.localization_overlay_path)
+        || outputImageUrl(imageOutputs.bbox_overlay_path)
+        || outputImageUrl(imageOutputs.overlay_path)
+        || outputImageUrl(imageOutputs.original_preview_path)
+        || outputImageUrl(imageOutputs.original_image_path || result.image_path);
+      const imageId = result.image_id || `image_${index + 1}`;
+      const viewHint = result.view_hint || "unknown";
+      const viewFindings = findings.filter((finding) => finding.image_id === imageId);
+      const findingNames = viewFindings
+        .map((finding) => finding.display_name || finding.target)
+        .filter(Boolean);
+      return {
+        url,
+        imageId,
+        viewHint,
+        title: imageViewLabel(viewHint),
+        caption: findingNames.length
+          ? `候选征象：${findingNames.join("、")}`
+          : "该体位的视觉候选结果。",
+        regions: viewFindings.flatMap((finding, regionOffset) => normalizeFindingRegions(finding, regionOffset)),
+      };
+    })
+    .filter((item) => item.url);
+}
+
 function renderCandidateLesionGallery(payload) {
   const candidates = buildCandidateLesionItems(payload);
   if (!candidates.length) {
@@ -1753,10 +2510,11 @@ function buildCandidateLesionItems(payload) {
         || outputImageUrl(imagePaths.overlay_path)
         || outputImageUrl(imagePaths.mask_path);
       const usageKind = usage.status || "candidate";
+      const baseTitle = item.display_name || item.target || "候选病灶";
       return {
         findingId: item.finding_id || `finding_${index + 1}`,
-        title: item.display_name || item.target || "候选病灶",
-        alt: `${item.display_name || item.target || "候选病灶"}分割对照图`,
+        title: candidateTitleWithView(baseTitle, item.view_label, item.view_hint),
+        alt: `${baseTitle}分割对照图`,
         previewUrl,
         usageKind,
         usageLabel: visualFactUsageLabel(usageKind),
@@ -1785,9 +2543,14 @@ function buildCandidateLesionItems(payload) {
       const maskPath = region.mask_path || finding.mask_path || measurements.mask_path;
       const previewUrl = outputImageUrl(comparisonPath) || outputImageUrl(overlayPath) || outputImageUrl(maskPath);
       const usageKind = usage.kind || "candidate";
+      const baseTitle = `${finding.display_name || finding.target || "候选病灶"}${regions.length > 1 ? ` #${regionIndex + 1}` : ""}`;
       return {
         findingId: finding.finding_id || `finding_${findingIndex + 1}`,
-        title: `${finding.display_name || finding.target || "候选病灶"}${regions.length > 1 ? ` #${regionIndex + 1}` : ""}`,
+        title: candidateTitleWithView(
+          baseTitle,
+          region.view_label || finding.view_label || usage.view_label,
+          region.view_hint || finding.view_hint || usage.view_hint,
+        ),
         alt: `${finding.display_name || finding.target || "候选病灶"}分割对照图`,
         previewUrl,
         usageKind,
@@ -1802,6 +2565,14 @@ function buildCandidateLesionItems(payload) {
       };
     });
   }).filter((candidate) => candidate.previewUrl || candidate.findingId);
+}
+
+function candidateTitleWithView(title, viewLabel, viewHint) {
+  const view = viewLabel || evidenceViewHintLabel(viewHint);
+  if (!view || String(title).startsWith(`${view}：`)) {
+    return title;
+  }
+  return `${view}：${title}`;
 }
 
 function getLesionGalleryItems(payload) {
@@ -1862,6 +2633,60 @@ function outputImageUrl(path) {
   return `/${path}`;
 }
 
+function imageViewLabel(viewHint) {
+  const labels = {
+    ap_pelvis: "骨盆正位/AP",
+    frog_lateral: "蛙式侧位",
+    lateral: "髋关节侧位/Lateral",
+    unknown: "未知体位",
+  };
+  return labels[viewHint] || viewHint || "未知体位";
+}
+
+function renderImageSeriesContext(bundle) {
+  const context = bundle.image_context || {};
+  const series = Array.isArray(context.image_series) ? context.image_series : [];
+  const coverage = context.view_coverage || {};
+  const providedViews = Array.isArray(coverage.provided_views) ? coverage.provided_views : [];
+  const missingViews = Array.isArray(coverage.missing_views) ? coverage.missing_views : [];
+  const expectedViews = Array.isArray(coverage.expected_views) ? coverage.expected_views : [];
+  if (!series.length && !providedViews.length && !expectedViews.length) {
+    return "";
+  }
+  const scopeLabel = coverage.analysis_scope === "multi_view_execution"
+    ? "多体位分析"
+    : coverage.analysis_scope === "primary_image_only"
+      ? "当前仅分析主图"
+      : coverage.analysis_scope === "single_image"
+        ? "单图分析"
+        : coverage.analysis_scope || "影像输入";
+  const scopeDescription = coverage.analysis_scope === "multi_view_execution"
+    ? "多张同一患者影像已分别进入视觉执行，并在 evidence bundle 中合并为同一次病例证据。"
+    : coverage.analysis_scope === "primary_image_only"
+      ? "多张同一患者影像会先进入病例上下文，当前视觉执行结果仍以主图为准。"
+      : "当前病例按单张影像执行视觉分析。";
+  const primaryImage = series.find((item) => item.image_id === context.primary_image_id) || series[0] || {};
+  const seriesRows = series.map((item, index) => (
+    `${item.image_id || `image_${index + 1}`}: ${imageViewLabel(item.view_hint)}`
+  ));
+  return `
+    <div class="trace-subblock">
+      <strong>多体位输入</strong>
+      <p class="muted">${escapeHtml(scopeLabel)}；${escapeHtml(scopeDescription)}</p>
+      ${renderMetricGrid({
+        image_count: series.length || undefined,
+        primary_image: primaryImage.image_id || context.primary_image_id,
+        primary_view: imageViewLabel(primaryImage.view_hint),
+        provided_views: providedViews.map(imageViewLabel).join(", "),
+        analyzed_views: (Array.isArray(coverage.analyzed_views) ? coverage.analyzed_views : []).map(imageViewLabel).join(", "),
+        expected_views: expectedViews.map(imageViewLabel).join(", "),
+        missing_views: missingViews.map(imageViewLabel).join(", ") || "无",
+      })}
+      ${seriesRows.length ? renderList(seriesRows) : ""}
+    </div>
+  `;
+}
+
 function renderVisualEvidenceBundle(bundle, options = {}) {
   if (!bundle || !Object.keys(bundle).length) {
     return options.compact ? "" : '<div class="trace-empty">暂无多征象视觉证据</div>';
@@ -1887,6 +2712,7 @@ function renderVisualEvidenceBundle(bundle, options = {}) {
         sum_area_ratio_in_image: numeric.sum_area_ratio_in_image,
         max_area_ratio_in_anatomy: numeric.max_area_ratio_in_anatomy,
       })}
+      ${options.compact ? "" : renderImageSeriesContext(bundle)}
       ${renderFindingList(findings)}
     </div>
   `;
@@ -2058,6 +2884,10 @@ function renderEvidenceBundle(payload) {
   }
   const image = bundle.image_evidence || {};
   const skill = bundle.skill_evidence || {};
+  const clinicalContext = bundle.clinical_context_evidence || {};
+  const differentialReasoning = bundle.differential_reasoning_evidence || {};
+  const quantitativeEvidence = bundle.quantitative_evidence || {};
+  const integratedReasoning = bundle.integrated_reasoning_evidence || {};
   const visualBundle = getVisualEvidenceBundle(payload);
   const segmentationResults = getSegmentationResults(payload);
   const visualToolPlan = getVisualToolPlan(payload);
@@ -2075,6 +2905,22 @@ function renderEvidenceBundle(payload) {
     <div class="trace-block">
       <h3>患者上下文</h3>
       ${renderMetricGrid(bundle.patient_context || {})}
+    </div>
+    <div class="trace-block">
+      <h3>临床上下文证据</h3>
+      ${renderClinicalContextEvidence(clinicalContext)}
+    </div>
+    <div class="trace-block">
+      <h3>鉴别推理证据</h3>
+      ${renderDifferentialReasoningEvidence(differentialReasoning)}
+    </div>
+    <div class="trace-block">
+      <h3>量化证据审计</h3>
+      ${renderQuantitativeEvidence(quantitativeEvidence)}
+    </div>
+    <div class="trace-block">
+      <h3>综合推理审计</h3>
+      ${renderIntegratedReasoningEvidence(integratedReasoning)}
     </div>
     <div class="trace-block">
       <h3>视觉测量</h3>
@@ -2110,6 +2956,99 @@ function renderEvidenceBundle(payload) {
         visual_protocol_status: skill.quality_control?.visual_protocol_status,
       })}
     </div>
+  `;
+}
+
+function renderQuantitativeEvidence(quantitativeEvidence) {
+  if (!quantitativeEvidence || !Object.keys(quantitativeEvidence).length) {
+    return '<div class="trace-empty">未提取量化证据</div>';
+  }
+  const measurements = Array.isArray(quantitativeEvidence.measurement_items)
+    ? quantitativeEvidence.measurement_items
+    : [];
+  const exploratory = Array.isArray(quantitativeEvidence.exploratory_features)
+    ? quantitativeEvidence.exploratory_features
+    : [];
+  return renderMetricGrid({
+    strong_quantitative_support_count: quantitativeEvidence.strong_quantitative_support_count || 0,
+    diagnosis_usable_level: quantitativeEvidence.diagnosis_usable_level || "not_usable_or_exploratory",
+    can_confirm_diagnosis: quantitativeEvidence.can_confirm_diagnosis === true,
+    measurement_items: measurements.length,
+    exploratory_features: exploratory.length,
+  });
+}
+
+function renderIntegratedReasoningEvidence(integratedReasoning) {
+  if (!integratedReasoning || !Object.keys(integratedReasoning).length) {
+    return '<div class="trace-empty">未提取综合推理证据</div>';
+  }
+  return renderMetricGrid({
+    target_disease: integratedReasoning.target_disease,
+    evidence_status: integratedReasoning.evidence_status,
+    diagnosis_usable_level: integratedReasoning.diagnosis_usable_level || "bounded_summary_only",
+    can_confirm_target_disease: integratedReasoning.can_confirm_target_disease === true,
+    can_create_new_evidence: integratedReasoning.can_create_new_evidence === true,
+    supported_targets: Array.isArray(integratedReasoning.supported_targets)
+      ? integratedReasoning.supported_targets.join("；")
+      : integratedReasoning.supported_targets,
+    missing_required_targets: Array.isArray(integratedReasoning.missing_required_targets)
+      ? integratedReasoning.missing_required_targets.join("；")
+      : integratedReasoning.missing_required_targets,
+    measurement_targets_not_usable: Array.isArray(integratedReasoning.measurement_targets_not_usable)
+      ? integratedReasoning.measurement_targets_not_usable.join("；")
+      : integratedReasoning.measurement_targets_not_usable,
+    exploratory_targets: Array.isArray(integratedReasoning.exploratory_targets)
+      ? integratedReasoning.exploratory_targets.join("；")
+      : integratedReasoning.exploratory_targets,
+    recommended_next_step: Array.isArray(integratedReasoning.recommended_next_step)
+      ? integratedReasoning.recommended_next_step.slice(0, 2).join("；")
+      : integratedReasoning.recommended_next_step,
+  });
+}
+
+function renderClinicalContextEvidence(clinicalContext) {
+  if (!clinicalContext || !Object.keys(clinicalContext).length) {
+    return '<div class="trace-empty">未提取临床上下文证据</div>';
+  }
+  return renderMetricGrid({
+    source: clinicalContext.source,
+    provided_risk_factors: Array.isArray(clinicalContext.provided_risk_factors)
+      ? clinicalContext.provided_risk_factors.join("；")
+      : clinicalContext.provided_risk_factors,
+    missing_clinical_context: Array.isArray(clinicalContext.missing_clinical_context)
+      ? clinicalContext.missing_clinical_context.join("；")
+      : clinicalContext.missing_clinical_context,
+    diagnosis_usable_level: clinicalContext.diagnosis_usable_level || "risk_modifier_only",
+    can_confirm_without_imaging: clinicalContext.can_confirm_without_imaging === true,
+  });
+}
+
+function renderDifferentialReasoningEvidence(differentialReasoning) {
+  if (!differentialReasoning || !Object.keys(differentialReasoning).length) {
+    return '<div class="trace-empty">未提取鉴别推理证据</div>';
+  }
+  const considerations = Array.isArray(differentialReasoning.considerations)
+    ? differentialReasoning.considerations
+    : [];
+  const summary = renderMetricGrid({
+    primary_hypothesis: differentialReasoning.primary_hypothesis,
+    routing_evidence_status: differentialReasoning.routing_evidence_status,
+    diagnosis_usable_level: differentialReasoning.diagnosis_usable_level || "bounded_differential_only",
+    can_replace_primary_diagnosis: differentialReasoning.can_replace_primary_diagnosis === true,
+  });
+  if (!considerations.length) {
+    return summary;
+  }
+  return `
+    ${summary}
+    <ul>
+      ${considerations.slice(0, 5).map((item) => `
+        <li>
+          <strong>${escapeHtml(item.display_name || humanDiseaseName(item.condition || ""))}</strong>
+          <span>${escapeHtml([item.status, item.reason].filter(Boolean).join("；"))}</span>
+        </li>
+      `).join("")}
+    </ul>
   `;
 }
 
@@ -2958,8 +3897,7 @@ function setQaPending(isPending) {
 
 function updateQaControls() {
   const analysisReady = Boolean(state.caseId);
-  const disabled = !analysisReady || state.casePending || state.qaPending;
-  elements.qaInput.disabled = !analysisReady || state.casePending;
+  elements.qaInput.disabled = !analysisReady || state.casePending || state.qaPending;
   elements.qaSubmitButton.disabled = !analysisReady || state.casePending;
   elements.qaSubmitButton.textContent = state.qaPending ? "撤回" : "发送";
   elements.qaInput.placeholder = analysisReady
@@ -2998,15 +3936,32 @@ function showCaseThinking(label) {
       Thinking... 等待 evidence bundle
     </div>
   `;
+  elements.alignmentView.innerHTML = `
+    <div class="trace-empty" aria-busy="true">
+      Thinking... 等待 alignment plan
+    </div>
+  `;
   elements.auditView.innerHTML = `
     <div class="trace-empty" aria-busy="true">
       Thinking... 等待 memory audit
     </div>
   `;
+  elements.lesionFigure.hidden = true;
+  elements.lesionFigure.innerHTML = "";
 }
 
 function renderCaseError(error, fallbackMessage = "病例分析失败") {
   const message = error?.message || fallbackMessage;
+  const structuredHtml = renderStructuredErrorPanel(error, fallbackMessage);
+  if (structuredHtml) {
+    elements.visualMeta.innerHTML = structuredHtml;
+    elements.reportView.innerHTML = structuredHtml;
+    elements.evidenceView.innerHTML = structuredHtml;
+    elements.auditView.innerHTML = structuredHtml;
+    elements.lesionFigure.hidden = true;
+    elements.lesionFigure.innerHTML = "";
+    return;
+  }
   const detailHtml = `
     <div class="trace-empty error-state" role="alert">
       <strong>${escapeHtml(fallbackMessage)}</strong>
@@ -3027,6 +3982,49 @@ function renderCaseError(error, fallbackMessage = "病例分析失败") {
   elements.lesionFigure.innerHTML = "";
 }
 
+function renderStructuredErrorPanel(error, fallbackMessage = "病例分析失败") {
+  const body = error?.apiPayload || {};
+  if (!body.error_type && !body.medsam2_configuration && !body.routing_decision) {
+    return "";
+  }
+  const title = body.error_type === "medsam2_not_ready"
+    ? "部署检查未通过"
+    : fallbackMessage;
+  const actionItems = Array.isArray(body.action_items) ? body.action_items : [];
+  const medsam2 = body.medsam2_configuration || {};
+  const routing = body.routing_decision || {};
+  const detail = body.error || error?.message || fallbackMessage;
+  return `
+    <div class="report-section readiness-error-panel error-state" role="alert">
+      <h3>${escapeHtml(title)}</h3>
+      <p>${escapeHtml(detail)}</p>
+      ${actionItems.length ? `
+        <h4>需要处理</h4>
+        ${renderList(actionItems)}
+      ` : ""}
+      ${Object.keys(routing).length ? `
+        <h4>本次分析路径</h4>
+        ${renderMetricGrid({
+          selected_skill: routing.selected_skill,
+          primary_hypothesis: routing.primary_hypothesis,
+          routing_evidence_status: routing.routing_evidence_status || routing.initial_evidence_status,
+        })}
+      ` : ""}
+      ${Object.keys(medsam2).length ? `
+        <h4>MedSAM2 配置</h4>
+        ${renderMetricGrid({
+          real_call_ready: medsam2.real_call_ready,
+          command_template_present: medsam2.command_template_present,
+          repo_path_exists: medsam2.repo_path_exists,
+          checkpoint_path_exists: medsam2.checkpoint_path_exists,
+          config_path_exists: medsam2.config_path_exists,
+        })}
+      ` : ""}
+      <p class="muted">这个提示已放在报告区；顶部状态栏只保留短提示，避免错误细节挤占界面。</p>
+    </div>
+  `;
+}
+
 function showQaThinking(question) {
   const item = document.createElement("div");
   item.className = "qa-item qa-pending";
@@ -3043,7 +4041,42 @@ function updateQaItem(item, question, answer, kind = "") {
   }
   item.className = kind ? `qa-item qa-${kind}` : "qa-item";
   item.removeAttribute("aria-busy");
-  item.innerHTML = `<strong>${escapeHtml(question)}</strong><p>${escapeHtml(answer || "-")}</p>`;
+  item.innerHTML = `<strong>${escapeHtml(question)}</strong>${renderPatientQaAnswer(answer)}`;
+}
+
+function renderPatientQaAnswer(answer) {
+  const paragraphs = patientQaAnswerParagraphs(answer);
+  if (!paragraphs.length) {
+    return '<div class="qa-answer"><p>-</p></div>';
+  }
+  return `
+    <div class="qa-answer">
+      ${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}
+    </div>
+  `;
+}
+
+function patientQaAnswerParagraphs(answer) {
+  const cleaned = String(answer || "")
+    .replace(/\*\*/g, "")
+    .replace(/__/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) {
+    return [];
+  }
+  const parts = cleaned
+    .split(/(?<=[。！？!?])\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (parts.length <= 1 && cleaned.length > 150) {
+    return cleaned
+      .split(/(?<=；|;)\s*/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 3);
+  }
+  return parts.slice(0, 3);
 }
 
 function ensureImageLightbox() {
@@ -3527,7 +4560,7 @@ elements.caseForm.addEventListener("submit", async (event) => {
     setStatus("分析完成", "ok");
   } catch (error) {
     renderCaseError(error, "病例分析失败");
-    setStatus(error.message, "error");
+    setStatus(shortApiErrorMessage(error, "病例分析失败"), "error");
   } finally {
     setCasePending(false);
   }

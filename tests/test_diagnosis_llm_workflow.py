@@ -580,6 +580,56 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             "not_diagnosis_usable",
         )
 
+    def test_diagnosis_agent_preserves_multiview_source_in_report_and_fact_usage(self):
+        visual_result = self._visual_result()
+        visual_result["visual_evidence"].update(
+            {
+                "collapse": False,
+                "joint_space_narrowing": False,
+                "texture_abnormality_score": 0.0,
+                "findings": [
+                    {
+                        "finding_id": "image_001_sclerotic_band",
+                        "image_id": "image_001",
+                        "view_hint": "ap_pelvis",
+                        "target": "sclerotic_band",
+                        "display_name": "硬化带",
+                        "status": "candidate_present",
+                        "diagnosis_usable": True,
+                        "independent_evidence": True,
+                    },
+                    {
+                        "finding_id": "image_002_cystic_change",
+                        "image_id": "image_002",
+                        "view_hint": "frog_lateral",
+                        "target": "cystic_change",
+                        "display_name": "囊性变",
+                        "status": "candidate_present",
+                        "diagnosis_usable": True,
+                        "independent_evidence": True,
+                    },
+                ],
+            }
+        )
+
+        report = DiagnosisDoctorAgent().generate_report(
+            case_id="case_multiview_fact_usage",
+            patient_info={"symptoms": ["髋关节疼痛"]},
+            visual_result=visual_result,
+        )
+
+        evidence_text = " ".join(report["影像依据"])
+        self.assertIn("骨盆正位/AP：硬化带", evidence_text)
+        self.assertIn("蛙式侧位：囊性变", evidence_text)
+        self.assertEqual(
+            [(fact["image_id"], fact["view_hint"]) for fact in report["visual_fact_usage"]["used"]],
+            [("image_001", "ap_pelvis"), ("image_002", "frog_lateral")],
+        )
+        self.assertIn(
+            "骨盆正位/AP：硬化带",
+            report["visual_fact_usage"]["used"][0]["summary_text"],
+        )
+
     def test_diagnosis_agent_rejects_llm_report_that_counts_overlapping_findings_as_independent(self):
         visual_result = self._visual_result()
         visual_result["visual_evidence"].update(

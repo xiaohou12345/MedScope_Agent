@@ -220,6 +220,16 @@ button:disabled {
   gap: 12px;
 }
 
+.debug-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 10px 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .actions,
 .qa-form {
   display: flex;
@@ -1393,6 +1403,15 @@ body.lightbox-open {
 
 .qa-item.qa-error p {
   color: var(--error);
+}
+
+.qa-answer {
+  display: grid;
+  gap: 6px;
+}
+
+.qa-answer p {
+  margin: 0;
 }
 
 .qa-item strong {

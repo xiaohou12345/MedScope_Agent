@@ -56,6 +56,7 @@ The lower layer behaves like a controlled runtime for medical evidence tasks:
 
 See:
 
+- [docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md](docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md)
 - [docs/architecture/boundaries.md](docs/architecture/boundaries.md)
 - [docs/DUAL_PATH_AGENT_FRAMEWORK.md](docs/DUAL_PATH_AGENT_FRAMEWORK.md)
 - [docs/AGENT_FLOW.zh-CN.md](docs/AGENT_FLOW.zh-CN.md)
@@ -155,6 +156,17 @@ Health check:
 curl http://127.0.0.1:8000/health
 ```
 
+Deployment readiness check:
+
+```bash
+curl http://127.0.0.1:8000/v1/readiness
+```
+
+This endpoint performs offline checks only. It reports the active model route,
+whether the expected API key environment variable is present, MedSAM2 runner
+configuration status, writable output/upload directories, and Python runtime
+version. It does not call the model API and does not return secret values.
+
 ## CLI Usage
 
 Run the stable service entry point:
@@ -197,6 +209,7 @@ curl -X POST http://127.0.0.1:8000/v1/medscope \
 Other useful routes:
 
 - `GET /health`
+- `GET /v1/readiness`
 - `POST /v1/upload?filename=image.png`
 - `GET /v1/skills`
 - `GET /v1/skills/{skill_key}`
