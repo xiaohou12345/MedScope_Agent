@@ -279,6 +279,45 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
             ["ap_pelvis", "lateral"],
         )
 
+    def test_service_accepts_real_vlm_validation_mode_for_fhn_multiview(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        result = service.handle_request(
+            {
+                "patient_message": "左髋疼痛，上传正位和侧位 X 光，请检查候选征象",
+                "image_paths": [
+                    "output/real/onfh_pair/ap_detail_idiopathic_onfh.jpg",
+                    "output/real/onfh_pair/lateral_idiopathic_onfh.jpg",
+                ],
+                "patient_info": {"symptoms": ["左髋疼痛"]},
+                "vision_mode": "real_vlm_validation",
+            }
+        )
+
+        call = fake_doctor.calls[0]
+        self.assertEqual(call["image_path"], "output/real/onfh_pair/ap_detail_idiopathic_onfh.jpg")
+        self.assertEqual(call["disease_key"], "femoral_head_necrosis")
+        self.assertEqual(call["vision_mode"], "real_vlm_validation")
+        self.assertEqual(
+            [item["view_hint"] for item in call["patient_info"]["image_series"]],
+            ["ap_pelvis", "lateral"],
+        )
+        self.assertEqual(result["routing_decision"]["selected_vision_mode"], "real_vlm_validation")
+        self.assertEqual(result["routing_decision"]["source"], "explicit")
+
+    def test_service_rejects_unknown_explicit_vision_mode(self):
+        service = MedScopeService(gaodoctor_agent=FakeGaoDoctor())
+
+        with self.assertRaisesRegex(ValueError, "unsupported vision_mode"):
+            service.handle_request(
+                {
+                    "patient_message": "左髋疼痛，上传 X 光",
+                    "image_path": "output/fake/uploads/patient_ap_pelvis.png",
+                    "vision_mode": "typo_vlm_mode",
+                }
+            )
+
     def test_service_routes_qa_payload_through_same_front_door(self):
         fake_doctor = FakeGaoDoctor()
         service = MedScopeService(gaodoctor_agent=fake_doctor)

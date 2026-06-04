@@ -49,6 +49,13 @@ class MedScopeReadinessError(RuntimeError):
 class MedScopeService:
     """Stable boundary for CLI, API, or frontend callers."""
 
+    SUPPORTED_VISION_MODES = {
+        "ground_truth",
+        "medsam2",
+        "no_mask_skill",
+        "real_vlm_validation",
+    }
+
     def __init__(
         self,
         gaodoctor_agent: Any | None = None,
@@ -239,6 +246,8 @@ class MedScopeService:
     def _build_routing_decision(self, payload: dict[str, Any]) -> dict[str, Any]:
         explicit_disease_key = payload.get("disease_key")
         explicit_vision_mode = payload.get("vision_mode")
+        if explicit_vision_mode:
+            self._validate_vision_mode(str(explicit_vision_mode))
         matched_clues = self._match_supported_clues(payload)
         disease_key = explicit_disease_key or self._infer_disease_key(payload)
         vision_mode = explicit_vision_mode or self._infer_vision_mode(
@@ -296,6 +305,13 @@ class MedScopeService:
             routing_evidence_status=initial_evidence_status,
             skill_builder_action=skill_builder_action,
         ).to_dict()
+
+    def _validate_vision_mode(self, vision_mode: str) -> None:
+        if vision_mode not in self.SUPPORTED_VISION_MODES:
+            supported = ", ".join(sorted(self.SUPPORTED_VISION_MODES))
+            raise ValueError(
+                f"unsupported vision_mode: {vision_mode}. Supported modes: {supported}"
+            )
 
     def _skill_builder_action_for(self, disease_key: str | None) -> tuple[str, str]:
         if not disease_key:
