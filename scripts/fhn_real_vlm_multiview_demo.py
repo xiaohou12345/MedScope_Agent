@@ -232,7 +232,7 @@ def _load_dotenv_local(path: Path = Path(".env.local")) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip("'\"")
-        if key and key not in os.environ:
+        if key and key.startswith(("DMX_", "KY_")) and key not in os.environ:
             os.environ[key] = value
 
 

@@ -106,6 +106,35 @@ class FhnRealVlmMultiViewDemoTest(unittest.TestCase):
             self.assertEqual(result["readiness"]["status"], "ready")
             self.assertNotIn("sk-test-secret", json.dumps(result, ensure_ascii=False))
 
+    def test_demo_dry_run_does_not_load_medsam2_dotenv_values(self):
+        old_cwd = Path.cwd()
+        with TemporaryDirectory() as tmpdir, patch.dict("os.environ", {}, clear=True):
+            tmp_path = Path(tmpdir)
+            (tmp_path / ".env.local").write_text(
+                "\n".join(
+                    [
+                        "DMX_API_KEY=sk-test-secret",
+                        "MEDSAM2_REPO_PATH=/tmp/medsam2",
+                        "MEDSAM2_COMMAND_TEMPLATE=python infer.py",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            os.chdir(tmp_path)
+            try:
+                result = run_demo(
+                    ap_image="/tmp/ap.png",
+                    lateral_image="/tmp/lateral.png",
+                    output_dir=tmp_path / "demo",
+                    dry_run=True,
+                )
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertTrue(result["readiness"]["api_key_present"])
+            self.assertNotIn("MEDSAM2_REPO_PATH", os.environ)
+            self.assertNotIn("MEDSAM2_COMMAND_TEMPLATE", os.environ)
+
     def test_demo_real_run_writes_summary_evidence_report_and_audit(self):
         with TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir) / "demo"
