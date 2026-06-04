@@ -57,6 +57,7 @@ The lower layer behaves like a controlled runtime for medical evidence tasks:
 See:
 
 - [docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md](docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md)
+- [docs/FHN_REAL_VLM_VALIDATION_20260604.md](docs/FHN_REAL_VLM_VALIDATION_20260604.md)
 - [docs/architecture/boundaries.md](docs/architecture/boundaries.md)
 - [docs/DUAL_PATH_AGENT_FRAMEWORK.md](docs/DUAL_PATH_AGENT_FRAMEWORK.md)
 - [docs/AGENT_FLOW.zh-CN.md](docs/AGENT_FLOW.zh-CN.md)
@@ -274,6 +275,16 @@ python -m scripts.no_mask_skill_visual_pipeline_demo \
   --message "evaluate femoral head necrosis"
 ```
 
+FHN real VLM multi-view validation dry run:
+
+```bash
+python -m scripts.fhn_real_vlm_multiview_demo \
+  --ap-image /path/to/ap_pelvis.png \
+  --lateral-image /path/to/lateral.png \
+  --output-dir output/real/fhn_real_vlm_validation_demo \
+  --dry-run
+```
+
 BraTS visual test line:
 
 ```bash
@@ -291,7 +302,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 328 tests in 71.407s
+Ran 405 tests in 65.905s
 OK
 ```
 
