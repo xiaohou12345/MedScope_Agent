@@ -6025,6 +6025,43 @@ python -m unittest discover -v
 - real VLM 输出仍只能作为候选视觉证据，不能宣称 X 光自动确诊股骨头坏死。
 - MedSAM2 / 专病分割质量仍是后续独立验证任务，不在本轮收敛中伪装完成。
 
+### 2026-06-04 依赖入口与新环境安装说明补齐
+
+本轮目标：README 的下一步明确要求补 `requirements.txt` 或 `pyproject.toml`，否则别人 clone 仓库后不知道如何安装 core / vision / dev 依赖。当前先补标准 `pyproject.toml`，不引入锁文件，也不把外部 MedSAM2/PyTorch 环境伪装成仓库内依赖。
+
+新增/调整：
+
+- 新增 `pyproject.toml`
+  - `requires-python = ">=3.10"`
+  - core dependency：`Pillow`
+  - optional dependency groups：
+    - `vision`：`numpy`、`nibabel`
+    - `dev`：当前完整本地测试/demo 需要的 `numpy`、`nibabel`
+    - `medsam2-wrapper`：仅包含 wrapper 侧需要的 `numpy`、`nibabel`
+  - package discovery 覆盖 `agents`、`api`、`contracts`、`llm`、`memory`、`scripts`、`skill_editor`、`tools`
+- 更新 `README.md` / `README.zh-CN.md`
+  - 安装方式改为 `python -m pip install -e .`
+  - 视觉流程改为 `python -m pip install -e ".[vision]"`
+  - 完整本地测试/demo 改为 `python -m pip install -e ".[dev]"`
+  - 测试快照同步为 `409 tests`
+  - 下一步列表移除“补 pyproject”，改为公开安全样例、视觉后端接口、benchmark、锁文件等后续任务
+
+验证：
+
+```bash
+python -c "import tomllib; data=tomllib.load(open('pyproject.toml','rb')); print(data['project']['name'], data['project']['requires-python'], sorted(data['project']['optional-dependencies']))"
+rg -n 'There is currently no committed|还没有提交 `requirements|Ran 405 tests|补 `requirements|Add `requirements' README.md README.zh-CN.md
+git diff --check
+python -m pip install -e . --no-deps --dry-run
+```
+
+结果：
+
+- `pyproject.toml` 可被标准库 `tomllib` 正常解析。
+- README 中旧的“没有 requirements/pyproject”和 `405 tests` 文案已无残留。
+- `git diff --check` 通过。
+- `pip install -e . --no-deps --dry-run` 可生成 editable metadata，并显示 `Would install medscope-agent-0.1.0`。
+
 ### 2026-06-04 FHN Evidence Protocol MVP 收敛交付入口补齐
 
 本轮目标：上一轮已经把 FHN 多图 Evidence Protocol MVP 的阶段报告、交付清单和本地演示材料整理到 `output/real`，但 `output/` 被 `.gitignore` 忽略，直接同步 GitHub 时这些入口文档不会被提交。因此需要补一个可跟踪的阶段入口，保证项目首页能看见当前阶段成果。

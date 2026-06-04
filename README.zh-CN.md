@@ -112,15 +112,26 @@ web/          静态前端
 建议环境：
 
 - Python 3.10+
-- Pillow
-- NumPy
-- nibabel，用于 NIfTI/BraTS 流程
-- 可选：PyTorch + 外部 MedSAM2 仓库，用于真实分割推理
+- 核心安装：Pillow
+- 可选视觉流程：NumPy 和 nibabel
+- 可选真实分割：PyTorch + 外部 MedSAM2 仓库
 
-当前仓库还没有提交 `requirements.txt` 或 `pyproject.toml`，这是后续需要补齐的工程项。可以先按需要安装：
+本地开发建议用 editable install：
 
 ```bash
-python -m pip install pillow numpy nibabel
+python -m pip install -e .
+```
+
+如果要运行 NIfTI/BraTS、图像指标和视觉 demo，安装 vision 依赖：
+
+```bash
+python -m pip install -e ".[vision]"
+```
+
+如果要运行完整本地测试和 demo：
+
+```bash
+python -m pip install -e ".[dev]"
 ```
 
 ## 模型 API 配置
@@ -296,7 +307,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 405 tests in 65.905s
+Ran 409 tests in 57.523s
 OK
 ```
 
@@ -320,16 +331,16 @@ node --check web/app.js
 
 - 视觉分割质量还没有真正收敛。框架能路由和审计 MedSAM2/VLM，但病灶是否准确仍需要疾病数据集和模型验证。
 - 真实数据和生成结果大量在 `output/`、`data/external/`，这些不会随 GitHub 同步，新环境复现实验还不够方便。
-- 还没有依赖锁文件，环境复现需要补 `requirements.txt` 或 `pyproject.toml`。
+- 依赖分组已经写入 `pyproject.toml`；但还没有锁文件，所以跨机器精确复现还没有 pin 到版本级别。
 - Skill 自动升级被正确阻断，但后续如果要做 self-evolving，需要严格保留人工审核和 validation gate。
 - 当前系统是科研 demo，不是临床验证系统。
 
 建议下一步：
 
-1. 补 `requirements.txt` 或 `pyproject.toml`，区分 core / vision / medsam2 / dev 依赖。
-2. 准备一组可以公开提交的小型安全样例，让新 clone 的仓库能直接跑通主 demo。
-3. 把视觉后端接口进一步标准化：VLM-only、VLM+MedSAM2、专病分割模型三种模式分清楚。
-4. 单独建立视觉分割 benchmark，不要只依赖前端效果图判断。
+1. 准备一组可以公开提交的小型安全样例，让新 clone 的仓库能直接跑通主 demo。
+2. 把视觉后端接口进一步标准化：VLM-only、VLM+MedSAM2、专病分割模型三种模式分清楚。
+3. 单独建立视觉分割 benchmark，不要只依赖前端效果图判断。
+4. 如果进入固定部署，再增加锁文件或 pinned environment export。
 5. 保持 clinical skill 更新必须经过人工审核和验证门。
 
 ## 医疗安全和隐私

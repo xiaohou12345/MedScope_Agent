@@ -102,17 +102,26 @@ The `.yaml` extension is used for skill files, but the current files are JSON-co
 Recommended environment:
 
 - Python 3.10+
-- Pillow
-- NumPy
-- nibabel for NIfTI/BraTS workflows
-- Optional: PyTorch and an external MedSAM2 checkout for real segmentation inference
+- Core install: Pillow
+- Optional vision workflows: NumPy and nibabel
+- Optional real segmentation: PyTorch and an external MedSAM2 checkout
 
-There is currently no committed `requirements.txt`; install the needed packages for the workflow you plan to run. The core API and many tests use only the standard library plus Pillow.
-
-Example:
+Install the project in editable mode for local development:
 
 ```bash
-python -m pip install pillow numpy nibabel
+python -m pip install -e .
+```
+
+Install the optional vision dependencies for NIfTI/BraTS, image metrics, and demo scripts:
+
+```bash
+python -m pip install -e ".[vision]"
+```
+
+For the full local test/demo environment:
+
+```bash
+python -m pip install -e ".[dev]"
 ```
 
 ## Model and Runtime Configuration
@@ -302,7 +311,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 405 tests in 65.905s
+Ran 409 tests in 57.523s
 OK
 ```
 
@@ -326,16 +335,16 @@ Important limitations:
 
 - Real segmentation quality is not solved by the framework itself. MedSAM2 and VLM localization are routed and audited, but disease-specific segmentation quality still needs model validation.
 - Several demos depend on ignored local artifacts under `output/` or `data/external/`.
-- There is no dependency lockfile yet, so fresh environment setup is less reproducible than it should be.
+- Dependency groups are now declared in `pyproject.toml`; there is still no lockfile, so exact reproducibility across machines is not pinned.
 - Skill review and candidate promotion are intentionally blocked from updating formal skills automatically.
 - The project is a research prototype, not a clinically validated diagnostic system.
 
 Recommended next engineering steps:
 
-1. Add `requirements.txt` or `pyproject.toml` with core and optional dependency groups.
-2. Add small public-safe sample assets or scripted fixtures so a fresh clone can run the main demo without private local data.
-3. Formalize the visual model backend interface for VLM-only, VLM+MedSAM2, and specialist segmenters.
-4. Add a benchmark folder for disease-specific segmentation validation, separate from the web demo.
+1. Add small public-safe sample assets or scripted fixtures so a fresh clone can run the main demo without private local data.
+2. Formalize the visual model backend interface for VLM-only, VLM+MedSAM2, and specialist segmenters.
+3. Add a benchmark folder for disease-specific segmentation validation, separate from the web demo.
+4. Add a lockfile or pinned environment export if exact deployment reproducibility becomes necessary.
 5. Keep all clinical rule updates behind review and validation gates.
 
 ## Safety and Privacy

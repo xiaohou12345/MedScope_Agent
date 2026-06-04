@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medscope-agent"
+version = "0.1.0"
+description = "Guideline-aware multimodal medical evidence agent prototype."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+vision = [
+    "numpy>=1.24",
+    "nibabel>=5.0",
+]
+dev = [
+    "numpy>=1.24",
+    "nibabel>=5.0",
+]
+medsam2-wrapper = [
+    "numpy>=1.24",
+    "nibabel>=5.0",
+]
+
+[tool.setuptools]
+py-modules = ["app"]
+
+[tool.setuptools.packages.find]
+include = [
+    "agents*",
+    "api*",
+    "contracts*",
+    "llm*",
+    "memory*",
+    "scripts*",
+    "skill_editor*",
+    "tools*",
+]
+
+[tool.setuptools.package-data]
+tools = ["*.yaml"]
+skill_editor = ["*.html", "*.css", "*.js"]
