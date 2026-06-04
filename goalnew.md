@@ -9336,6 +9336,47 @@ python -m unittest discover -v
 
 结果：`425` 个测试通过，耗时 `63.011s`。
 
+### 2026-06-05 Public-safe MVP Suite 补齐
+
+本轮目标：README 已把下一步收敛到公开安全 fixture 覆盖上传、QA 和 memory audit。上一阶段只有 `prepare_public_demo_fixture()` 生成合成图和 payload，还没有一条可执行 suite 产出 service response、evidence bundle、memory audit 和 follow-up QA artifact。
+
+新增/调整：
+
+- `scripts/prepare_public_demo_fixture.py`
+  - 新增 `run_public_safe_demo_suite()`
+  - 新增 CLI 参数 `--suite`
+  - suite 会生成公开安全合成图，运行 `MedScopeService`，写出：
+    - `public_safe_response.json`
+    - `public_safe_evidence_bundle.json`
+    - `public_safe_memory_audit.json`
+    - `public_safe_qa_response.json`
+    - `public_safe_demo_summary.json`
+    - `public_safe_demo_summary.md`
+  - 内置 `PublicSafeNoMaskVisualRunner`，只生成 deterministic candidate evidence，不调用真实 VLM/API/MedSAM2，不使用真实 FHN 数据或 mask。
+- `docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md`
+  - 增加首选演示命令：
+    `python -m scripts.prepare_public_demo_fixture --suite --output-dir output/fake/public_safe_demo_suite`
+- README / 中文 README
+  - 将公开安全 demo 从“只生成 fixture”升级为“public-safe MVP suite”，明确产出 response、evidence bundle、memory audit 和 follow-up QA。
+- `tests/test_public_demo_fixture.py`
+  - 覆盖 suite 函数和 CLI。
+
+验证：
+
+```bash
+python -m unittest tests.test_public_demo_fixture tests.test_current_mvp_demo_runbook -v
+```
+
+结果：相关测试通过；public fixture 测试 `3` 个通过，runbook 测试 `2` 个通过。
+
+全量回归：
+
+```bash
+python -m unittest discover -v
+```
+
+结果：`427` 个测试通过，耗时 `62.401s`。
+
 补充验证：
 
 ```bash

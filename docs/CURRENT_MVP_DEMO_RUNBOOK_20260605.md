@@ -26,6 +26,18 @@ when those data are available.
 
 ## Public-Safe Fixture
 
+Run the public-safe MVP suite when you want one command that covers upload,
+automatic skill routing, visual evidence, diagnosis report, evidence bundle,
+memory audit, and follow-up QA:
+
+```bash
+python -m scripts.prepare_public_demo_fixture --suite \
+  --output-dir output/fake/public_safe_demo_suite
+```
+
+This suite uses a deterministic local visual runner, so it does not require a
+real VLM API, MedSAM2 backend, real FHN data, or real masks.
+
 Generate a public-safe synthetic input that can be committed or regenerated
 without private DICOM, NIfTI, patient data, or ignored `output/real` artifacts:
 

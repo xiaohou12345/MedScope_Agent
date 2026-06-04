@@ -13,6 +13,7 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
         text = RUNBOOK.read_text(encoding="utf-8")
         required_phrases = [
             "Current MVP Demo Runbook",
+            "python -m scripts.prepare_public_demo_fixture --suite",
             "python -m scripts.end_to_end_demo --suite",
             "python -m scripts.prepare_public_demo_fixture",
             "upload",

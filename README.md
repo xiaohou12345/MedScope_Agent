@@ -278,17 +278,24 @@ skill, then writes:
 - `中文结论.md`: Chinese conclusion, level explanations, and boundary versus
   the MedScope Agent pipeline.
 
-Public-safe synthetic fixture for fresh clones:
+Public-safe MVP suite for fresh clones:
+
+```bash
+python -m scripts.prepare_public_demo_fixture --suite \
+  --output-dir output/fake/public_safe_demo_suite
+```
+
+Generate only the public-safe synthetic fixture:
 
 ```bash
 python -m scripts.prepare_public_demo_fixture \
   --output-dir output/fake/public_demo_fixture
 ```
 
-This writes a synthetic, non-patient hip X-ray-like PNG and a manifest with a
-ready-to-send `service_payload`. Use it to test upload, routing, and the FHN
-skill path without private DICOM/NIfTI files. It is not a clinical image or a
-segmentation benchmark.
+The suite writes a synthetic, non-patient hip X-ray-like PNG and deterministic
+service artifacts for response, evidence bundle, memory audit, and follow-up QA.
+Use it to test upload, routing, and the FHN skill path without private
+DICOM/NIfTI files. It is not a clinical image or a segmentation benchmark.
 
 No-mask visual pipeline:
 
@@ -325,7 +332,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 425 tests in 63.011s
+Ran 427 tests in 62.401s
 OK
 ```
 
