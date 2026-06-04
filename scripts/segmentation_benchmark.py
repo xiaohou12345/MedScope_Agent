@@ -109,6 +109,12 @@ def _evaluate_case(
     elif not prediction:
         metric_status = "missing_prediction_mask"
         limitations.append("segmentation metrics require prediction_mask_path")
+    elif not Path(str(reference)).exists():
+        metric_status = "missing_reference_file"
+        limitations.append("reference_mask_path does not exist")
+    elif not Path(str(prediction)).exists():
+        metric_status = "missing_prediction_file"
+        limitations.append("prediction_mask_path does not exist")
     else:
         metric_status = "metric_ready"
         metrics = evaluator.evaluate(
@@ -173,6 +179,12 @@ def _aggregate(cases: list[dict[str, Any]]) -> dict[str, int]:
         ),
         "missing_prediction_mask_count": sum(
             1 for case in cases if case.get("metric_status") == "missing_prediction_mask"
+        ),
+        "missing_reference_file_count": sum(
+            1 for case in cases if case.get("metric_status") == "missing_reference_file"
+        ),
+        "missing_prediction_file_count": sum(
+            1 for case in cases if case.get("metric_status") == "missing_prediction_file"
         ),
         "metric_pass_case_count": sum(
             1 for case in cases if (case.get("quality_gate") or {}).get("status") == "pass"
@@ -241,6 +253,8 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         f"- `metric_pass_case_count`: `{payload.get('aggregate', {}).get('metric_pass_case_count')}`",
         f"- `metric_fail_case_count`: `{payload.get('aggregate', {}).get('metric_fail_case_count')}`",
         f"- `missing_reference_mask_count`: `{payload.get('aggregate', {}).get('missing_reference_mask_count')}`",
+        f"- `missing_reference_file_count`: `{payload.get('aggregate', {}).get('missing_reference_file_count')}`",
+        f"- `missing_prediction_file_count`: `{payload.get('aggregate', {}).get('missing_prediction_file_count')}`",
         "",
         "| case_id | disease | modality | backend | metric_status | quality_gate | diagnosis_allowed |",
         "| --- | --- | --- | --- | --- | --- | --- |",

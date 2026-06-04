@@ -6193,7 +6193,7 @@ python -m scripts.segmentation_benchmark --manifest benchmarks/segmentation/femo
 python -m unittest discover -v
 ```
 
-结果：`419` 个测试通过，耗时 `62.555s`。
+结果：`420` 个测试通过，耗时 `61.843s`。
 
 当前边界：
 
@@ -6241,7 +6241,7 @@ python -m unittest tests.test_segmentation_benchmark -v
 python -m unittest discover -v
 ```
 
-结果：`419` 个测试通过，耗时 `62.555s`。
+结果：`420` 个测试通过，耗时 `61.843s`。
 
 ### 2026-06-04 Segmentation Benchmark Binary Mask Evaluator 补齐
 
@@ -6289,7 +6289,50 @@ python -m scripts.segmentation_benchmark --manifest benchmarks/segmentation/femo
 python -m unittest discover -v
 ```
 
-结果：`419` 个测试通过，耗时 `62.555s`。
+结果：`420` 个测试通过，耗时 `61.843s`。
+
+### 2026-06-04 Segmentation Benchmark Mask Path Validation 补齐
+
+本轮目标：真实标注 benchmark case 接入时，manifest 里如果写了 `prediction_mask_path` / `reference_mask_path`，但文件实际不存在，runner 不应该等到底层 evaluator 抛错，也不能把它当作 metric-ready。需要先在 benchmark 层给出可审计状态。
+
+新增/调整：
+
+- `scripts/segmentation_benchmark.py`
+  - `reference_mask_path` 不存在时输出 `metric_status = missing_reference_file`
+  - `prediction_mask_path` 不存在时输出 `metric_status = missing_prediction_file`
+  - 缺文件时不调用 evaluator
+  - aggregate 增加 `missing_reference_file_count` / `missing_prediction_file_count`
+  - markdown 报告展示缺文件计数
+- `tests/test_segmentation_benchmark.py`
+  - 增加缺文件测试，验证 evaluator 不会被调用
+  - 原 metric-ready fake evaluator 测试改为使用真实存在的临时 mask 路径
+- `benchmarks/segmentation/README.md`
+  - 明确 metric-ready case 的 mask 路径必须存在。
+
+TDD 验证：
+
+```bash
+python -m unittest tests.test_segmentation_benchmark.SegmentationBenchmarkTest.test_manifest_reports_missing_mask_files_before_calling_evaluator -v
+```
+
+RED 结果：测试先因缺文件时仍调用 evaluator 而失败。
+
+GREEN / CLI 验证：
+
+```bash
+python -m unittest tests.test_segmentation_benchmark -v
+python -m scripts.segmentation_benchmark --manifest benchmarks/segmentation/femoral_head_necrosis/public_fixture_manifest.json --output-dir /tmp/medscope_path_validation_benchmark_check --prepare-fixtures
+```
+
+结果：benchmark 测试 `6` 个通过；默认 smoke fixture CLI 正常输出，并新增缺文件计数字段，当前均为 `0`。
+
+全量回归：
+
+```bash
+python -m unittest discover -v
+```
+
+结果：`420` 个测试通过，耗时 `61.843s`。
 
 ### 2026-06-04 FHN Evidence Protocol MVP 收敛交付入口补齐
 

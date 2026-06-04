@@ -86,6 +86,11 @@ class SegmentationBenchmarkTest(unittest.TestCase):
                 return {"lesion_dice": 0.72, "lesion_iou": 0.56}
 
         with TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            prediction_path = tmp / "prediction.png"
+            reference_path = tmp / "reference.png"
+            prediction_path.write_text("fake prediction", encoding="utf-8")
+            reference_path.write_text("fake reference", encoding="utf-8")
             manifest_path = Path(tmpdir) / "metric_ready_manifest.json"
             manifest_path.write_text(
                 json.dumps(
@@ -110,8 +115,8 @@ class SegmentationBenchmarkTest(unittest.TestCase):
                                 "backend_type": "vlm_plus_segmenter",
                                 "benchmark_role": "metric_ready_fixture",
                                 "image_path": "benchmarks/segmentation/femoral_head_necrosis/images/case.png",
-                                "prediction_mask_path": "benchmarks/segmentation/femoral_head_necrosis/prediction/case_mask.png",
-                                "reference_mask_path": "benchmarks/segmentation/femoral_head_necrosis/reference/case_mask.png",
+                                "prediction_mask_path": str(prediction_path),
+                                "reference_mask_path": str(reference_path),
                             }
                         ],
                     },
@@ -141,6 +146,51 @@ class SegmentationBenchmarkTest(unittest.TestCase):
             self.assertIn("metric_fail_case_count", markdown)
             self.assertIn("| metric_ready_case |", markdown)
             self.assertIn("| fail |", markdown)
+
+    def test_manifest_reports_missing_mask_files_before_calling_evaluator(self):
+        class RaisingEvaluator:
+            def evaluate(self, prediction_mask_path, reference_mask_path):
+                raise AssertionError("evaluator should not run for missing mask files")
+
+        with TemporaryDirectory() as tmpdir:
+            manifest_path = Path(tmpdir) / "missing_file_manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "segmentation_benchmark_manifest.v1",
+                        "benchmark_id": "fhn_missing_files_fixture",
+                        "evaluator_type": "binary_mask",
+                        "cases": [
+                            {
+                                "case_id": "missing_reference_file_case",
+                                "disease_key": "femoral_head_necrosis",
+                                "modality": "X-ray",
+                                "prediction_mask_path": str(Path(tmpdir) / "prediction.png"),
+                                "reference_mask_path": str(Path(tmpdir) / "reference.png"),
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_segmentation_benchmark(
+                manifest_path=manifest_path,
+                output_dir=Path(tmpdir) / "benchmark",
+                evaluator=RaisingEvaluator(),
+            )
+
+            case = result["cases"][0]
+            self.assertEqual(case["metric_status"], "missing_reference_file")
+            self.assertIsNone(case["metrics"])
+            self.assertEqual(result["aggregate"]["missing_reference_file_count"], 1)
+            self.assertEqual(result["aggregate"]["metric_ready_case_count"], 0)
+            self.assertIn("reference_mask_path does not exist", case["limitations"])
+            markdown = Path(result["output_paths"]["markdown_path"]).read_text(encoding="utf-8")
+            self.assertIn("missing_reference_file_count", markdown)
+            self.assertIn("missing_reference_file", markdown)
 
     def test_manifest_can_select_binary_mask_evaluator_for_fhn_png_masks(self):
         with TemporaryDirectory() as tmpdir:

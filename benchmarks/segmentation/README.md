@@ -25,6 +25,10 @@ For FHN X-ray cases, use `evaluator_type: binary_mask` unless a disease-specific
 evaluator is added and validated separately. The legacy `brats_regions`
 evaluator is only for BraTS-style multi-label tumor masks.
 
+Metric-ready cases must point to existing `prediction_mask_path` and
+`reference_mask_path` files. Missing files are reported as
+`missing_prediction_file` or `missing_reference_file` before metric evaluation.
+
 Run:
 
 ```bash
