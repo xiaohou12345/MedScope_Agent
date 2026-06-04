@@ -6,6 +6,7 @@ web demo and frontend screenshots.
 Current scope:
 
 - Manifest-driven benchmark readiness checks.
+- `binary_mask` evaluator for generic 2D lesion mask Dice/IoU.
 - Manifest-level metric gates for metric-ready cases.
 - Explicit separation between public-safe generated fixtures and real labeled
   benchmark data.
@@ -19,6 +20,10 @@ reference mask and therefore does not produce Dice/IoU metrics.
 When real labeled cases are added, define `metric_gates` in the manifest. The
 runner will report metric pass/fail counts, but benchmark results still cannot
 upgrade diagnosis output or update formal skills automatically.
+
+For FHN X-ray cases, use `evaluator_type: binary_mask` unless a disease-specific
+evaluator is added and validated separately. The legacy `brats_regions`
+evaluator is only for BraTS-style multi-label tumor masks.
 
 Run:
 

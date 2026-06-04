@@ -6193,7 +6193,7 @@ python -m scripts.segmentation_benchmark --manifest benchmarks/segmentation/femo
 python -m unittest discover -v
 ```
 
-结果：`415` 个测试通过，耗时 `63.128s`。
+结果：`419` 个测试通过，耗时 `62.555s`。
 
 当前边界：
 
@@ -6241,7 +6241,55 @@ python -m unittest tests.test_segmentation_benchmark -v
 python -m unittest discover -v
 ```
 
-结果：`415` 个测试通过，耗时 `63.128s`。
+结果：`419` 个测试通过，耗时 `62.555s`。
+
+### 2026-06-04 Segmentation Benchmark Binary Mask Evaluator 补齐
+
+本轮目标：上一轮 benchmark 已有 readiness gate 和 metric gate，但 FHN X-ray benchmark 不能长期复用 BraTS 的 `whole_tumor_*` 多标签脑肿瘤指标。本轮补齐通用 2D binary lesion mask evaluator，让真实 FHN PNG mask case 后续能直接算 `lesion_dice` / `lesion_iou`。
+
+新增/调整：
+
+- 新增 `tools/binary_segmentation_evaluation_tool.py`
+  - 读取 2D binary mask PNG
+  - 计算 `lesion_dice`、`lesion_iou`
+  - 计算 prediction/reference/intersection/union/FP/FN 像素数
+  - mask 尺寸不一致时显式报错，不自动 resize
+- `scripts/segmentation_benchmark.py`
+  - 支持 manifest `evaluator_type`
+  - `binary_mask` 走通用二值 mask evaluator
+  - `brats_regions` 保留给 BraTS-style 多标签肿瘤 mask
+  - 未知 evaluator type 显式报错，不静默 fallback
+  - result payload 输出 `evaluator_type`
+- `benchmarks/segmentation/femoral_head_necrosis/public_fixture_manifest.json`
+  - 声明 `evaluator_type = binary_mask`
+- 新增/扩展测试：
+  - `tests/test_binary_segmentation_evaluation_tool.py`
+  - `tests/test_segmentation_benchmark.py`
+
+TDD 验证：
+
+```bash
+python -m unittest tests.test_binary_segmentation_evaluation_tool tests.test_segmentation_benchmark.SegmentationBenchmarkTest.test_manifest_can_select_binary_mask_evaluator_for_fhn_png_masks -v
+```
+
+RED 结果：测试先因 `tools.binary_segmentation_evaluation_tool` 不存在、且 manifest 声明 `binary_mask` 仍走 BraTS evaluator 而失败。
+
+GREEN / CLI 验证：
+
+```bash
+python -m unittest tests.test_binary_segmentation_evaluation_tool tests.test_segmentation_benchmark -v
+python -m scripts.segmentation_benchmark --manifest benchmarks/segmentation/femoral_head_necrosis/public_fixture_manifest.json --output-dir /tmp/medscope_binary_benchmark_check --prepare-fixtures
+```
+
+结果：局部 benchmark/evaluator 测试 `7` 个通过；CLI 输出 `evaluator_type=binary_mask`，默认 smoke fixture 仍保持 `missing_reference_mask`，不伪造 Dice/IoU。
+
+全量回归：
+
+```bash
+python -m unittest discover -v
+```
+
+结果：`419` 个测试通过，耗时 `62.555s`。
 
 ### 2026-06-04 FHN Evidence Protocol MVP 收敛交付入口补齐
 

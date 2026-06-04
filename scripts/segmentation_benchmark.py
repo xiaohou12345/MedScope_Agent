@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.prepare_public_demo_fixture import prepare_public_demo_fixture
+from tools.binary_segmentation_evaluation_tool import BinarySegmentationEvaluationTool
 from tools.brats_evaluation_tool import BratsEvaluationTool
 
 
@@ -26,12 +27,14 @@ def run_segmentation_benchmark(
     _validate_manifest(manifest)
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
+    evaluator_type = str(manifest.get("evaluator_type") or "brats_regions")
+    selected_evaluator = evaluator or _build_evaluator(evaluator_type)
 
     cases = [
         _evaluate_case(
             raw_case=dict(raw_case),
             prepare_fixtures=prepare_fixtures,
-            evaluator=evaluator or BratsEvaluationTool(),
+            evaluator=selected_evaluator,
             metric_gates=dict(manifest.get("metric_gates") or {}),
         )
         for raw_case in manifest.get("cases") or []
@@ -42,6 +45,7 @@ def run_segmentation_benchmark(
         "source_manifest_path": str(manifest_path),
         "source_manifest_schema_version": manifest.get("schema_version"),
         "benchmark_id": manifest.get("benchmark_id"),
+        "evaluator_type": evaluator_type,
         "benchmark_scope": manifest.get(
             "benchmark_scope",
             "disease_specific_segmentation_validation",
@@ -69,6 +73,14 @@ def run_segmentation_benchmark(
     _write_json(json_path, payload)
     markdown_path.write_text(_render_markdown(payload), encoding="utf-8")
     return payload
+
+
+def _build_evaluator(evaluator_type: str) -> Any:
+    if evaluator_type == "binary_mask":
+        return BinarySegmentationEvaluationTool()
+    if evaluator_type == "brats_regions":
+        return BratsEvaluationTool()
+    raise ValueError(f"unsupported segmentation benchmark evaluator_type: {evaluator_type}")
 
 
 def _evaluate_case(

@@ -3,6 +3,7 @@
   "benchmark_id": "fhn_public_safe_fixture_v0",
   "benchmark_scope": "disease_specific_segmentation_validation",
   "disease_key": "femoral_head_necrosis",
+  "evaluator_type": "binary_mask",
   "safety": {
     "web_demo_independent": true,
     "not_clinical_diagnosis": true,
