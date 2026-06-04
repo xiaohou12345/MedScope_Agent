@@ -28,6 +28,9 @@ evaluator is only for BraTS-style multi-label tumor masks.
 Metric-ready cases must point to existing `prediction_mask_path` and
 `reference_mask_path` files. Missing files are reported as
 `missing_prediction_file` or `missing_reference_file` before metric evaluation.
+Relative `image_path`, `prediction_mask_path`, and `reference_mask_path` values
+are resolved from the manifest file's directory, so benchmark folders can move
+without depending on the current shell working directory.
 
 Run:
 

@@ -250,6 +250,68 @@ class SegmentationBenchmarkTest(unittest.TestCase):
             self.assertEqual(result["aggregate"]["metric_pass_case_count"], 1)
             self.assertEqual(result["aggregate"]["metric_fail_case_count"], 0)
 
+    def test_relative_case_paths_are_resolved_from_manifest_directory(self):
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "dataset"
+            prediction_dir = root / "prediction"
+            reference_dir = root / "reference"
+            images_dir = root / "images"
+            prediction_dir.mkdir(parents=True)
+            reference_dir.mkdir(parents=True)
+            images_dir.mkdir(parents=True)
+            prediction_path = prediction_dir / "case_mask.png"
+            reference_path = reference_dir / "case_mask.png"
+            image_path = images_dir / "case.png"
+            Image.new("L", (4, 4), 0).save(image_path)
+            prediction = Image.new("L", (4, 4), 0)
+            reference = Image.new("L", (4, 4), 0)
+            for point in [(0, 0), (1, 0)]:
+                prediction.putpixel(point, 255)
+                reference.putpixel(point, 255)
+            prediction.save(prediction_path)
+            reference.save(reference_path)
+
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "segmentation_benchmark_manifest.v1",
+                        "benchmark_id": "relative_path_fixture",
+                        "evaluator_type": "binary_mask",
+                        "metric_gates": {
+                            "required_metrics": ["lesion_dice"],
+                            "minimums": {"lesion_dice": 1.0},
+                        },
+                        "cases": [
+                            {
+                                "case_id": "relative_case",
+                                "disease_key": "femoral_head_necrosis",
+                                "modality": "X-ray",
+                                "image_path": "images/case.png",
+                                "prediction_mask_path": "prediction/case_mask.png",
+                                "reference_mask_path": "reference/case_mask.png",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_segmentation_benchmark(
+                manifest_path=manifest_path,
+                output_dir=Path(tmpdir) / "benchmark",
+            )
+
+            case = result["cases"][0]
+            self.assertEqual(case["metric_status"], "metric_ready")
+            self.assertEqual(case["quality_gate"]["status"], "pass")
+            self.assertEqual(case["metrics"]["lesion_dice"], 1.0)
+            self.assertEqual(Path(case["prediction_mask_path"]), prediction_path)
+            self.assertEqual(Path(case["reference_mask_path"]), reference_path)
+            self.assertEqual(Path(case["image_path"]), image_path)
+
     def test_manifest_rejects_unknown_evaluator_type_without_silent_fallback(self):
         with TemporaryDirectory() as tmpdir:
             manifest_path = Path(tmpdir) / "bad_evaluator_manifest.json"

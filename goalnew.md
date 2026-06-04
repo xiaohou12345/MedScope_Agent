@@ -6193,7 +6193,7 @@ python -m scripts.segmentation_benchmark --manifest benchmarks/segmentation/femo
 python -m unittest discover -v
 ```
 
-结果：`420` 个测试通过，耗时 `61.843s`。
+结果：`421` 个测试通过，耗时 `58.289s`。
 
 当前边界：
 
@@ -6241,7 +6241,7 @@ python -m unittest tests.test_segmentation_benchmark -v
 python -m unittest discover -v
 ```
 
-结果：`420` 个测试通过，耗时 `61.843s`。
+结果：`421` 个测试通过，耗时 `58.289s`。
 
 ### 2026-06-04 Segmentation Benchmark Binary Mask Evaluator 补齐
 
@@ -6289,7 +6289,7 @@ python -m scripts.segmentation_benchmark --manifest benchmarks/segmentation/femo
 python -m unittest discover -v
 ```
 
-结果：`420` 个测试通过，耗时 `61.843s`。
+结果：`421` 个测试通过，耗时 `58.289s`。
 
 ### 2026-06-04 Segmentation Benchmark Mask Path Validation 补齐
 
@@ -6332,7 +6332,48 @@ python -m scripts.segmentation_benchmark --manifest benchmarks/segmentation/femo
 python -m unittest discover -v
 ```
 
-结果：`420` 个测试通过，耗时 `61.843s`。
+结果：`421` 个测试通过，耗时 `58.289s`。
+
+### 2026-06-04 Segmentation Benchmark Manifest-relative Path 补齐
+
+本轮目标：真实 benchmark manifest 通常会放在数据集目录中，里面的 `images/case.png`、`prediction/case_mask.png`、`reference/case_mask.png` 应该相对于 manifest 文件所在目录解析，而不是依赖运行脚本时的当前工作目录。
+
+新增/调整：
+
+- `scripts/segmentation_benchmark.py`
+  - 读取 manifest 时记录 `manifest_dir`
+  - case 中的相对 `image_path`、`prediction_mask_path`、`reference_mask_path` 会解析到 manifest 所在目录
+  - public-safe fixture 自动生成的 image path 保持原来的输出路径，不被错误改写到 benchmark 目录下
+- `tests/test_segmentation_benchmark.py`
+  - 新增 manifest-relative path 测试
+  - 在临时 dataset 目录中创建 `images/`、`prediction/`、`reference/`
+  - manifest 只写相对路径，runner 仍应跑出 `metric_ready` 和 `quality_gate=pass`
+- `benchmarks/segmentation/README.md`
+  - 说明相对路径按 manifest 目录解析，便于真实 benchmark 目录迁移。
+
+TDD 验证：
+
+```bash
+python -m unittest tests.test_segmentation_benchmark.SegmentationBenchmarkTest.test_relative_case_paths_are_resolved_from_manifest_directory -v
+```
+
+RED 结果：测试先因为相对 `reference/case_mask.png` 被按 cwd 解析而输出 `missing_reference_file`。
+
+GREEN 验证：
+
+```bash
+python -m unittest tests.test_segmentation_benchmark -v
+```
+
+结果：benchmark 测试 `7` 个通过。
+
+全量回归：
+
+```bash
+python -m unittest discover -v
+```
+
+结果：`421` 个测试通过，耗时 `58.289s`。
 
 ### 2026-06-04 FHN Evidence Protocol MVP 收敛交付入口补齐
 

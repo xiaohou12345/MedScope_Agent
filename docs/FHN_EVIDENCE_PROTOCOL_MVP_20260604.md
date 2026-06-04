@@ -112,7 +112,7 @@ python -m unittest discover -v
 Result recorded in the local phase report:
 
 ```text
-420 tests passed
+421 tests passed
 ```
 
 For a fresh pre-commit check, run:

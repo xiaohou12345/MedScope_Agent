@@ -23,7 +23,8 @@ def run_segmentation_benchmark(
     prepare_fixtures: bool = False,
     evaluator: Any | None = None,
 ) -> dict[str, Any]:
-    manifest = _read_json(Path(manifest_path))
+    manifest_file = Path(manifest_path)
+    manifest = _read_json(manifest_file)
     _validate_manifest(manifest)
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -33,6 +34,7 @@ def run_segmentation_benchmark(
     cases = [
         _evaluate_case(
             raw_case=dict(raw_case),
+            manifest_dir=manifest_file.parent,
             prepare_fixtures=prepare_fixtures,
             evaluator=selected_evaluator,
             metric_gates=dict(manifest.get("metric_gates") or {}),
@@ -86,18 +88,22 @@ def _build_evaluator(evaluator_type: str) -> Any:
 def _evaluate_case(
     *,
     raw_case: dict[str, Any],
+    manifest_dir: Path,
     prepare_fixtures: bool,
     evaluator: Any,
     metric_gates: dict[str, Any],
 ) -> dict[str, Any]:
     case = dict(raw_case)
+    generated_fixture = False
     if prepare_fixtures and case.get("fixture_generator") == "scripts.prepare_public_demo_fixture":
         fixture = prepare_public_demo_fixture(
             output_dir=Path(str(case.get("fixture_output_dir") or "output/fake/public_demo_fixture"))
         )
         case["image_path"] = fixture["image_path"]
         case["fixture_manifest_path"] = fixture["manifest_path"]
+        generated_fixture = True
     _validate_case_paths(case)
+    _resolve_case_paths(case=case, manifest_dir=manifest_dir, skip_image=generated_fixture)
 
     prediction = case.get("prediction_mask_path")
     reference = case.get("reference_mask_path")
@@ -166,6 +172,19 @@ def _validate_case_paths(case: dict[str, Any]) -> None:
             raise ValueError(f"{key} points to a web demo artifact: {value}")
         if "output/real" in normalized:
             raise ValueError(f"{key} points to ignored real output artifact: {value}")
+
+
+def _resolve_case_paths(*, case: dict[str, Any], manifest_dir: Path, skip_image: bool = False) -> None:
+    for key in ("image_path", "prediction_mask_path", "reference_mask_path"):
+        if skip_image and key == "image_path":
+            continue
+        value = case.get(key)
+        if value is None:
+            continue
+        path = Path(str(value))
+        if not path.is_absolute():
+            path = manifest_dir / path
+        case[key] = str(path)
 
 
 def _aggregate(cases: list[dict[str, Any]]) -> dict[str, int]:
