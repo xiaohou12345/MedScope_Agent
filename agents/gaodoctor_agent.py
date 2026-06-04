@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from tools.medsam2_segmentation_tool import MedSAM2CommandRunner, MedSAM2Segment
 from tools.nifti_mask_reader_tool import NiftiMaskReaderTool
 from tools.nifti_overlay_generation_tool import NiftiOverlayGenerationTool
 from tools.segmentation_tool import SegmentationTool
+from tools.vlm_candidate_parser import parse_vlm_candidates
 
 
 class GaoDoctorAgent:
@@ -518,6 +520,15 @@ class GaoDoctorAgent:
         segmentation_prompt: dict[str, Any] | None,
         image_series: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        if disease_key == "femoral_head_necrosis" and vision_mode == "real_vlm_validation":
+            return self._run_real_vlm_validation_visual_pipeline(
+                case_id=case_id,
+                image_path=image_path,
+                patient_message=patient_message,
+                disease_key=disease_key,
+                disease_skill=disease_skill,
+                image_series=image_series or [],
+            )
         if disease_key == "femoral_head_necrosis" and vision_mode == "no_mask_skill":
             normalized_series = self._normalize_input_image_series(
                 image_series=image_series or [],
@@ -578,6 +589,208 @@ class GaoDoctorAgent:
                 disease_skill=disease_skill,
             )
         raise ValueError(f"unsupported vision_mode for diffuse_glioma_brats: {mode}")
+
+    def _run_real_vlm_validation_visual_pipeline(
+        self,
+        *,
+        case_id: str,
+        image_path: str,
+        patient_message: str,
+        disease_key: str,
+        disease_skill: dict[str, Any],
+        image_series: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        normalized_series = self._normalize_input_image_series(
+            image_series=image_series,
+            primary_image_path=image_path,
+        )
+        image_paths = [item["image_path"] for item in normalized_series]
+        raw_payload, warning = self._call_real_vlm_validation_runner(
+            patient_message=patient_message,
+            disease_key=disease_key,
+            disease_skill=disease_skill,
+            image_series=normalized_series,
+        )
+        primary = normalized_series[0] if normalized_series else {
+            "image_id": "image_001",
+            "image_path": image_path,
+            "view_hint": "unknown",
+        }
+        evidence_items = (
+            parse_vlm_candidates(
+                raw_payload,
+                image_id=str(primary["image_id"]),
+                view_hint=str(primary.get("view_hint") or "unknown"),
+                source_image_path=str(primary.get("image_path") or image_path),
+            )
+            if isinstance(raw_payload, dict)
+            else []
+        )
+        quality_warnings = []
+        if warning:
+            quality_warnings.append({"warning": warning, "source": "real_vlm_validation"})
+        if not evidence_items:
+            evidence_items = [
+                {
+                    "target": "real_vlm_validation",
+                    "image_id": str(primary["image_id"]),
+                    "view_hint": str(primary.get("view_hint") or "unknown"),
+                    "source_image_path": str(primary.get("image_path") or image_path),
+                    "evidence_type": "visual_observation",
+                    "execution_mode": "vlm_only",
+                    "visual_observation": {
+                        "status": "unassessed",
+                        "reason": warning or "VLM did not return usable candidate findings.",
+                    },
+                    "segmentation": {"status": "not_requested"},
+                    "measurements": {"measurement_usable": False},
+                    "quality": {"status": "not_usable", "source": "vlm"},
+                    "diagnosis_usable": False,
+                    "diagnosis_usable_level": "not_usable",
+                    "limitations": [warning or "no_vlm_candidate_findings"],
+                }
+            ]
+        findings = [
+            self._finding_from_vlm_evidence_item(item)
+            for item in evidence_items
+            if isinstance(item, dict)
+        ]
+        return {
+            "image_path": image_path,
+            "modality": "xray",
+            "body_part": "hip",
+            "image_outputs": {
+                "original_image_path": image_path,
+                "mask_path": "not_generated",
+                "overlay_path": "not_generated",
+                "per_image_outputs": [
+                    {
+                        "image_id": item["image_id"],
+                        "view_hint": item.get("view_hint", "unknown"),
+                        "image_path": item["image_path"],
+                        "image_outputs": {
+                            "original_image_path": item["image_path"],
+                            "mask_path": "not_generated",
+                            "overlay_path": "not_generated",
+                        },
+                    }
+                    for item in normalized_series
+                ],
+            },
+            "multi_view_results": [
+                {
+                    "image_id": item["image_id"],
+                    "view_hint": item.get("view_hint", "unknown"),
+                    "image_path": item["image_path"],
+                }
+                for item in normalized_series
+            ],
+            "visual_evidence": {
+                "collapse": False,
+                "sclerosis": "candidate" if evidence_items else "unassessed",
+                "cystic_change": "unknown",
+                "joint_space_narrowing": False,
+                "joint_space": "unknown",
+                "femoral_head_shape": "unknown",
+                "lesion_mask": "not_generated",
+                "confidence": self._max_vlm_confidence(evidence_items),
+                "texture_abnormality_score": 0.0,
+                "lesion_area_ratio": 0.0,
+                "collapse_ratio": 0.0,
+                "joint_space_width": "unknown",
+                "lesion_detected": any(
+                    item.get("diagnosis_usable_level") == "candidate_support"
+                    for item in evidence_items
+                ),
+                "lesion_location": "candidate_vlm_region"
+                if any(item.get("diagnosis_usable_level") == "candidate_support" for item in evidence_items)
+                else "未定位",
+                "disease_target": disease_key,
+                "findings": findings,
+                "evidence_items": evidence_items,
+                "suspected_visual_findings": [
+                    str((item.get("visual_observation") or {}).get("rationale") or item.get("target"))
+                    for item in evidence_items
+                    if item.get("diagnosis_usable_level") == "candidate_support"
+                ],
+                "measurements": {
+                    "analyzed_image_count": len(image_paths),
+                    "measurement_usable": False,
+                },
+                "completeness": {},
+                "quality_warnings": quality_warnings,
+                "segmentation_quality": "not_run_real_vlm_validation",
+            },
+        }
+
+    def _max_vlm_confidence(self, evidence_items: list[dict[str, Any]]) -> float:
+        confidences = [
+            float((item.get("quality") or {}).get("confidence"))
+            for item in evidence_items
+            if (item.get("quality") or {}).get("confidence") is not None
+        ]
+        return max(confidences) if confidences else 0.0
+
+    def _call_real_vlm_validation_runner(
+        self,
+        *,
+        patient_message: str,
+        disease_key: str,
+        disease_skill: dict[str, Any],
+        image_series: list[dict[str, str]],
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        if self.prompt_runner is None:
+            return None, "real_vlm_validation_not_configured"
+        user_payload = {
+            "patient_message": patient_message,
+            "disease_key": disease_key,
+            "image_paths": [item["image_path"] for item in image_series],
+            "image_series": image_series,
+            "imaging_evidence_protocol": disease_skill.get("imaging_evidence_protocol", {}),
+            "instruction": (
+                "Return candidate visual findings only as JSON. Do not diagnose. "
+                "Do not claim segmentation or measurements."
+            ),
+        }
+        try:
+            response = self.prompt_runner.run(
+                task="fhn_real_vlm_validation",
+                system_prompt=(
+                    "You are a visual evidence extractor. Return JSON with a findings list. "
+                    "Each finding may include target, side, bbox, polygon, rationale, and confidence. "
+                    "Do not provide a final diagnosis."
+                ),
+                user_payload=user_payload,
+            )
+            parsed = json.loads(response)
+        except Exception as exc:
+            return None, f"real_vlm_validation_parse_error: {exc}"
+        if not isinstance(parsed, dict):
+            return None, "real_vlm_validation_parse_error: response was not a JSON object"
+        return parsed, None
+
+    def _finding_from_vlm_evidence_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        observation = dict(item.get("visual_observation") or {})
+        measurements = dict(item.get("measurements") or {})
+        if observation.get("laterality") and "laterality" not in measurements:
+            measurements["laterality"] = observation.get("laterality")
+        return {
+            "finding_id": item.get("finding_id"),
+            "target": item.get("target"),
+            "display_name": item.get("display_name") or item.get("target"),
+            "image_id": item.get("image_id"),
+            "view_hint": item.get("view_hint"),
+            "source_image_path": item.get("source_image_path"),
+            "status": observation.get("status", "unassessed"),
+            "description": observation.get("rationale") or observation.get("reason"),
+            "evidence_type": item.get("evidence_type"),
+            "execution_mode": item.get("execution_mode"),
+            "measurements": measurements,
+            "quality": dict(item.get("quality") or {}),
+            "diagnosis_usable": bool(item.get("diagnosis_usable", False)),
+            "diagnosis_usable_level": item.get("diagnosis_usable_level", "not_usable"),
+            "limitations": list(item.get("limitations") or []),
+        }
 
     def _run_no_mask_skill_visual_pipeline(
         self,
