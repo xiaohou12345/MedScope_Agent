@@ -36,8 +36,60 @@ class VisualToolRouterTest(unittest.TestCase):
         medsam2 = registry.get("medsam2")
 
         self.assertEqual(medsam2.role, "candidate_segmenter")
+        self.assertEqual(medsam2.backend_type, "vlm_plus_segmenter")
         self.assertIn("generic_lesion_candidate", medsam2.supported_tasks)
         self.assertTrue(medsam2.supports(modality="MRI", task_name="segment_whole_tumor"))
+
+    def test_default_registry_declares_visual_backend_interface_contracts(self):
+        registry = VisualToolRegistry.from_file(Path("tools/visual_tool_registry.yaml"))
+
+        contracts = registry.backend_contracts()
+
+        self.assertEqual(set(contracts), {"specialist_segmenter", "vlm_plus_segmenter", "vlm_only"})
+        self.assertEqual(contracts["specialist_segmenter"]["tool_name"], "brats_model")
+        self.assertEqual(contracts["vlm_plus_segmenter"]["tool_name"], "medsam2")
+        self.assertEqual(contracts["vlm_only"]["tool_name"], "xray_fhn_detector")
+        self.assertIn("visual_task", contracts["vlm_plus_segmenter"]["input_contract"]["required_fields"])
+        self.assertIn("candidate_mask", contracts["vlm_plus_segmenter"]["output_contract"]["artifact_types"])
+        self.assertIn("quality_gate", contracts["vlm_plus_segmenter"])
+        self.assertIn("diagnosis_boundary", contracts["vlm_plus_segmenter"])
+        self.assertEqual(registry.validate_backend_contracts(), [])
+
+    def test_registry_validator_reports_missing_backend_contract_fields(self):
+        registry = VisualToolRegistry.from_dict(
+            {
+                "tools": [
+                    {
+                        "tool_name": "broken_vlm",
+                        "backend_type": "vlm_only",
+                        "supported_modalities": ["X-ray"],
+                        "supported_tasks": ["trabecular_blurring"],
+                        "supported_execution_modes": ["vlm_only"],
+                        "output": "findings",
+                        "priority": 1,
+                        "role": "rule_detector",
+                        "interface_contract": {
+                            "input_contract": {"required_fields": ["image_path"]},
+                        },
+                    }
+                ]
+            }
+        )
+
+        errors = registry.validate_backend_contracts()
+
+        self.assertIn(
+            "broken_vlm interface_contract.output_contract is required",
+            errors,
+        )
+        self.assertIn(
+            "broken_vlm interface_contract.quality_gate is required",
+            errors,
+        )
+        self.assertIn(
+            "broken_vlm interface_contract.diagnosis_boundary is required",
+            errors,
+        )
 
     def test_router_prefers_specific_tool_then_marks_missing_input(self):
         registry = VisualToolRegistry.from_dict(

@@ -323,7 +323,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 409 tests in 57.523s
+Ran 412 tests in 62.484s
 OK
 ```
 
@@ -341,6 +341,7 @@ Strengths:
 - The skill contract explicitly separates `guideline_based` skills from `data_mined_hypothesis` skills.
 - The memory layer is useful for replay, QA, audit, and evidence-bundle inspection.
 - The visual pipeline already supports multiple modes: reference masks, VLM-only observations, VLM-plus-segmenter candidates, and MedSAM2-compatible runners.
+- Visual backends declare interface contracts for VLM-only observation, VLM-plus-segmenter candidate masks, and specialist segmenters.
 - The test suite is broad for an MVP and covers contracts, routing, memory, visual protocols, HTTP endpoints, and safety guards.
 
 Important limitations:
@@ -353,10 +354,10 @@ Important limitations:
 
 Recommended next engineering steps:
 
-1. Add small public-safe sample assets or scripted fixtures so a fresh clone can run the main demo without private local data.
-2. Formalize the visual model backend interface for VLM-only, VLM+MedSAM2, and specialist segmenters.
-3. Add a benchmark folder for disease-specific segmentation validation, separate from the web demo.
-4. Add a lockfile or pinned environment export if exact deployment reproducibility becomes necessary.
+1. Add a benchmark folder for disease-specific segmentation validation, separate from the web demo.
+2. Expand public-safe fixtures into a small scripted demo suite that covers upload, QA, and memory audit.
+3. Add a lockfile or pinned environment export if exact deployment reproducibility becomes necessary.
+4. Keep specialist model integration behind the visual backend contract and quality gate.
 5. Keep all clinical rule updates behind review and validation gates.
 
 ## Safety and Privacy

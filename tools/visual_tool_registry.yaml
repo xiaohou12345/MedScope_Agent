@@ -7,7 +7,27 @@
       "supported_execution_modes": ["specialist_segmenter", "vlm_plus_segmenter"],
       "output": "multi_label_mask",
       "priority": 100,
-      "role": "specialist_segmenter"
+      "role": "specialist_segmenter",
+      "backend_type": "specialist_segmenter",
+      "interface_contract": {
+        "input_contract": {
+          "required_fields": ["image_path", "visual_task", "modality"],
+          "optional_fields": ["mask_path", "sequence_metadata"]
+        },
+        "output_contract": {
+          "artifact_types": ["specialist_mask", "overlay", "measurements"],
+          "required_fields": ["mask_path", "overlay_path", "measurements", "quality"]
+        },
+        "quality_gate": {
+          "required": true,
+          "minimum_status_for_measurement_support": "passed"
+        },
+        "diagnosis_boundary": {
+          "allowed_level": "measurement_support",
+          "requires_evidence_bundle": true,
+          "forbidden_claims": ["final_diagnosis_from_pixels"]
+        }
+      }
     },
     {
       "tool_name": "medsam2",
@@ -16,7 +36,28 @@
       "supported_execution_modes": ["vlm_plus_segmenter"],
       "output": "binary_mask",
       "priority": 50,
-      "role": "candidate_segmenter"
+      "role": "candidate_segmenter",
+      "backend_type": "vlm_plus_segmenter",
+      "interface_contract": {
+        "input_contract": {
+          "required_fields": ["image_path", "visual_task", "segmentation_prompt"],
+          "optional_fields": ["anatomy_reference", "view_hint"]
+        },
+        "output_contract": {
+          "artifact_types": ["candidate_mask", "overlay", "measurements"],
+          "required_fields": ["mask_path", "overlay_path", "quality", "limitations"]
+        },
+        "quality_gate": {
+          "required": true,
+          "minimum_status_for_candidate_support": "candidate_only",
+          "blocks_measurement_support_without_qc": true
+        },
+        "diagnosis_boundary": {
+          "allowed_level": "candidate_support",
+          "requires_evidence_bundle": true,
+          "forbidden_claims": ["confirmed_diagnosis", "measurement_support_without_qc"]
+        }
+      }
     },
     {
       "tool_name": "xray_fhn_detector",
@@ -25,7 +66,28 @@
       "supported_execution_modes": ["vlm_only", "measurement_only"],
       "output": "boxes_or_findings",
       "priority": 80,
-      "role": "rule_detector"
+      "role": "rule_detector",
+      "backend_type": "vlm_only",
+      "interface_contract": {
+        "input_contract": {
+          "required_fields": ["image_path", "visual_task", "skill_protocol"],
+          "optional_fields": ["patient_prompt", "view_hint"]
+        },
+        "output_contract": {
+          "artifact_types": ["visual_observation", "candidate_regions", "measurement_readiness"],
+          "required_fields": ["observations", "quality", "limitations"]
+        },
+        "quality_gate": {
+          "required": true,
+          "blocks_mask_claims": true,
+          "measurement_support_requires_landmarks": true
+        },
+        "diagnosis_boundary": {
+          "allowed_level": "observation_only",
+          "requires_evidence_bundle": true,
+          "forbidden_claims": ["pixel_level_mask", "xray_excludes_early_fhn"]
+        }
+      }
     }
   ]
 }

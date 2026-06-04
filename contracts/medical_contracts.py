@@ -478,6 +478,8 @@ class VisualToolCapability:
     priority: int = 0
     role: str = "specialist_segmenter"
     supported_execution_modes: list[str] = field(default_factory=list)
+    backend_type: str = ""
+    interface_contract: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.tool_name:
@@ -547,6 +549,8 @@ class VisualToolCapability:
             "priority": self.priority,
             "role": self.role,
             "supported_execution_modes": list(self.supported_execution_modes),
+            "backend_type": self.backend_type,
+            "interface_contract": dict(self.interface_contract),
         }
 
     @classmethod
@@ -559,6 +563,8 @@ class VisualToolCapability:
             priority=int(payload.get("priority", 0)),
             role=payload.get("role", "specialist_segmenter"),
             supported_execution_modes=list(payload.get("supported_execution_modes") or []),
+            backend_type=str(payload.get("backend_type") or ""),
+            interface_contract=dict(payload.get("interface_contract") or {}),
         )
 
 

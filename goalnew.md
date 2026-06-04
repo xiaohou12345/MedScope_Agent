@@ -6097,6 +6097,53 @@ git diff --check
 - 该 fixture 只验证 fresh-clone 上传、路由、skill selection 和 service payload。
 - 不宣称真实病灶定位、分割质量或临床诊断能力。
 
+### 2026-06-04 Visual Backend Contract 标准化
+
+本轮目标：README 的下一步要求把视觉后端接口进一步标准化，区分 VLM-only、VLM+MedSAM2、专病分割模型。当前不替换模型、不改分割算法，只把 `VisualToolRegistry` 的后端 contract 显式化，并加入校验。
+
+新增/调整：
+
+- `VisualToolCapability` 新增：
+  - `backend_type`
+  - `interface_contract`
+- `VisualToolRegistry` 新增：
+  - `backend_contracts()`
+  - `validate_backend_contracts()`
+- `tools/visual_tool_registry.yaml` 为三类后端补 contract：
+  - `brats_model`: `specialist_segmenter`
+  - `medsam2`: `vlm_plus_segmenter`
+  - `xray_fhn_detector`: `vlm_only`
+- contract 明确：
+  - `input_contract`
+  - `output_contract`
+  - `quality_gate`
+  - `diagnosis_boundary`
+- README / 中文 README 更新当前状态和下一步列表：视觉后端接口标准化已进入当前能力，后续重点转为 benchmark、fixture suite、部署锁文件和 quality gate。
+
+TDD 验证：
+
+```bash
+python -m unittest tests.test_visual_tool_router.VisualToolRouterTest.test_default_registry_contains_medsam2_as_generic_candidate_segmenter tests.test_visual_tool_router.VisualToolRouterTest.test_default_registry_declares_visual_backend_interface_contracts tests.test_visual_tool_router.VisualToolRouterTest.test_registry_validator_reports_missing_backend_contract_fields -v
+```
+
+RED 结果：新增测试先因 `VisualToolCapability.backend_type`、`VisualToolRegistry.backend_contracts()`、`VisualToolRegistry.validate_backend_contracts()` 不存在而失败。
+
+GREEN 验证：
+
+```bash
+python -m unittest tests.test_visual_tool_router -v
+python -m unittest tests.test_visual_tool_router tests.test_contracts -v
+python -m unittest discover -v
+```
+
+结果：VisualToolRouter 全部 `9` 个测试通过；VisualToolRouter + contracts 共 `29` 个测试通过；全量 `412` 个 unittest 通过。
+
+当前边界：
+
+- backend contract 只约束视觉后端输入、输出、质量门和诊断边界。
+- 它不代表 MedSAM2 或 VLM 已经能稳定分割股骨头坏死病灶。
+- 专病模型接入仍必须提供实际 runner、数据集 benchmark 和 quality gate 结果。
+
 ### 2026-06-04 FHN Evidence Protocol MVP 收敛交付入口补齐
 
 本轮目标：上一轮已经把 FHN 多图 Evidence Protocol MVP 的阶段报告、交付清单和本地演示材料整理到 `output/real`，但 `output/` 被 `.gitignore` 忽略，直接同步 GitHub 时这些入口文档不会被提交。因此需要补一个可跟踪的阶段入口，保证项目首页能看见当前阶段成果。

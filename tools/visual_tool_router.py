@@ -10,6 +10,19 @@ from contracts.medical_contracts import VisualTask, VisualToolCapability
 class VisualToolRegistry:
     """Loads and queries visual tool capabilities."""
 
+    REQUIRED_BACKEND_CONTRACT_FIELDS = {
+        "input_contract",
+        "output_contract",
+        "quality_gate",
+        "diagnosis_boundary",
+    }
+    ALLOWED_BACKEND_TYPES = {
+        "vlm_only",
+        "vlm_plus_segmenter",
+        "specialist_segmenter",
+        "measurement_only",
+    }
+
     def __init__(self, tools: list[VisualToolCapability] | None = None) -> None:
         self.tools = tools or []
 
@@ -33,6 +46,50 @@ class VisualToolRegistry:
             if tool.tool_name == tool_name:
                 return tool
         raise KeyError(tool_name)
+
+    def backend_contracts(self) -> dict[str, dict[str, Any]]:
+        contracts: dict[str, dict[str, Any]] = {}
+        for tool in sorted(self.tools, key=lambda item: item.priority, reverse=True):
+            if not tool.backend_type:
+                continue
+            contracts.setdefault(
+                tool.backend_type,
+                {
+                    "tool_name": tool.tool_name,
+                    "role": tool.role,
+                    "supported_modalities": list(tool.supported_modalities),
+                    "supported_tasks": list(tool.supported_tasks),
+                    "supported_execution_modes": list(tool.supported_execution_modes),
+                    **dict(tool.interface_contract),
+                },
+            )
+        return contracts
+
+    def validate_backend_contracts(self) -> list[str]:
+        errors: list[str] = []
+        for tool in self.tools:
+            backend_type = tool.backend_type
+            if not backend_type and not tool.interface_contract:
+                continue
+            if backend_type not in self.ALLOWED_BACKEND_TYPES:
+                errors.append(f"{tool.tool_name} unsupported backend_type: {backend_type}")
+            if not tool.interface_contract:
+                errors.append(f"{tool.tool_name} interface_contract is required")
+                continue
+            for field in sorted(self.REQUIRED_BACKEND_CONTRACT_FIELDS):
+                if field not in tool.interface_contract:
+                    errors.append(f"{tool.tool_name} interface_contract.{field} is required")
+            input_contract = tool.interface_contract.get("input_contract")
+            if isinstance(input_contract, dict) and not input_contract.get("required_fields"):
+                errors.append(
+                    f"{tool.tool_name} interface_contract.input_contract.required_fields is required"
+                )
+            output_contract = tool.interface_contract.get("output_contract")
+            if isinstance(output_contract, dict) and not output_contract.get("artifact_types"):
+                errors.append(
+                    f"{tool.tool_name} interface_contract.output_contract.artifact_types is required"
+                )
+        return errors
 
     def find_best_tool(
         self,

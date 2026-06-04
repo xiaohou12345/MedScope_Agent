@@ -193,8 +193,8 @@ python -m unittest tests.test_http_entrypoint -v
 Fresh verification in the current worktree:
 
 - `node --check web/app.js` exited with code 0.
-- Latest follow-up verification after the real VLM validation path and dotenv isolation fix:
-  `python -m unittest discover -v` ran `409` tests in `57.523s` and returned `OK`.
+- Latest follow-up verification after visual backend contract standardization:
+  `python -m unittest discover -v` ran `412` tests in `62.484s` and returned `OK`.
 - `git diff --check` exited with code 0.
 
 If additional code changes are made after this audit, rerun the full verification commands before committing.
