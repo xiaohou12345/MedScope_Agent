@@ -158,6 +158,25 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(js_status, 200)
         self.assertEqual(js_type, "application/javascript; charset=utf-8")
 
+    def test_frontend_exposes_real_vlm_validation_mode_without_defaulting_to_it(self):
+        status, body, content_type = dispatch_static_request("/")
+        js_status, js_body, js_type = dispatch_static_request("/static/app.js?v=frontend-demo-20260603")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/html; charset=utf-8")
+        self.assertEqual(js_status, 200)
+        self.assertEqual(js_type, "application/javascript; charset=utf-8")
+        html = body.decode("utf-8")
+        js = js_body.decode("utf-8")
+        self.assertIn("visionModeSelect", html)
+        self.assertIn("真实 VLM 候选验证", html)
+        self.assertIn('option value="" selected', html)
+        self.assertIn("visionModeSelect", js)
+        self.assertIn("real_vlm_validation", js)
+        self.assertIn("state.sampleVisionMode || elements.visionModeSelect.value", js)
+        self.assertIn('state.sampleVisionMode = "no_mask_skill"', js)
+        self.assertIn("候选视觉证据", js)
+
     def test_root_keeps_evidence_gateway_snapshot_inside_debug_section(self):
         status, body, content_type = dispatch_static_request("/")
 

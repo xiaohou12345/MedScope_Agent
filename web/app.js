@@ -37,6 +37,7 @@ const elements = {
   fileInput: document.getElementById("fileInput"),
   uploadStatus: document.getElementById("uploadStatus"),
   patientMessage: document.getElementById("patientMessage"),
+  visionModeSelect: document.getElementById("visionModeSelect"),
   imagePath: document.getElementById("imagePath"),
   symptoms: document.getElementById("symptoms"),
   qaInput: document.getElementById("qaInput"),
@@ -140,8 +141,9 @@ function buildCasePayload() {
   if (state.sampleDiseaseKey) {
     payload.disease_key = state.sampleDiseaseKey;
   }
-  if (state.sampleVisionMode) {
-    payload.vision_mode = state.sampleVisionMode;
+  const selectedVisionMode = state.sampleVisionMode || elements.visionModeSelect.value;
+  if (selectedVisionMode) {
+    payload.vision_mode = selectedVisionMode;
   }
   return payload;
 }
@@ -744,6 +746,7 @@ async function uploadFiles(fileList) {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
+  elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   resetViews();
@@ -4344,6 +4347,7 @@ function loadRealVlmMedSAM2Sample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "diffuse_glioma_brats";
   state.sampleVisionMode = "medsam2";
+  elements.visionModeSelect.value = "medsam2";
   state.demoCaseSlug = "";
   state.realDemoMode = true;
   elements.symptoms.value = "头痛";
@@ -4358,6 +4362,7 @@ function loadXrayInsufficientSample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
+  elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   elements.symptoms.value = "髋关节疼痛";
@@ -4372,6 +4377,7 @@ function loadFhnNoMaskSample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "femoral_head_necrosis";
   state.sampleVisionMode = "no_mask_skill";
+  elements.visionModeSelect.value = "no_mask_skill";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   elements.symptoms.value = "髋关节疼痛";
@@ -4486,6 +4492,12 @@ elements.fileInput.addEventListener("change", async () => {
     setStatus("上传完成", "ok");
   } catch (error) {
     setStatus(error.message, "error");
+  }
+});
+elements.visionModeSelect.addEventListener("change", () => {
+  state.sampleVisionMode = "";
+  if (elements.visionModeSelect.value === "real_vlm_validation") {
+    setStatus("已选择真实 VLM 候选验证；输出只作为候选视觉证据", "warn");
   }
 });
 
@@ -4618,6 +4630,7 @@ elements.resetButton.addEventListener("click", () => {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
+  elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.uploadedImagePaths = [];
