@@ -194,7 +194,7 @@ Fresh verification in the current worktree:
 
 - `node --check web/app.js` exited with code 0.
 - Latest follow-up verification after visual backend contract standardization:
-  `python -m unittest discover -v` ran `412` tests in `62.484s` and returned `OK`.
+  `python -m unittest discover -v` ran `414` tests in `56.049s` and returned `OK` after adding the segmentation benchmark readiness gate.
 - `git diff --check` exited with code 0.
 
 If additional code changes are made after this audit, rerun the full verification commands before committing.

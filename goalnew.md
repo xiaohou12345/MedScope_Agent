@@ -6144,6 +6144,63 @@ python -m unittest discover -v
 - 它不代表 MedSAM2 或 VLM 已经能稳定分割股骨头坏死病灶。
 - 专病模型接入仍必须提供实际 runner、数据集 benchmark 和 quality gate 结果。
 
+### 2026-06-04 Segmentation Benchmark 入口补齐
+
+本轮目标：README 的下一步要求单独建立视觉分割 benchmark，不要只依赖前端效果图判断。当前先建立 manifest-driven benchmark 入口和 readiness gate，不伪造真实 Dice/IoU。
+
+新增/调整：
+
+- 新增 `benchmarks/segmentation/README.md`
+  - 明确 benchmark 与 web demo 分离
+  - 明确输出是验证 artifact，不是诊断报告
+- 新增 `benchmarks/segmentation/femoral_head_necrosis/public_fixture_manifest.json`
+  - 使用 public-safe synthetic fixture
+  - `reference_mask_path = null`
+  - `benchmark_role = smoke_fixture`
+  - 明确不是 metric-ready 标注集
+- 新增 `scripts/segmentation_benchmark.py`
+  - 读取 manifest
+  - 可选 `--prepare-fixtures` 调用 public fixture generator
+  - 输出 `segmentation_benchmark_result.json` 和 `.md`
+  - 无 reference mask 时输出 `metric_status = missing_reference_mask`
+  - 禁止 benchmark case 混入 `web/` 或 `output/real` artifact
+- 新增 `tests/test_segmentation_benchmark.py`
+  - 验证默认 FHN manifest 可作为 web-demo-independent readiness gate
+  - 验证缺 reference mask 时不会生成 metrics
+  - 验证混入 web demo artifact 会被拒绝
+- README / 中文 README 更新当前能力和下一步：下一步变为向 benchmark 加入真实标注 case。
+
+TDD 验证：
+
+```bash
+python -m unittest tests.test_segmentation_benchmark -v
+```
+
+RED 结果：新增测试先因 `scripts.segmentation_benchmark` 不存在而失败。
+
+GREEN / CLI 验证：
+
+```bash
+python -m unittest tests.test_segmentation_benchmark -v
+python -m scripts.segmentation_benchmark --manifest benchmarks/segmentation/femoral_head_necrosis/public_fixture_manifest.json --output-dir /tmp/medscope_segmentation_benchmark_check --prepare-fixtures
+```
+
+结果：benchmark 测试 `2` 个通过；CLI 输出 `case_count=1`、`metric_ready_case_count=0`、`missing_reference_mask_count=1`。
+
+全量回归：
+
+```bash
+python -m unittest discover -v
+```
+
+结果：`414` 个测试通过，耗时 `56.049s`。
+
+当前边界：
+
+- 当前 manifest 只是 smoke/readiness fixture，不是带标注的医学 benchmark。
+- 不宣称任何病灶分割质量。
+- 真实 Dice/IoU 需要后续加入 reference mask 和 prediction mask。
+
 ### 2026-06-04 FHN Evidence Protocol MVP 收敛交付入口补齐
 
 本轮目标：上一轮已经把 FHN 多图 Evidence Protocol MVP 的阶段报告、交付清单和本地演示材料整理到 `output/real`，但 `output/` 被 `.gitignore` 忽略，直接同步 GitHub 时这些入口文档不会被提交。因此需要补一个可跟踪的阶段入口，保证项目首页能看见当前阶段成果。

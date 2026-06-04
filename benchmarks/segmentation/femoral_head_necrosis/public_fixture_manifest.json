@@ -1,0 +1,32 @@
+{
+  "schema_version": "segmentation_benchmark_manifest.v1",
+  "benchmark_id": "fhn_public_safe_fixture_v0",
+  "benchmark_scope": "disease_specific_segmentation_validation",
+  "disease_key": "femoral_head_necrosis",
+  "safety": {
+    "web_demo_independent": true,
+    "not_clinical_diagnosis": true,
+    "formal_skill_update_allowed": false
+  },
+  "cases": [
+    {
+      "case_id": "fhn_public_synthetic_xray_001",
+      "disease_key": "femoral_head_necrosis",
+      "modality": "X-ray",
+      "body_part": "hip",
+      "backend_type": "vlm_plus_segmenter",
+      "fixture_generator": "scripts.prepare_public_demo_fixture",
+      "fixture_output_dir": "output/fake/public_demo_fixture",
+      "image_path": null,
+      "prediction_mask_path": null,
+      "reference_mask_path": null,
+      "reference_status": "missing",
+      "benchmark_role": "smoke_fixture",
+      "notes": [
+        "Synthetic public-safe fixture only.",
+        "Not a clinical image.",
+        "Not metric-ready until a reference_mask_path is provided."
+      ]
+    }
+  ]
+}

@@ -318,7 +318,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 412 tests in 62.484s
+Ran 414 tests in 56.049s
 OK
 ```
 
@@ -344,12 +344,13 @@ node --check web/app.js
 - 真实数据和生成结果大量在 `output/`、`data/external/`，这些不会随 GitHub 同步，新环境复现实验还不够方便。
 - 依赖分组已经写入 `pyproject.toml`；但还没有锁文件，所以跨机器精确复现还没有 pin 到版本级别。
 - 视觉后端接口已声明 VLM-only、VLM+segmenter、specialist segmenter 三类 contract，但仍需要真实 benchmark 验证质量。
+- `benchmarks/segmentation/` 已经把专病分割验证入口和 web demo 分离。
 - Skill 自动升级被正确阻断，但后续如果要做 self-evolving，需要严格保留人工审核和 validation gate。
 - 当前系统是科研 demo，不是临床验证系统。
 
 建议下一步：
 
-1. 单独建立视觉分割 benchmark，不要只依赖前端效果图判断。
+1. 向 `benchmarks/segmentation/` 增加真实标注 benchmark case，让 Dice/IoU 不只停留在 readiness 检查。
 2. 把公开安全 fixture 扩展成覆盖上传、QA、memory audit 的小型脚本 demo suite。
 3. 如果进入固定部署，再增加锁文件或 pinned environment export。
 4. 专病模型接入必须继续走 visual backend contract 和 quality gate。

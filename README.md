@@ -323,7 +323,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 412 tests in 62.484s
+Ran 414 tests in 56.049s
 OK
 ```
 
@@ -342,6 +342,7 @@ Strengths:
 - The memory layer is useful for replay, QA, audit, and evidence-bundle inspection.
 - The visual pipeline already supports multiple modes: reference masks, VLM-only observations, VLM-plus-segmenter candidates, and MedSAM2-compatible runners.
 - Visual backends declare interface contracts for VLM-only observation, VLM-plus-segmenter candidate masks, and specialist segmenters.
+- `benchmarks/segmentation/` separates disease-specific segmentation validation from the web demo.
 - The test suite is broad for an MVP and covers contracts, routing, memory, visual protocols, HTTP endpoints, and safety guards.
 
 Important limitations:
@@ -354,7 +355,7 @@ Important limitations:
 
 Recommended next engineering steps:
 
-1. Add a benchmark folder for disease-specific segmentation validation, separate from the web demo.
+1. Add real labeled benchmark cases to `benchmarks/segmentation/` so Dice/IoU metrics can run beyond readiness checks.
 2. Expand public-safe fixtures into a small scripted demo suite that covers upload, QA, and memory audit.
 3. Add a lockfile or pinned environment export if exact deployment reproducibility becomes necessary.
 4. Keep specialist model integration behind the visual backend contract and quality gate.
