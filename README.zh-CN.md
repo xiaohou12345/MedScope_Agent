@@ -282,6 +282,17 @@ python -m scripts.image_prompt_skill_baseline \
 - `image_prompt_skill_baseline.md`：三层对比表。
 - `中文结论.md`：中文结论、三个层次说明，以及它和 MedScope Agent 主流程的区别。
 
+fresh clone 可用的公开安全合成样例：
+
+```bash
+python -m scripts.prepare_public_demo_fixture \
+  --output-dir output/fake/public_demo_fixture
+```
+
+该命令会生成一张合成的、非患者数据的髋关节 X-ray-like PNG，并写出
+带 `service_payload` 的 manifest。它用于测试上传、路由和 FHN skill 主线，
+不是临床图像，也不是分割 benchmark。
+
 无 mask 视觉流水线：
 
 ```bash

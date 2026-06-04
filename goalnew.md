@@ -6062,6 +6062,41 @@ python -m pip install -e . --no-deps --dry-run
 - `git diff --check` 通过。
 - `pip install -e . --no-deps --dry-run` 可生成 editable metadata，并显示 `Would install medscope-agent-0.1.0`。
 
+### 2026-06-04 Public-safe demo fixture 补齐
+
+本轮目标：README 的下一步要求准备一组可以公开提交或脚本生成的小型安全样例，让 fresh clone 不依赖私有 `data/external` 或 ignored `output/real` 也能跑通主线。当前先做脚本生成型 fixture，避免提交真实医疗图像。
+
+新增/调整：
+
+- 新增 `scripts/prepare_public_demo_fixture.py`
+  - 生成 `output/fake/public_demo_fixture/synthetic_hip_xray_public_safe.png`
+  - 生成 `public_demo_fixture_manifest.json`
+  - manifest 内含可直接传给 `MedScopeService` 的 `service_payload`
+  - 明确标记 `public_safe`、`synthetic_image`、`not_real_patient_data`、`not_clinical_ground_truth`
+- 新增 `tests/test_public_demo_fixture.py`
+  - 验证 fixture image / manifest 存在
+  - 验证路径不依赖 `data/external` 或 `output/real`
+  - 验证 manifest payload 能让 service 路由到 `femoral_head_necrosis` + `no_mask_skill`
+- 更新 `README.md` / `README.zh-CN.md`
+  - 增加 `python -m scripts.prepare_public_demo_fixture --output-dir output/fake/public_demo_fixture`
+  - 明确该图是合成样例，不是临床图像或分割 benchmark
+
+验证：
+
+```bash
+python -m unittest tests.test_public_demo_fixture -v
+python -m scripts.prepare_public_demo_fixture --output-dir /tmp/medscope_public_fixture_check
+python -m unittest tests.test_end_to_end_demo tests.test_service_entrypoint -v
+git diff --check
+```
+
+结果：新增 fixture 测试通过；fixture CLI 可生成 manifest 和 PNG；end-to-end/service 相关 `37` 个测试通过；`git diff --check` 通过。
+
+当前边界：
+
+- 该 fixture 只验证 fresh-clone 上传、路由、skill selection 和 service payload。
+- 不宣称真实病灶定位、分割质量或临床诊断能力。
+
 ### 2026-06-04 FHN Evidence Protocol MVP 收敛交付入口补齐
 
 本轮目标：上一轮已经把 FHN 多图 Evidence Protocol MVP 的阶段报告、交付清单和本地演示材料整理到 `output/real`，但 `output/` 被 `.gitignore` 忽略，直接同步 GitHub 时这些入口文档不会被提交。因此需要补一个可跟踪的阶段入口，保证项目首页能看见当前阶段成果。

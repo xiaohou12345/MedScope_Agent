@@ -276,6 +276,18 @@ skill, then writes:
 - `中文结论.md`: Chinese conclusion, level explanations, and boundary versus
   the MedScope Agent pipeline.
 
+Public-safe synthetic fixture for fresh clones:
+
+```bash
+python -m scripts.prepare_public_demo_fixture \
+  --output-dir output/fake/public_demo_fixture
+```
+
+This writes a synthetic, non-patient hip X-ray-like PNG and a manifest with a
+ready-to-send `service_payload`. Use it to test upload, routing, and the FHN
+skill path without private DICOM/NIfTI files. It is not a clinical image or a
+segmentation benchmark.
+
 No-mask visual pipeline:
 
 ```bash
