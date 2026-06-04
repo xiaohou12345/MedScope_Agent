@@ -165,6 +165,12 @@ export MEDSAM2_TIMEOUT_SECONDS=600
 
 ## 启动前端
 
+先检查运行环境。MedScope 要求 Python 3.10+：
+
+```bash
+python -m scripts.check_runtime_environment
+```
+
 ```bash
 python -m api.http_server --host 127.0.0.1 --port 8000
 ```
@@ -326,7 +332,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 427 tests in 62.401s
+Ran 430 tests in 65.065s
 OK
 ```
 

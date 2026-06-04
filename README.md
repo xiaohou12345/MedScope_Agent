@@ -150,6 +150,12 @@ See [docs/datasets/medsam2_runner_config.md](docs/datasets/medsam2_runner_config
 
 ## Run the Web App
 
+Check the runtime first. MedScope requires Python 3.10+:
+
+```bash
+python -m scripts.check_runtime_environment
+```
+
 Start the local HTTP server:
 
 ```bash
@@ -332,7 +338,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 427 tests in 62.401s
+Ran 430 tests in 65.065s
 OK
 ```
 

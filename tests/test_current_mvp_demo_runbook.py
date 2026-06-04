@@ -16,6 +16,7 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
             "python -m scripts.prepare_public_demo_fixture --suite",
             "python -m scripts.end_to_end_demo --suite",
             "python -m scripts.prepare_public_demo_fixture",
+            "python -m scripts.check_runtime_environment",
             "upload",
             "automatic skill routing",
             "visual evidence",

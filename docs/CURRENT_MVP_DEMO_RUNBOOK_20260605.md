@@ -93,6 +93,12 @@ validated segmentation result.
 
 ## Web Demo
 
+Check the runtime before starting the server:
+
+```bash
+python -m scripts.check_runtime_environment
+```
+
 Start the API and frontend:
 
 ```bash

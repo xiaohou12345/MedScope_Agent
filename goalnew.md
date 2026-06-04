@@ -9377,6 +9377,40 @@ python -m unittest discover -v
 
 结果：`427` 个测试通过，耗时 `62.401s`。
 
+### 2026-06-05 Runtime Environment Check 补齐
+
+本轮目标：服务器部署时如果直接用 Python 3.7/3.8 运行 `python -m api.http_server`，会先遇到 `typing.Protocol`、`str.removeprefix` 或新语法相关错误，容易误判成 API 或路由 bug。项目本身已经在 `pyproject.toml` 声明 Python `>=3.10`，但需要一个启动前可执行的检查入口。
+
+新增/调整：
+
+- 新增 `scripts/check_runtime_environment.py`
+  - 输出 `runtime_environment_readiness.v1` JSON。
+  - 明确当前 Python 版本、解释器路径、是否满足 `>=3.10`。
+  - 旧版本时返回 `ready=false` 和可执行 action items。
+- README / 中文 README / current MVP demo runbook
+  - 在启动 HTTP 服务前增加：
+    `python -m scripts.check_runtime_environment`
+- `tests/test_runtime_environment.py`
+  - 覆盖 Python 3.10 ready、Python 3.8 not_ready、CLI JSON 输出。
+- `tests/test_current_mvp_demo_runbook.py`
+  - 确认 runbook 保留 runtime check 命令。
+
+验证：
+
+```bash
+python -m unittest tests.test_runtime_environment tests.test_current_mvp_demo_runbook -v
+```
+
+结果：runtime environment 和 runbook 测试通过。
+
+全量回归：
+
+```bash
+python -m unittest discover -v
+```
+
+结果：`430` 个测试通过，耗时 `65.065s`。
+
 补充验证：
 
 ```bash
