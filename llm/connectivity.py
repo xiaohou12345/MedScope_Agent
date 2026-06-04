@@ -39,6 +39,31 @@ class ApiConnectivityChecker:
             "real_call_attempted": False,
         }
 
+    def inspect_real_vlm_validation(self) -> dict[str, Any]:
+        api_key_env = self.route_log.api_key_env_for_active_route()
+        api_key_present = bool(os.environ.get(api_key_env))
+        base_url = self.route_log.base_url_for_active_route()
+        vision_model = self.route_log.vision_model_for_active_route()
+        reasons = []
+        if not api_key_present:
+            reasons.append("api_key_missing")
+        if not base_url:
+            reasons.append("base_url_missing")
+        if not vision_model:
+            reasons.append("vision_model_missing")
+        return {
+            "status": "ready" if not reasons else "not_ready",
+            "workflow": "fhn_real_vlm_validation",
+            "active_route": self.route_log.active_route,
+            "vision_model": vision_model,
+            "base_url": base_url,
+            "api_key_env": api_key_env,
+            "api_key_present": api_key_present,
+            "reasons": reasons,
+            "network_call_attempted": False,
+            "secret_values_returned": False,
+        }
+
     def run_model_smoke(self, model_client: ModelClient) -> dict[str, Any]:
         response = model_client.chat(
             task="api_smoke_test",

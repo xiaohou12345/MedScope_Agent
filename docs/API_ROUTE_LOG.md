@@ -32,6 +32,21 @@ python /Users/4paradigm/Documents/project/cloudgpt_client_example.py
 python -m scripts.api_smoke_test
 ```
 
+HTTP 离线部署检查：
+
+```bash
+curl http://127.0.0.1:8000/v1/readiness
+```
+
+该接口会返回 `real_vlm_validation` 字段，用于判断 FHN real VLM validation 工作流是否具备最基本运行条件：
+
+- active route
+- vision model
+- base URL
+- 对应 API key 是否存在
+
+该检查不发起网络请求，不返回 API key 明文，也不代表真实 VLM 识别质量已经通过验证。
+
 显式真实调用：
 
 ```bash
@@ -53,6 +68,10 @@ api_key_present: true
 external_script_path: /Users/4paradigm/Documents/project/cloudgpt_client_example.py
 external_script_found: false
 real_call_ready: true
+real_vlm_validation:
+  workflow: fhn_real_vlm_validation
+  status: ready
+  network_call_attempted: false
 ```
 
 离线检查结论：当前 `dmx_base_url`、`dmx_model` 和 `dmx_vision_model` 已更新为可用路由配置。API key 不写入可提交代码文件；本机运行时从 `.env.local` 或环境变量读取。

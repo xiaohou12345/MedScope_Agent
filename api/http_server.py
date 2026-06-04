@@ -191,11 +191,14 @@ def build_readiness_payload(
     output_path = Path(output_root)
     upload_path.mkdir(parents=True, exist_ok=True)
     output_path.mkdir(parents=True, exist_ok=True)
-    api_route = ApiConnectivityChecker().inspect()
+    api_checker = ApiConnectivityChecker()
+    api_route = api_checker.inspect()
+    real_vlm_validation = api_checker.inspect_real_vlm_validation()
     medsam2 = inspect_medsam2_configuration()
     return {
         "status": "ok",
         "api_route": api_route,
+        "real_vlm_validation": real_vlm_validation,
         "medsam2": medsam2,
         "storage": {
             "upload_root": str(upload_path),

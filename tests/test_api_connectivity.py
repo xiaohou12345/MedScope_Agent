@@ -121,6 +121,54 @@ class ApiConnectivityTest(unittest.TestCase):
             self.assertEqual(payload["model"], "deepseek-v4-pro")
             self.assertEqual(payload["vision_model"], "gpt-5.5")
 
+    def test_real_vlm_validation_readiness_reports_missing_api_key_without_network(self):
+        old_key = os.environ.pop("DMX_API_KEY", None)
+        try:
+            checker = ApiConnectivityChecker(
+                route_log=ApiRouteLog(
+                    active_route="dmx",
+                    dmx_model="deepseek-v4-pro",
+                    dmx_vision_model="gpt-5.5",
+                    dmx_base_url="https://anyaigc.com",
+                )
+            )
+
+            result = checker.inspect_real_vlm_validation()
+        finally:
+            if old_key is not None:
+                os.environ["DMX_API_KEY"] = old_key
+
+        self.assertEqual(result["status"], "not_ready")
+        self.assertIn("api_key_missing", result["reasons"])
+        self.assertEqual(result["api_key_env"], "DMX_API_KEY")
+        self.assertFalse(result["api_key_present"])
+        self.assertFalse(result["network_call_attempted"])
+        self.assertEqual(result["vision_model"], "gpt-5.5")
+
+    def test_real_vlm_validation_readiness_never_returns_secret_values(self):
+        old_key = os.environ.get("DMX_API_KEY")
+        os.environ["DMX_API_KEY"] = "sk-secret-real-vlm-validation"
+        try:
+            checker = ApiConnectivityChecker(
+                route_log=ApiRouteLog(
+                    active_route="dmx",
+                    dmx_vision_model="gpt-5.5",
+                    dmx_base_url="https://anyaigc.com",
+                )
+            )
+
+            result = checker.inspect_real_vlm_validation()
+        finally:
+            if old_key is None:
+                os.environ.pop("DMX_API_KEY", None)
+            else:
+                os.environ["DMX_API_KEY"] = old_key
+
+        self.assertEqual(result["status"], "ready")
+        self.assertTrue(result["api_key_present"])
+        self.assertFalse(result["network_call_attempted"])
+        self.assertNotIn("sk-secret-real-vlm-validation", json.dumps(result))
+
 
 if __name__ == "__main__":
     unittest.main()
