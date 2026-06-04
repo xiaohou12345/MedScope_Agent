@@ -9,6 +9,7 @@ def parse_vlm_candidates(
     image_id: str,
     view_hint: str,
     source_image_path: str | None = None,
+    imaging_evidence_protocol: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Convert VLM-localized findings into bounded evidence items.
 
@@ -23,6 +24,7 @@ def parse_vlm_candidates(
     if not isinstance(findings, list):
         return []
 
+    protocol_by_target = _protocol_by_target(imaging_evidence_protocol)
     evidence_items: list[dict[str, Any]] = []
     for index, finding in enumerate(findings, start=1):
         if not isinstance(finding, dict):
@@ -40,7 +42,11 @@ def parse_vlm_candidates(
         if not has_location:
             limitations.append("no_valid_location")
 
-        diagnosis_level = "candidate_support" if has_location else "observation_only"
+        protocol = protocol_by_target.get(target, {})
+        diagnosis_usable, diagnosis_level, execution_mode, evidence_type, extra_limitations = (
+            _diagnostic_gate_from_protocol(protocol=protocol, has_location=has_location)
+        )
+        limitations.extend(extra_limitations)
         evidence_items.append(
             {
                 "target": target,
@@ -48,8 +54,8 @@ def parse_vlm_candidates(
                 "image_id": image_id,
                 "view_hint": view_hint,
                 "source_image_path": source_image_path,
-                "evidence_type": "visual_observation",
-                "execution_mode": "vlm_only",
+                "evidence_type": evidence_type,
+                "execution_mode": execution_mode,
                 "visual_observation": {
                     "status": "candidate_present" if has_location else "observed_unlocalized",
                     "rationale": str(finding.get("rationale") or finding.get("description") or ""),
@@ -67,13 +73,88 @@ def parse_vlm_candidates(
                     if has_location
                     else "unlocalized_observation",
                 },
-                "diagnosis_usable": has_location,
+                "diagnosis_usable": diagnosis_usable,
                 "diagnosis_usable_level": diagnosis_level,
                 "limitations": limitations,
                 "finding_id": str(finding.get("finding_id") or f"{image_id}_{index:03d}_{target}"),
             }
         )
     return evidence_items
+
+
+def _protocol_by_target(protocol: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if not isinstance(protocol, dict):
+        return {}
+    targets = protocol.get("finding_targets")
+    if not isinstance(targets, list):
+        return {}
+    by_target: dict[str, dict[str, Any]] = {}
+    for item in targets:
+        if not isinstance(item, dict):
+            continue
+        target = str(item.get("target") or "").strip()
+        if target:
+            by_target[target] = item
+    return by_target
+
+
+def _diagnostic_gate_from_protocol(
+    *,
+    protocol: dict[str, Any],
+    has_location: bool,
+) -> tuple[bool, str, str, str, list[str]]:
+    if not protocol:
+        return (
+            has_location,
+            "candidate_support" if has_location else "observation_only",
+            "vlm_only",
+            "visual_observation",
+            [],
+        )
+
+    protocol_mode = str(protocol.get("execution_mode") or "").strip()
+    protocol_type = str(protocol.get("evidence_type") or "visual_observation").strip()
+    protocol_level = str(protocol.get("diagnosis_usable_level") or "").strip()
+
+    if protocol_mode == "measurement_only":
+        return (
+            False,
+            "not_usable",
+            "measurement_only",
+            protocol_type or "anatomical_measurement",
+            ["measurement_requires_roi_contour_landmarks"],
+        )
+    if protocol_mode == "insufficient_input":
+        return (
+            False,
+            "not_usable",
+            "insufficient_input",
+            protocol_type or "visual_observation",
+            ["insufficient_input_for_protocol_target"],
+        )
+    if protocol_level in {"observation_only", "exploratory_only", "not_usable"}:
+        return (
+            False,
+            protocol_level,
+            "vlm_only",
+            protocol_type or "visual_observation",
+            ["protocol_limits_finding_to_observation"],
+        )
+    if protocol_level == "candidate_support":
+        return (
+            has_location,
+            "candidate_support" if has_location else "observation_only",
+            "vlm_only",
+            "visual_observation",
+            [],
+        )
+    return (
+        has_location,
+        "candidate_support" if has_location else "observation_only",
+        "vlm_only",
+        protocol_type or "visual_observation",
+        [],
+    )
 
 
 def _normalize_bbox(value: Any) -> tuple[list[int] | None, str | None]:

@@ -622,6 +622,7 @@ class GaoDoctorAgent:
                 image_id=str(primary["image_id"]),
                 view_hint=str(primary.get("view_hint") or "unknown"),
                 source_image_path=str(primary.get("image_path") or image_path),
+                imaging_evidence_protocol=disease_skill.get("imaging_evidence_protocol"),
             )
             if isinstance(raw_payload, dict)
             else []
@@ -762,12 +763,68 @@ class GaoDoctorAgent:
                 ),
                 user_payload=user_payload,
             )
-            parsed = json.loads(response)
+            parsed = self._parse_real_vlm_validation_response(response)
         except Exception as exc:
             return None, f"real_vlm_validation_parse_error: {exc}"
         if not isinstance(parsed, dict):
             return None, "real_vlm_validation_parse_error: response was not a JSON object"
         return parsed, None
+
+    def _parse_real_vlm_validation_response(self, response: Any) -> Any:
+        if isinstance(response, dict):
+            return response
+        text = str(response).strip()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        for block in self._extract_markdown_code_blocks(text):
+            try:
+                return json.loads(block)
+            except json.JSONDecodeError:
+                continue
+        json_object = self._extract_first_json_object(text)
+        if json_object:
+            return json.loads(json_object)
+        return json.loads(text)
+
+    def _extract_markdown_code_blocks(self, text: str) -> list[str]:
+        blocks: list[str] = []
+        parts = text.split("```")
+        for index in range(1, len(parts), 2):
+            block = parts[index].strip()
+            if block.lower().startswith("json"):
+                block = block[4:].strip()
+            if block:
+                blocks.append(block)
+        return blocks
+
+    def _extract_first_json_object(self, text: str) -> str | None:
+        start = text.find("{")
+        if start < 0:
+            return None
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(text)):
+            char = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : index + 1]
+        return None
 
     def _finding_from_vlm_evidence_item(self, item: dict[str, Any]) -> dict[str, Any]:
         observation = dict(item.get("visual_observation") or {})
