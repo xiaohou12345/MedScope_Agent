@@ -125,17 +125,22 @@ http://127.0.0.1:8000
 
 Recommended demonstration order:
 
-1. Load or upload a public-safe image.
-2. Enter a symptom-oriented message, such as hip pain, without requiring the
-   user to name a disease.
-3. Run analysis and inspect automatic skill routing in the audit views.
+1. Click `运行 Public-safe MVP 样例` to run the public-safe HTTP suite from the
+   frontend.
+2. Confirm the rendered case uses `demo_source=public_safe_demo_suite`.
+3. Inspect automatic skill routing in the audit views.
 4. Review the visual evidence panel.
 5. Review the patient-facing diagnosis report.
 6. Open the evidence bundle to inspect structured facts, missing evidence, and
    quality levels.
 7. Open memory audit to show patient memory, image memory, skill memory, and
    reasoning memory.
-8. Ask a follow-up QA question only after analysis is complete.
+8. Ask a follow-up QA question only after analysis is complete; it should use
+   `POST /v1/demo/public-safe/qa` as an artifact-bound QA route.
+
+Use the generic upload and run-analysis path when you intentionally want to test
+uploads. For the public-safe smoke demo, prefer the dedicated button because it
+regenerates the demo artifact and keeps QA bound to that artifact.
 
 ## What To Say In A Meeting
 

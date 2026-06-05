@@ -9545,6 +9545,39 @@ python -m unittest discover -v
 
 结果：README/runbook 文档守卫、diff 空白检查和全量 `433` 个 unittest 通过；完整回归耗时 `61.359s`。
 
+### 2026-06-05 Public-safe Runbook 前端 Smoke 顺序守卫补齐
+
+本轮目标：current MVP runbook 已经说明前端有 `运行 Public-safe MVP 样例` 按钮，但 `Recommended demonstration order` 仍写成先上传 public-safe image、输入症状、再运行分析。这和当前最稳的 public-safe HTTP/frontend smoke path 不一致，容易让演示者绕开 artifact-bound QA 路由。
+
+新增/调整：
+
+- `docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md`
+  - 推荐演示顺序改为先点击 `运行 Public-safe MVP 样例`。
+  - 明确确认 `demo_source=public_safe_demo_suite`。
+  - 追问步骤明确应走 `POST /v1/demo/public-safe/qa` artifact-bound QA route。
+  - 说明 generic upload/run-analysis path 只用于刻意测试上传；public-safe smoke demo 优先用专用按钮。
+- `tests/test_current_mvp_demo_runbook.py`
+  - 新增 runbook 守卫，确认推荐顺序包含前端按钮、QA route 和 `artifact-bound`。
+  - 确认推荐顺序不再以 `Load or upload a public-safe image.` 开头。
+
+RED：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook.CurrentMvpDemoRunbookTest.test_runbook_recommends_frontend_public_safe_button_for_smoke_demo -v
+```
+
+结果：测试按预期失败，推荐顺序缺少 `运行 Public-safe MVP 样例`。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：runbook 文档守卫、diff 空白检查和全量 `434` 个 unittest 通过；完整回归耗时 `60.900s`。
+
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 
 本轮目标：追问链路已经能通过 `GaoDoctorAgent QA` 展示为 evidence bundle 约束下的后续回答，但 `QA Safety` 区块只展示 `evidence_bundle_required` 和 QA 数量，没有明确显示有多少条追问实际使用了 evidence bundle。

@@ -49,6 +49,17 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
         self.assertIn("POST /v1/demo/public-safe/qa", zh_api_routes)
         self.assertNotIn("把公开安全 fixture 扩展成", zh_readme)
 
+    def test_runbook_recommends_frontend_public_safe_button_for_smoke_demo(self):
+        text = RUNBOOK.read_text(encoding="utf-8")
+        demonstration_order = text.split("Recommended demonstration order:", 1)[1].split(
+            "## What To Say In A Meeting",
+            1,
+        )[0]
+        self.assertIn("运行 Public-safe MVP 样例", demonstration_order)
+        self.assertIn("POST /v1/demo/public-safe/qa", demonstration_order)
+        self.assertIn("artifact-bound", demonstration_order)
+        self.assertNotIn("Load or upload a public-safe image.", demonstration_order)
+
 
 if __name__ == "__main__":
     unittest.main()
