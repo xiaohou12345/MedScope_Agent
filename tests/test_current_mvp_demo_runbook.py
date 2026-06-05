@@ -38,6 +38,25 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
                 readme = (REPO_ROOT / readme_name).read_text(encoding="utf-8")
                 self.assertIn(target, readme)
 
+    def test_readmes_document_lists_are_bilingually_aligned_for_current_closure(self):
+        required_targets = [
+            "docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md",
+            "docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md",
+            "docs/CURRENT_GOAL_COMPLETION_AUDIT_20260605.md",
+            "docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md",
+        ]
+
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        see_list = readme.split("See:", 1)[1].split("## Repository Layout", 1)[0]
+        zh_readme = (REPO_ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+        zh_see_list = zh_readme.split("详细说明：", 1)[1].split("## 目录结构", 1)[0]
+
+        for target in required_targets:
+            with self.subTest(target=target, readme="README.md"):
+                self.assertIn(target, see_list)
+            with self.subTest(target=target, readme="README.zh-CN.md"):
+                self.assertIn(target, zh_see_list)
+
     def test_readmes_document_public_safe_qa_route_as_current_api(self):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         api_routes = readme.split("Other useful routes:", 1)[1].split("## Useful Demos", 1)[0]
