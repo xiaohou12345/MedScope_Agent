@@ -4,6 +4,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCOPE_DOC = REPO_ROOT / "docs" / "CURRENT_GOAL_CLOSURE_SCOPE_20260605.md"
+COMPLETION_AUDIT_DOC = REPO_ROOT / "docs" / "CURRENT_GOAL_COMPLETION_AUDIT_20260605.md"
 
 
 class GoalClosureScopeTest(unittest.TestCase):
@@ -20,6 +21,37 @@ class GoalClosureScopeTest(unittest.TestCase):
 
     def test_project_readmes_link_current_goal_scope(self):
         target = "docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md"
+        for readme_name in ["README.md", "README.zh-CN.md"]:
+            with self.subTest(readme_name=readme_name):
+                readme = (REPO_ROOT / readme_name).read_text(encoding="utf-8")
+                self.assertIn(target, readme)
+
+    def test_current_goal_completion_audit_maps_scope_to_evidence(self):
+        self.assertTrue(COMPLETION_AUDIT_DOC.exists())
+
+        text = COMPLETION_AUDIT_DOC.read_text(encoding="utf-8")
+        required_phrases = [
+            "Current Goal Completion Audit",
+            "Evidence Status",
+            "five-agent clinical evidence pipeline",
+            "FHN evidence-protocol sample path",
+            "segmentation benchmark infrastructure",
+            "benchmark results blocked",
+            "README and Chinese README aligned",
+            "Deferred Evidence",
+            "real FHN data and masks are deferred",
+            "python -m unittest discover -v",
+            "437 tests",
+        ]
+        for phrase in required_phrases:
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+
+        self.assertNotIn("real FHN benchmark completed", text)
+        self.assertNotIn("metric-ready real benchmark completed", text)
+
+    def test_project_readmes_link_current_goal_completion_audit(self):
+        target = "docs/CURRENT_GOAL_COMPLETION_AUDIT_20260605.md"
         for readme_name in ["README.md", "README.zh-CN.md"]:
             with self.subTest(readme_name=readme_name):
                 readme = (REPO_ROOT / readme_name).read_text(encoding="utf-8")

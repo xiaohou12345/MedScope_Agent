@@ -9736,6 +9736,41 @@ python -m unittest discover -v
 
 结果：README benchmark 隔离守卫、current MVP runbook/scope 守卫、segmentation benchmark 质量门行为测试、diff 空白检查和全量 `435` 个 unittest 通过；完整回归耗时 `76.104s`。
 
+### 2026-06-05 Current Goal Completion Audit 补齐
+
+本轮目标：继续 current closure audit，把 `CURRENT_GOAL_CLOSURE_SCOPE_20260605.md` 中的 included/deferred 要求映射到当前代码、文档和测试证据，避免只靠 scope 文案判断目标是否收敛。
+
+新增/调整：
+
+- `docs/CURRENT_GOAL_COMPLETION_AUDIT_20260605.md`
+  - 新增 requirement-to-evidence 表，覆盖五代理临床证据流水线、FHN evidence-protocol sample path、segmentation benchmark infrastructure、benchmark 结果隔离、README/中文 README 对齐。
+  - 明确 deferred evidence：真实 FHN 数据、真实 mask、metric-ready real benchmark manifest、临床可靠 FHN X-ray lesion segmentation 均未完成且不属于当前 closure。
+  - 记录 full regression 和 focused guard 命令。
+- `docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md`
+  - 链接 completion audit 文档。
+- `README.md` / `README.zh-CN.md`
+  - 文档入口链接 completion audit。
+- `tests/test_goal_closure_scope.py`
+  - 新增 audit 文档存在性、scope-to-evidence 关键短语、deferred 边界和 README 链接守卫。
+
+RED：
+
+```bash
+python -m unittest tests.test_goal_closure_scope.GoalClosureScopeTest.test_current_goal_completion_audit_maps_scope_to_evidence tests.test_goal_closure_scope.GoalClosureScopeTest.test_project_readmes_link_current_goal_completion_audit -v
+```
+
+结果：测试按预期失败，completion audit 文档不存在，README 英/中文也没有链接。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_goal_closure_scope tests.test_current_mvp_demo_runbook -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：goal scope/completion audit/runbook 文档守卫、diff 空白检查和全量 `437` 个 unittest 通过；完整回归耗时 `78.189s`。
+
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 
 本轮目标：追问链路已经能通过 `GaoDoctorAgent QA` 展示为 evidence bundle 约束下的后续回答，但 `QA Safety` 区块只展示 `evidence_bundle_required` 和 QA 数量，没有明确显示有多少条追问实际使用了 evidence bundle。

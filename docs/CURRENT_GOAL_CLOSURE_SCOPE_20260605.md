@@ -1,6 +1,8 @@
 # Current Goal Closure Scope - 2026-06-05
 
 This document fixes the closure boundary for the current MedScope Agent goal.
+The requirement-to-evidence audit is tracked in
+[CURRENT_GOAL_COMPLETION_AUDIT_20260605.md](CURRENT_GOAL_COMPLETION_AUDIT_20260605.md).
 
 ## Included In This Goal
 
@@ -39,7 +41,7 @@ frontend smoke-demo order guard, bilingual readiness route guard, and frontend
 demo/QA-source visibility guard, the current full regression is:
 
 ```text
-435 tests passed
+437 tests passed
 ```
 
 The scope document adds a small documentation guard so future edits do not

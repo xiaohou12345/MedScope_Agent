@@ -68,6 +68,7 @@ MedScope 不是简单把系统拆成很多 Agent。更准确的说法是：
 详细说明：
 
 - [docs/architecture/boundaries.md](docs/architecture/boundaries.md)
+- [docs/CURRENT_GOAL_COMPLETION_AUDIT_20260605.md](docs/CURRENT_GOAL_COMPLETION_AUDIT_20260605.md)
 - [docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md](docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md)
 - [docs/FHN_REAL_VLM_VALIDATION_20260604.md](docs/FHN_REAL_VLM_VALIDATION_20260604.md)
 - [docs/DUAL_PATH_AGENT_FRAMEWORK.md](docs/DUAL_PATH_AGENT_FRAMEWORK.md)
@@ -341,7 +342,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 435 tests in 76.104s
+Ran 437 tests in 78.189s
 OK
 ```
 

@@ -58,6 +58,7 @@ See:
 
 - [docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md](docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md)
 - [docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md](docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md)
+- [docs/CURRENT_GOAL_COMPLETION_AUDIT_20260605.md](docs/CURRENT_GOAL_COMPLETION_AUDIT_20260605.md)
 - [docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md](docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md)
 - [docs/FHN_REAL_VLM_VALIDATION_20260604.md](docs/FHN_REAL_VLM_VALIDATION_20260604.md)
 - [docs/architecture/boundaries.md](docs/architecture/boundaries.md)
@@ -347,7 +348,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 435 tests in 76.104s
+Ran 437 tests in 78.189s
 OK
 ```
 
