@@ -101,9 +101,10 @@ These files are intentionally not git-tracked because `output/` is ignored:
 
 The AP + lateral CC0 pair is a real-image demonstration candidate, not a strict AP + frog-lateral benchmark.
 
-## Verification Snapshot
+## Historical Verification Snapshot
 
-Latest full verification recorded after the real VLM validation path and dotenv isolation fix:
+Historical full verification recorded after the real VLM validation path and
+dotenv isolation fix:
 
 ```bash
 python -m unittest discover -v
@@ -114,6 +115,11 @@ Result recorded in the local phase report:
 ```text
 421 tests passed
 ```
+
+For the current goal closure baseline, use
+[CURRENT_GOAL_CLOSURE_SCOPE_20260605.md](CURRENT_GOAL_CLOSURE_SCOPE_20260605.md)
+and
+[CURRENT_GOAL_COMPLETION_AUDIT_20260605.md](CURRENT_GOAL_COMPLETION_AUDIT_20260605.md).
 
 For a fresh pre-commit check, run:
 

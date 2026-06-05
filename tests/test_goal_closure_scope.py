@@ -5,6 +5,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCOPE_DOC = REPO_ROOT / "docs" / "CURRENT_GOAL_CLOSURE_SCOPE_20260605.md"
 COMPLETION_AUDIT_DOC = REPO_ROOT / "docs" / "CURRENT_GOAL_COMPLETION_AUDIT_20260605.md"
+FHN_MVP_DOC = REPO_ROOT / "docs" / "FHN_EVIDENCE_PROTOCOL_MVP_20260604.md"
 
 
 class GoalClosureScopeTest(unittest.TestCase):
@@ -62,6 +63,15 @@ class GoalClosureScopeTest(unittest.TestCase):
             with self.subTest(readme_name=readme_name):
                 readme = (REPO_ROOT / readme_name).read_text(encoding="utf-8")
                 self.assertIn(target, readme)
+
+    def test_fhn_mvp_doc_marks_421_tests_as_historical_snapshot(self):
+        self.assertTrue(FHN_MVP_DOC.exists())
+
+        text = FHN_MVP_DOC.read_text(encoding="utf-8")
+        self.assertIn("Historical Verification Snapshot", text)
+        self.assertIn("421 tests passed", text)
+        self.assertIn("CURRENT_GOAL_CLOSURE_SCOPE_20260605.md", text)
+        self.assertIn("CURRENT_GOAL_COMPLETION_AUDIT_20260605.md", text)
 
 
 if __name__ == "__main__":
