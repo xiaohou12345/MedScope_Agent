@@ -142,6 +142,8 @@ DMX_API_KEY="..."
 DMX_BASE_URL="https://your-openai-compatible-host.example.com"
 DMX_MODEL="your-chat-model"
 DMX_VISION_MODEL="your-vision-model"
+DMX_API_ENDPOINT="chat_completions"  # 或 responses
+DMX_USER_AGENT="MedScope-Agent/0.1"
 
 # 或自部署 KY 路由
 MEDSCOPE_ACTIVE_ROUTE=ky
@@ -149,6 +151,8 @@ KY_API_KEY="..."
 KY_BASE_URL="http://127.0.0.1:8000/v1/chat/completions"
 KY_MODEL="your-chat-model"
 KY_VISION_MODEL="your-vision-model"
+KY_API_ENDPOINT="chat_completions"  # 或 responses
+KY_USER_AGENT="MedScope-Agent/0.1"
 ```
 
 Agent 代码不应直接写 provider-specific 逻辑，只通过 `llm/` 中的统一接口调用。

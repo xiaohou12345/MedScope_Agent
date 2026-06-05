@@ -141,6 +141,8 @@ class ApiConnectivityTest(unittest.TestCase):
                     "DMX_MODEL",
                     "DMX_VISION_MODEL",
                     "DMX_BASE_URL",
+                    "DMX_API_ENDPOINT",
+                    "DMX_USER_AGENT",
                 ]
             }
             try:
@@ -148,6 +150,8 @@ class ApiConnectivityTest(unittest.TestCase):
                 os.environ["DMX_MODEL"] = "env-chat-model"
                 os.environ["DMX_VISION_MODEL"] = "env-vision-model"
                 os.environ["DMX_BASE_URL"] = "https://env.example.com"
+                os.environ["DMX_API_ENDPOINT"] = "responses"
+                os.environ["DMX_USER_AGENT"] = "curl/8.5.0"
 
                 route_log = ApiRouteLog.from_file(route_log_path)
             finally:
@@ -160,6 +164,8 @@ class ApiConnectivityTest(unittest.TestCase):
             self.assertEqual(route_log.model_for_active_route(), "env-chat-model")
             self.assertEqual(route_log.vision_model_for_active_route(), "env-vision-model")
             self.assertEqual(route_log.base_url_for_active_route(), "https://env.example.com")
+            self.assertEqual(route_log.api_endpoint_for_active_route(), "responses")
+            self.assertEqual(route_log.user_agent_for_active_route(), "curl/8.5.0")
 
 
 if __name__ == "__main__":
