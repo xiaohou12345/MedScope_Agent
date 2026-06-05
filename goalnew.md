@@ -9705,6 +9705,37 @@ python -m unittest discover -v
 
 结果：current MVP runbook/scope 文档守卫、diff 空白检查和全量 `434` 个 unittest 通过；完整回归耗时 `59.537s`。
 
+### 2026-06-05 Benchmark 结果隔离 README 守卫补齐
+
+本轮目标：继续 current closure audit。scope 已要求 benchmark 结果不能进入临床诊断、正式 skill promotion 或 self-evolving guideline updates；代码层面已有 segmentation benchmark 行为测试守住 `diagnosis_allowed=false` 和 `formal_skill_update_allowed=false`，但 README 的 Current Review 面向使用者段落还没有明确写出这个隔离边界。
+
+新增/调整：
+
+- `README.md`
+  - Important limitations 增加：`Benchmark results do not update clinical diagnosis or formal skills; they only report validation metrics and quality-gate status.`。
+- `README.zh-CN.md`
+  - 项目 Review 风险段增加：`benchmark 结果不会更新临床诊断或正式 skill，只报告验证指标和质量门状态。`。
+- `tests/test_current_mvp_demo_runbook.py`
+  - 新增 README 英/中文守卫，确认 benchmark 结果隔离边界留在 Current Review 段。
+
+RED：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook.CurrentMvpDemoRunbookTest.test_readmes_document_benchmark_results_do_not_update_diagnosis_or_skills -v
+```
+
+结果：测试按预期失败，英文 README Current Review 段缺少 `Benchmark results do not update clinical diagnosis or formal skills`。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook.CurrentMvpDemoRunbookTest.test_readmes_document_benchmark_results_do_not_update_diagnosis_or_skills tests.test_current_mvp_demo_runbook tests.test_goal_closure_scope tests.test_segmentation_benchmark.SegmentationBenchmarkTest.test_metric_ready_case_applies_manifest_quality_gate_without_diagnosis_upgrade -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：README benchmark 隔离守卫、current MVP runbook/scope 守卫、segmentation benchmark 质量门行为测试、diff 空白检查和全量 `435` 个 unittest 通过；完整回归耗时 `76.104s`。
+
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 
 本轮目标：追问链路已经能通过 `GaoDoctorAgent QA` 展示为 evidence bundle 约束下的后续回答，但 `QA Safety` 区块只展示 `evidence_bundle_required` 和 QA 数量，没有明确显示有多少条追问实际使用了 evidence bundle。

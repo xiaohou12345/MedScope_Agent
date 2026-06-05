@@ -61,6 +61,21 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
         )[0]
         self.assertIn("不证明病灶检测质量", zh_public_safe_section)
 
+    def test_readmes_document_benchmark_results_do_not_update_diagnosis_or_skills(self):
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        current_review = readme.split("## Current Review", 1)[1].split("## Safety and Privacy", 1)[0]
+        self.assertIn(
+            "Benchmark results do not update clinical diagnosis or formal skills",
+            current_review,
+        )
+
+        zh_readme = (REPO_ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+        zh_current_review = zh_readme.split("## 项目 Review", 1)[1].split("## 医疗安全和隐私", 1)[0]
+        self.assertIn(
+            "benchmark 结果不会更新临床诊断或正式 skill",
+            zh_current_review,
+        )
+
     def test_runbook_recommends_frontend_public_safe_button_for_smoke_demo(self):
         text = RUNBOOK.read_text(encoding="utf-8")
         demonstration_order = text.split("Recommended demonstration order:", 1)[1].split(

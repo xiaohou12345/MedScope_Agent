@@ -341,7 +341,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 434 tests in 59.537s
+Ran 435 tests in 76.104s
 OK
 ```
 
@@ -369,6 +369,7 @@ node --check web/app.js
 - 视觉后端接口已声明 VLM-only、VLM+segmenter、specialist segmenter 三类 contract，但仍需要真实 benchmark 验证质量。
 - `benchmarks/segmentation/` 已经把专病分割验证入口和 web demo 分离，支持通用二值病灶 mask 的 Dice/IoU，并能对 metric-ready case 输出质量门通过/失败统计。
 - Skill 自动升级被正确阻断，但后续如果要做 self-evolving，需要严格保留人工审核和 validation gate。
+- benchmark 结果不会更新临床诊断或正式 skill，只报告验证指标和质量门状态。
 - 当前系统是科研 demo，不是临床验证系统。
 - 当前 goal 收敛范围已经明确：真实 FHN 数据、真实 mask、metric-ready 真实 benchmark 后置，等数据到位后再接入。见 [docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md](docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md)。
 

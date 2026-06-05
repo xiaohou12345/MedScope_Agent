@@ -347,7 +347,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 434 tests in 59.537s
+Ran 435 tests in 76.104s
 OK
 ```
 
@@ -375,6 +375,7 @@ Important limitations:
 - Several demos depend on ignored local artifacts under `output/` or `data/external/`.
 - Dependency groups are now declared in `pyproject.toml`; there is still no lockfile, so exact reproducibility across machines is not pinned.
 - Skill review and candidate promotion are intentionally blocked from updating formal skills automatically.
+- Benchmark results do not update clinical diagnosis or formal skills; they only report validation metrics and quality-gate status.
 - The project is a research prototype, not a clinically validated diagnostic system.
 - Current goal closure explicitly defers real FHN data, real masks, and a metric-ready real benchmark until those data are available. See [docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md](docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md).
 
