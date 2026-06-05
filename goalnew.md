@@ -9640,6 +9640,40 @@ python -m unittest discover -v
 
 结果：前端静态守卫、JS 语法检查、public-safe HTTP/doc targeted 测试、diff 空白检查和全量 `434` 个 unittest 通过；完整回归耗时 `59.517s`。
 
+### 2026-06-05 Public-safe 前端 QA Source 可见性补齐
+
+本轮目标：`Demo / Artifact Source` 已能在初始 public-safe demo payload 中显示 `demo_source=public_safe_demo_suite`，但 follow-up QA 返回的 `qa_source=public_safe_demo_artifact` 只存在于 QA payload 里；前端没有把它合并回视觉摘要状态，演示者追问后无法直接确认 QA 来自 artifact-bound route。
+
+新增/调整：
+
+- `web/app.js`
+  - `renderQaPayload()` 将 `demo_source` 和 `qa_source` 合并进 `state.lastPayload`。
+  - 当 QA payload 带有 source 字段时重新调用 `renderVisualOutput(state.lastPayload)`，让 `Demo / Artifact Source` 在追问后展示 `qa_source`。
+  - 普通 QA 不带 source 字段时保持原来的 memory audit 渲染路径。
+- `tests/test_http_entrypoint.py`
+  - 前端静态资源守卫新增 `qa_source: payload.qa_source || state.lastPayload.qa_source`。
+  - 同一守卫确认 QA source 存在时会调用 `renderVisualOutput(state.lastPayload)`。
+
+RED：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
+```
+
+结果：测试按预期失败，前端静态 JS 中缺少 `qa_source: payload.qa_source || state.lastPayload.qa_source`。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
+node --check web/app.js
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_public_safe_demo_endpoint_generates_suite_without_real_data tests.test_http_entrypoint.HttpEntrypointTest.test_public_safe_demo_qa_answers_from_demo_artifact_not_live_memory tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist tests.test_current_mvp_demo_runbook tests.test_goal_closure_scope -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：前端静态守卫、JS 语法检查、public-safe HTTP/QA/doc targeted 测试、diff 空白检查和全量 `434` 个 unittest 通过；完整回归耗时 `60.658s`。
+
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 
 本轮目标：追问链路已经能通过 `GaoDoctorAgent QA` 展示为 evidence bundle 约束下的后续回答，但 `QA Safety` 区块只展示 `evidence_bundle_required` 和 QA 数量，没有明确显示有多少条追问实际使用了 evidence bundle。

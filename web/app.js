@@ -3915,10 +3915,15 @@ function renderQaPayload(payload) {
     ...state.lastPayload,
     case_id: state.caseId,
     intent: payload.intent || "qa",
+    demo_source: payload.demo_source || state.lastPayload.demo_source,
+    qa_source: payload.qa_source || state.lastPayload.qa_source,
     memory_audit: payload.memory_audit || state.lastPayload.memory_audit,
     memory_replay: payload.memory_replay || state.lastPayload.memory_replay,
     runtime_gateway_trace: payload.runtime_gateway_trace || state.lastPayload.runtime_gateway_trace,
   };
+  if (payload.demo_source || payload.qa_source) {
+    renderVisualOutput(state.lastPayload);
+  }
   if (payload.memory_audit || payload.memory_replay || payload.runtime_gateway_trace) {
     renderMemoryAudit(state.lastPayload);
   }

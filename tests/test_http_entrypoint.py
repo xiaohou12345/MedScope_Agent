@@ -719,6 +719,8 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn(b"public_safe_demo_suite", body)
         self.assertIn(b"renderDemoSourceSummary", body)
         self.assertIn(b"demo_source: payload.demo_source", body)
+        self.assertIn(b"qa_source: payload.qa_source || state.lastPayload.qa_source", body)
+        self.assertIn(b"renderVisualOutput(state.lastPayload)", body)
         self.assertIn(b"fetchEvidenceGatewaySnapshot", body)
         self.assertIn(b"renderEvidenceGatewaySnapshot", body)
         self.assertIn("Evidence Gateway 快照".encode("utf-8"), body)
