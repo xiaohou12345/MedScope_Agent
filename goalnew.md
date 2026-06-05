@@ -9771,6 +9771,42 @@ python -m unittest discover -v
 
 结果：goal scope/completion audit/runbook 文档守卫、diff 空白检查和全量 `437` 个 unittest 通过；完整回归耗时 `78.189s`。
 
+### 2026-06-05 README 下一步改为 Current Closure 交接基线
+
+本轮目标：README / 中文 README 已经链接 current goal closure scope 和 completion audit，但“Recommended next engineering steps / 建议下一步”的第 1 条仍写成“Close the current MVP goal / 先把当前 MVP goal 收敛”，会让读者误以为 current closure 仍未形成。当前应把 closure scope/audit 作为后续工作的交接基线，而不是继续把“收敛当前 goal”列为下一步。
+
+新增/调整：
+
+- `tests/test_current_mvp_demo_runbook.py`
+  - 新增 `test_readmes_use_current_closure_as_handoff_baseline`，守住中英文 README 下一步列表：
+    - 英文包含 `Use the current goal closure scope and completion audit`
+    - 英文包含 `handoff baseline`
+    - 英文不再包含 `Close the current MVP goal`
+    - 中文包含 `把 current goal closure scope 和 completion audit`
+    - 中文包含 `交接基线`
+    - 中文不再包含 `先把当前 MVP goal 收敛`
+- `README.md`
+  - 下一步第 1 条改为使用 current goal closure scope 和 completion audit 作为 handoff baseline。
+- `README.zh-CN.md`
+  - 下一步第 1 条改为把 current goal closure scope 和 completion audit 作为后续工作的交接基线。
+
+RED：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook.CurrentMvpDemoRunbookTest.test_readmes_use_current_closure_as_handoff_baseline -v
+```
+
+结果：测试按预期失败，英文 README 下一步仍写 `Close the current MVP goal`。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_goal_closure_scope tests.test_current_mvp_demo_runbook -v
+git diff --check
+```
+
+结果：README handoff baseline 守卫、goal scope/completion audit/runbook 文档守卫和 diff 空白检查通过。
+
 ### 2026-06-05 FHN MVP 历史快照与 Current Closure 对齐
 
 本轮目标：README 仍把 `docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md` 作为 FHN evidence protocol MVP 的架构入口，但该文档的验证段只写 `421 tests passed`，没有说明这是 2026-06-04 阶段历史快照，也没有导向 2026-06-05 current closure 的 `437` 基线。为避免读者把旧快照当成当前验证状态，本轮补齐交接说明和守卫。

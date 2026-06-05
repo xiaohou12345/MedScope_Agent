@@ -382,7 +382,7 @@ Important limitations:
 
 Recommended next engineering steps:
 
-1. Close the current MVP goal around architecture clarity, patient-facing report/QA behavior, evidence bundle audit, and benchmark infrastructure.
+1. Use the current goal closure scope and completion audit as the handoff baseline for future work.
 2. Keep the public-safe HTTP/frontend demo as the smoke gate for future report, QA, and memory-audit UI changes.
 3. After real FHN labeled data and masks are obtained, add benchmark cases to `benchmarks/segmentation/` with `evaluator_type: binary_mask` and manifest `metric_gates`.
 4. Add a lockfile or pinned environment export if exact deployment reproducibility becomes necessary.

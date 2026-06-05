@@ -376,7 +376,7 @@ node --check web/app.js
 
 建议下一步：
 
-1. 先把当前 MVP goal 收敛到架构说明、患者端报告/QA、evidence bundle 审计和 benchmark 基础设施。
+1. 把 current goal closure scope 和 completion audit 作为后续工作的交接基线。
 2. 把 public-safe HTTP/前端 demo 保持为后续报告、QA 和 memory audit UI 改动的 smoke gate。
 3. 等真实 FHN 标注数据和 mask 到位后，再向 `benchmarks/segmentation/` 增加 `evaluator_type: binary_mask` 和 `metric_gates`。
 4. 如果进入固定部署，再增加锁文件或 pinned environment export。

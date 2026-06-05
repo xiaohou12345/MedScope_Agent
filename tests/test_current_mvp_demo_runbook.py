@@ -76,6 +76,22 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
             zh_current_review,
         )
 
+    def test_readmes_use_current_closure_as_handoff_baseline(self):
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        next_steps = readme.split("Recommended next engineering steps:", 1)[1].split(
+            "## Safety and Privacy",
+            1,
+        )[0]
+        self.assertIn("Use the current goal closure scope and completion audit", next_steps)
+        self.assertIn("handoff baseline", next_steps)
+        self.assertNotIn("Close the current MVP goal", next_steps)
+
+        zh_readme = (REPO_ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+        zh_next_steps = zh_readme.split("建议下一步：", 1)[1].split("## 医疗安全和隐私", 1)[0]
+        self.assertIn("把 current goal closure scope 和 completion audit", zh_next_steps)
+        self.assertIn("交接基线", zh_next_steps)
+        self.assertNotIn("先把当前 MVP goal 收敛", zh_next_steps)
+
     def test_runbook_recommends_frontend_public_safe_button_for_smoke_demo(self):
         text = RUNBOOK.read_text(encoding="utf-8")
         demonstration_order = text.split("Recommended demonstration order:", 1)[1].split(
