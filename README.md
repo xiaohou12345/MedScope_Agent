@@ -125,6 +125,23 @@ export DMX_API_KEY="..."
 export KY_API_KEY="..."
 ```
 
+You can also create a local `.env.local` in the repository root. It is ignored by git and loaded automatically by the HTTP server. Supported route overrides:
+
+```bash
+MEDSCOPE_ACTIVE_ROUTE=dmx
+DMX_API_KEY="..."
+DMX_BASE_URL="https://your-openai-compatible-host.example.com"
+DMX_MODEL="your-chat-model"
+DMX_VISION_MODEL="your-vision-model"
+
+# or a self-hosted KY route
+MEDSCOPE_ACTIVE_ROUTE=ky
+KY_API_KEY="..."
+KY_BASE_URL="http://127.0.0.1:8000/v1/chat/completions"
+KY_MODEL="your-chat-model"
+KY_VISION_MODEL="your-vision-model"
+```
+
 MedSAM2 is optional and configured through environment variables:
 
 ```bash

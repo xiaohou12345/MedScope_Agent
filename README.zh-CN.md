@@ -134,6 +134,23 @@ export DMX_API_KEY="..."
 export KY_API_KEY="..."
 ```
 
+也可以在仓库根目录创建本地 `.env.local`，该文件已被 `.gitignore` 忽略。HTTP 服务启动时会自动读取它。支持的模型路由覆盖项包括：
+
+```bash
+MEDSCOPE_ACTIVE_ROUTE=dmx
+DMX_API_KEY="..."
+DMX_BASE_URL="https://your-openai-compatible-host.example.com"
+DMX_MODEL="your-chat-model"
+DMX_VISION_MODEL="your-vision-model"
+
+# 或自部署 KY 路由
+MEDSCOPE_ACTIVE_ROUTE=ky
+KY_API_KEY="..."
+KY_BASE_URL="http://127.0.0.1:8000/v1/chat/completions"
+KY_MODEL="your-chat-model"
+KY_VISION_MODEL="your-vision-model"
+```
+
 Agent 代码不应直接写 provider-specific 逻辑，只通过 `llm/` 中的统一接口调用。
 
 ## MedSAM2 配置
