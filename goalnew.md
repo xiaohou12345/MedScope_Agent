@@ -9578,6 +9578,35 @@ python -m unittest discover -v
 
 结果：runbook 文档守卫、diff 空白检查和全量 `434` 个 unittest 通过；完整回归耗时 `60.900s`。
 
+### 2026-06-05 中文 README Readiness Route 守卫补齐
+
+本轮目标：英文 README 的常用接口列表已经包含 `GET /v1/readiness`，但中文 README 的常用接口列表漏掉该 route；这会让中文演示/部署说明少一个 HTTP readiness 入口。
+
+新增/调整：
+
+- `README.zh-CN.md`
+  - 常用接口列表新增 `GET /v1/readiness`。
+- `tests/test_current_mvp_demo_runbook.py`
+  - README API 守卫同时检查英文和中文 API 列表都包含 `GET /v1/readiness`。
+
+RED：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook.CurrentMvpDemoRunbookTest.test_readmes_document_public_safe_qa_route_as_current_api -v
+```
+
+结果：测试按预期失败，中文 README 常用接口列表缺少 `GET /v1/readiness`。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：README/runbook 文档守卫、diff 空白检查和全量 `434` 个 unittest 通过；完整回归耗时 `63.539s`。
+
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 
 本轮目标：追问链路已经能通过 `GaoDoctorAgent QA` 展示为 evidence bundle 约束下的后续回答，但 `QA Safety` 区块只展示 `evidence_bundle_required` 和 QA 数量，没有明确显示有多少条追问实际使用了 evidence bundle。

@@ -229,6 +229,7 @@ curl -X POST http://127.0.0.1:8000/v1/medscope \
 常用接口：
 
 - `GET /health`
+- `GET /v1/readiness`
 - `POST /v1/upload?filename=image.png`
 - `GET /v1/skills`
 - `GET /v1/skills/{skill_key}`
@@ -339,7 +340,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 434 tests in 60.900s
+Ran 434 tests in 63.539s
 OK
 ```
 
