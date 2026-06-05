@@ -17,8 +17,8 @@ class GoalClosureScopeTest(unittest.TestCase):
         self.assertIn("real FHN data and masks are deferred", text)
         self.assertIn("not required for this goal", text)
         self.assertIn("421 tests", text)
-        self.assertIn("439 tests", text)
-        self.assertIn("76.812s", text)
+        self.assertIn("440 tests", text)
+        self.assertIn("73.130s", text)
         self.assertIn("OK", text)
         self.assertIn("public-safe fixture quality boundary guard", text)
         self.assertIn("benchmark result isolation guard", text)
@@ -48,7 +48,7 @@ class GoalClosureScopeTest(unittest.TestCase):
             "Deferred Evidence",
             "real FHN data and masks are deferred",
             "python -m unittest discover -v",
-            "439 tests",
+            "440 tests",
         ]
         for phrase in required_phrases:
             with self.subTest(phrase=phrase):

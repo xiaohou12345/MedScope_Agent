@@ -9771,6 +9771,39 @@ python -m unittest discover -v
 
 结果：goal scope/completion audit/runbook 文档守卫、diff 空白检查和全量 `437` 个 unittest 通过；完整回归耗时 `78.189s`。
 
+### 2026-06-06 Current Closure Full Regression 基线刷新到 440
+
+本轮目标：上一轮新增 README 双语文档入口守卫后，当前测试集已经从 `439` 增至 `440`。README、中文 README、scope 和 completion audit 仍记录 `Ran 439 tests in 76.812s / OK`，需要用当前实际全量回归结果刷新 closure baseline。
+
+新增/调整：
+
+- `tests/test_goal_closure_scope.py`
+  - current closure scope/audit 守卫从 `439 tests`、`76.812s` 更新为 `440 tests`、`73.130s`。
+- `README.md`、`README.zh-CN.md`
+  - Latest verified local status / 最近一次本地验证更新为 `Ran 440 tests in 73.130s / OK`。
+- `docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md`
+  - Current Verification Baseline 更新为 `Ran 440 tests in 73.130s / OK`。
+- `docs/CURRENT_GOAL_COMPLETION_AUDIT_20260605.md`
+  - Latest tracked full regression 更新为 `Ran 440 tests in 73.130s / OK`。
+
+RED：
+
+```bash
+python -m unittest tests.test_goal_closure_scope -v
+```
+
+结果：测试按预期失败，scope 和 completion audit 仍记录旧的 `439/76.812s`。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook tests.test_goal_closure_scope -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：README 双语入口守卫、goal scope/completion audit/runbook 文档守卫和 diff 空白检查通过；full regression 已在更新前跑出 `Ran 440 tests in 73.130s / OK`。
+
 ### 2026-06-05 中文 README Current Closure 文档入口补齐
 
 本轮目标：英文 README 的 `See:` 文档入口列表已经包含 FHN evidence protocol MVP、current closure scope、completion audit 和 current MVP runbook；中文 README 的 `详细说明：` 列表只包含 completion audit 和 runbook，缺少 FHN MVP 与 closure scope。由于 current goal audit 明确要求 README 和中文 README aligned，这里需要把中文入口列表补齐，并加守卫防止再次漂移。
