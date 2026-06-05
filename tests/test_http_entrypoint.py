@@ -713,6 +713,9 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn(b"runEvidenceGatewaySnapshot", body)
         self.assertIn(b"fetchPublicSafeDemo", body)
         self.assertIn(b"publicSafeDemoButton", body)
+        self.assertIn(b"postPublicSafeDemoQa", body)
+        self.assertIn(b"publicSafeDemoMode", body)
+        self.assertIn(b"/v1/demo/public-safe/qa", body)
         self.assertIn(b"public_safe_demo_suite", body)
         self.assertIn(b"fetchEvidenceGatewaySnapshot", body)
         self.assertIn(b"renderEvidenceGatewaySnapshot", body)
@@ -1165,6 +1168,41 @@ class HttpEntrypointTest(unittest.TestCase):
                 str(output_root / "fake" / "public_safe_demo_suite"),
                 payload["suite_output_dir"],
             )
+
+    def test_public_safe_demo_qa_answers_from_demo_artifact_not_live_memory(self):
+        with TemporaryDirectory() as tmpdir:
+            output_root = Path(tmpdir) / "output"
+            setup_status, setup_payload = dispatch_demo_request(
+                method="GET",
+                path="/v1/demo/public-safe",
+                output_root=output_root,
+            )
+
+            status, payload = dispatch_demo_request(
+                method="POST",
+                path="/v1/demo/public-safe/qa",
+                body=json.dumps(
+                    {"patient_message": "下一步应该做什么？"},
+                    ensure_ascii=False,
+                ).encode("utf-8"),
+                output_root=output_root,
+            )
+
+            self.assertEqual(setup_status, 200)
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["case_id"], setup_payload["case_id"])
+            self.assertEqual(payload["intent"], "qa")
+            self.assertEqual(payload["demo_source"], "public_safe_demo_suite")
+            self.assertEqual(payload["qa_source"], "public_safe_demo_artifact")
+            self.assertIn("public-safe", payload["reply_to_patient"])
+            self.assertIn("evidence_bundle", payload)
+            self.assertIn("memory_audit", payload)
+            self.assertIn("memory_replay", payload)
+            self.assertEqual(
+                payload["memory_replay"]["steps"][-1]["agent"],
+                "GaoDoctorAgent QA",
+            )
+            self.assertTrue(payload["memory_audit"]["trace_consistency"]["qa_extension_present"])
 
     def test_fhn_no_mask_demo_response_backfills_structured_protocol_report(self):
         with TemporaryDirectory() as tmpdir:

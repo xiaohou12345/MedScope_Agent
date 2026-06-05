@@ -7,6 +7,7 @@ const state = {
   sampleVisionMode: "",
   demoCaseSlug: "",
   realDemoMode: false,
+  publicSafeDemoMode: false,
   casePending: false,
   qaPending: false,
   qaAbortController: null,
@@ -674,6 +675,21 @@ async function postRealVlmMedSAM2Qa(payload) {
   return body;
 }
 
+async function postPublicSafeDemoQa(payload) {
+  const response = await fetch("/v1/demo/public-safe/qa", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+    signal: state.qaAbortController?.signal,
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  body.demo_source = "public_safe_demo_suite";
+  return body;
+}
+
 async function fetchStandardDemoCaseOrRun(caseSlug, livePayload) {
   try {
     const payload = await fetchStandardDemoCase(caseSlug);
@@ -682,6 +698,7 @@ async function fetchStandardDemoCaseOrRun(caseSlug, livePayload) {
   } catch (error) {
     setStatus("预生成样例不可用，改为实时分析...", "warn");
     state.demoCaseSlug = "";
+    state.publicSafeDemoMode = false;
     return postMedScope(livePayload);
   }
 }
@@ -756,6 +773,7 @@ async function uploadFiles(fileList) {
   elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
+  state.publicSafeDemoMode = false;
   resetViews();
   elements.uploadStatus.textContent = formatUploadedImageSeriesStatus(uploaded);
 }
@@ -3772,6 +3790,7 @@ function renderEvidenceGatewaySnapshot(snapshot) {
   state.caseId = visual.case_id || "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
+  state.publicSafeDemoMode = false;
   elements.caseIdBadge.textContent = state.caseId || "Gateway Snapshot";
   elements.intentBadge.textContent = "gateway_snapshot";
   elements.lesionFigure.hidden = true;
@@ -3853,6 +3872,7 @@ function renderPayload(payload) {
   state.caseId = payload.case_id || state.caseId || "";
   state.demoCaseSlug = payload.demo_case_slug || state.demoCaseSlug || "";
   state.realDemoMode = payload.demo_source === "real_vlm_medsam2_artifact" || state.realDemoMode;
+  state.publicSafeDemoMode = payload.demo_source === "public_safe_demo_suite" || state.publicSafeDemoMode;
   elements.caseIdBadge.textContent = state.caseId || "无病例";
   elements.intentBadge.textContent = payload.intent || "-";
   renderVisualOutput(payload);
@@ -4343,6 +4363,7 @@ function loadStandardSample() {
   state.sampleVisionMode = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
+  state.publicSafeDemoMode = false;
   elements.symptoms.value = "头痛";
   elements.uploadStatus.textContent = "已载入内置 BraTS FLAIR 样例；将自动使用参考 mask 稳定生成病灶图。";
 }
@@ -4358,6 +4379,7 @@ function loadRealVlmMedSAM2Sample() {
   elements.visionModeSelect.value = "medsam2";
   state.demoCaseSlug = "";
   state.realDemoMode = true;
+  state.publicSafeDemoMode = false;
   elements.symptoms.value = "头痛";
   elements.uploadStatus.textContent = "已载入真实 VLM+MedSAM2 样例 artifact；将展示候选框、分割图、Dice/QC 和诊断报告。";
 }
@@ -4373,6 +4395,7 @@ function loadXrayInsufficientSample() {
   elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
+  state.publicSafeDemoMode = false;
   elements.symptoms.value = "髋关节疼痛";
   elements.uploadStatus.textContent = "已载入髋部 X 光证据不足样例；该样例会触发指南影像不足门控，不生成 mask。";
 }
@@ -4388,6 +4411,7 @@ function loadFhnNoMaskSample() {
   elements.visionModeSelect.value = "no_mask_skill";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
+  state.publicSafeDemoMode = false;
   elements.symptoms.value = "髋关节疼痛";
   elements.uploadStatus.textContent = "已载入 FHN no-mask 多征象样例；将调用 VLM 生成 box prompt，再由 MedSAM2 分割候选病灶。";
 }
@@ -4403,6 +4427,7 @@ function loadPublicSafeDemoInputs() {
   elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
+  state.publicSafeDemoMode = false;
   elements.symptoms.value = "髋关节疼痛";
   elements.uploadStatus.textContent = "正在运行 public-safe MVP 样例；使用合成非患者影像，不需要真实 FHN 数据或真实 mask。";
 }
@@ -4507,6 +4532,7 @@ function resetViews() {
   state.lastPayload = {};
   state.demoCaseSlug = "";
   state.realDemoMode = false;
+  state.publicSafeDemoMode = false;
   state.qaPending = false;
   setCasePending(false);
   updateQaControls();
@@ -4606,6 +4632,7 @@ elements.caseForm.addEventListener("submit", async (event) => {
   state.caseId = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
+  state.publicSafeDemoMode = false;
   state.qaPending = false;
   elements.qaLog.innerHTML = "";
   setCasePending(true);
@@ -4657,6 +4684,8 @@ elements.qaForm.addEventListener("submit", async (event) => {
   try {
     const payload = state.realDemoMode
       ? await postRealVlmMedSAM2Qa(buildQaPayload())
+      : state.publicSafeDemoMode
+        ? await postPublicSafeDemoQa(buildQaPayload())
       : state.demoCaseSlug
         ? await postDemoQa(state.demoCaseSlug, buildQaPayload())
         : await postMedScopeQa(buildQaPayload(), state.qaAbortController.signal);
@@ -4684,6 +4713,7 @@ elements.resetButton.addEventListener("click", () => {
   elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
+  state.publicSafeDemoMode = false;
   state.uploadedImagePaths = [];
   state.uploadedImageNames = [];
   elements.caseForm.reset();

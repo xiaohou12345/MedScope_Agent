@@ -47,6 +47,8 @@ curl http://127.0.0.1:8000/v1/demo/public-safe
 In the interactive frontend, use `运行 Public-safe MVP 样例` to run the same
 HTTP endpoint and render the response, visual evidence, evidence bundle, and
 memory audit without opening a shell.
+Follow-up QA uses `POST /v1/demo/public-safe/qa` and is constrained to the
+generated public-safe artifact, not live default case memory.
 
 Generate a public-safe synthetic input that can be committed or regenerated
 without private DICOM, NIfTI, patient data, or ignored `output/real` artifacts:

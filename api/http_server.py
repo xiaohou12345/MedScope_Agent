@@ -692,6 +692,8 @@ def dispatch_demo_request(
             output_dir=Path(output_root) / "fake" / "public_safe_demo_suite",
         )
         return _build_public_safe_demo_payload(summary, output_root=Path(output_root))
+    if method == "POST" and route_path == "/v1/demo/public-safe/qa":
+        return _answer_public_safe_demo_qa(body=body, output_root=Path(output_root))
     real_demo_prefix = "/v1/demo/real-vlm-medsam2"
     if route_path == real_demo_prefix or route_path.startswith(f"{real_demo_prefix}/"):
         return _dispatch_real_vlm_medsam2_demo_request(
@@ -1792,6 +1794,78 @@ def _answer_demo_case_qa(case_slug: str, body: bytes, output_root: Path) -> tupl
         "memory_audit": memory_audit,
         "memory_replay": memory_replay,
     }
+
+
+def _answer_public_safe_demo_qa(body: bytes, output_root: Path) -> tuple[int, dict]:
+    try:
+        payload = json.loads(body.decode("utf-8")) if body else {}
+    except json.JSONDecodeError as exc:
+        return 400, {"error": f"invalid json: {exc}"}
+    question = str(payload.get("patient_message") or "").strip()
+    if not question:
+        return 400, {"error": "patient_message is required"}
+    summary_status, summary = _load_or_run_public_safe_demo_summary(output_root)
+    if summary_status != 200:
+        return summary_status, summary
+    response_status, response_payload = _build_public_safe_demo_payload(
+        summary,
+        output_root=output_root,
+    )
+    if response_status != 200:
+        return response_status, response_payload
+    visual_fact_usage = _demo_visual_fact_usage(response_payload)
+    answer = _format_public_safe_demo_qa_answer(question, visual_fact_usage)
+    memory_replay = _append_demo_qa_replay_step(
+        response_payload=response_payload,
+        question=question,
+        answer=answer,
+        visual_fact_usage=visual_fact_usage,
+    )
+    memory_audit = _append_demo_qa_audit_node(
+        response_payload=response_payload,
+        visual_fact_usage=visual_fact_usage,
+    )
+    memory_replay["steps"][-1]["qa_source"] = "public_safe_demo_artifact"
+    memory_audit["qa_safety"]["qa_source"] = "public_safe_demo_artifact"
+    return 200, {
+        "case_id": response_payload.get("case_id"),
+        "intent": "qa",
+        "demo_source": "public_safe_demo_suite",
+        "qa_source": "public_safe_demo_artifact",
+        "reply_to_patient": answer,
+        "visual_fact_usage": visual_fact_usage,
+        "evidence_bundle": response_payload.get("evidence_bundle", {}),
+        "memory_audit": memory_audit,
+        "memory_replay": memory_replay,
+        "public_safe_demo_summary": summary,
+    }
+
+
+def _format_public_safe_demo_qa_answer(question: str, visual_fact_usage: dict) -> str:
+    base_answer = _format_demo_qa_answer(question, visual_fact_usage)
+    if "下一步" in question or "建议" in question:
+        return (
+            "这是 public-safe demo artifact 的追问回答，只用于演示主线。"
+            "下一步演示上可以检查 evidence bundle、memory audit 和候选视觉证据是否完整；"
+            "临床上不能用这张合成图做诊断或 benchmark。真实病例需要真实影像、医生审核和后续 MRI/专科评估。"
+        )
+    return (
+        "这是 public-safe demo artifact 的追问回答，不读取实时病例 memory，"
+        f"只基于本次 public-safe evidence bundle。{base_answer}"
+    )
+
+
+def _load_or_run_public_safe_demo_summary(output_root: Path) -> tuple[int, dict]:
+    summary_path = output_root / "fake" / "public_safe_demo_suite" / "public_safe_demo_summary.json"
+    status, payload = _read_demo_json(summary_path, output_root=output_root)
+    if status == 200:
+        return status, payload
+    if status != 404:
+        return status, payload
+    summary = run_public_safe_demo_suite(
+        output_dir=output_root / "fake" / "public_safe_demo_suite",
+    )
+    return 200, summary
 
 
 def _append_demo_qa_replay_step(

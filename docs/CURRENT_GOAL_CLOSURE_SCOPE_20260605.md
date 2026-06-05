@@ -33,11 +33,11 @@ The latest completed full regression before this scope lock was:
 421 tests passed
 ```
 
-After adding the scope, runbook, public-safe suite, and runtime-environment
-guards, the current full regression is:
+After adding the scope, runbook, public-safe suite, runtime-environment guards,
+and artifact-bound public-safe demo QA route, the current full regression is:
 
 ```text
-431 tests passed
+432 tests passed
 ```
 
 The scope document adds a small documentation guard so future edits do not

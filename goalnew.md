@@ -9477,6 +9477,43 @@ python -m unittest discover -v
 
 结果：public-safe endpoint、前端按钮、cache buster、JS 语法检查和全量 `431` 个 unittest 通过；完整回归耗时 `62.560s`。
 
+### 2026-06-05 Public-safe Demo QA Artifact 路由补齐
+
+本轮目标：`运行 Public-safe MVP 样例` 已能在前端展示病例，但该病例由 suite 私有 memory 目录生成；如果追问继续走普通 `/v1/medscope`，默认服务 memory 查不到这个 case，演示时 QA 会失败。
+
+新增/调整：
+
+- `api/http_server.py`
+  - 新增 `POST /v1/demo/public-safe/qa`。
+  - QA 优先读取已有 `output/fake/public_safe_demo_suite/public_safe_demo_summary.json`，没有时才生成 suite，避免追问时 case_id 被刷新。
+  - 返回 `demo_source=public_safe_demo_suite`、`qa_source=public_safe_demo_artifact`、`evidence_bundle`、`memory_audit`、`memory_replay`。
+- `web/app.js`
+  - 新增 `publicSafeDemoMode`。
+  - public-safe payload 渲染后打开该模式。
+  - 追问时优先调用 `postPublicSafeDemoQa()`，走 `/v1/demo/public-safe/qa`，不再误走实时病例 memory。
+- README / 中文 README / current MVP runbook
+  - 记录 public-safe demo QA 的 artifact-bound 路由。
+- `tests/test_http_entrypoint.py`
+  - 覆盖 public-safe demo QA 使用已有 demo artifact、case_id 不变化、追加 `GaoDoctorAgent QA` replay/audit 节点。
+  - 覆盖前端静态 JS 包含 public-safe QA mode 和 `/v1/demo/public-safe/qa`。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_public_safe_demo_qa_answers_from_demo_artifact_not_live_memory tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
+```
+
+补充验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_public_safe_demo_endpoint_generates_suite_without_real_data tests.test_http_entrypoint.HttpEntrypointTest.test_public_safe_demo_qa_answers_from_demo_artifact_not_live_memory tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist tests.test_current_mvp_demo_runbook tests.test_goal_closure_scope -v
+node --check web/app.js
+git diff --check
+python -m unittest discover -v
+```
+
+结果：public-safe demo artifact-bound QA 后端、前端静态路由、文档守卫、JS 语法检查、diff 空白检查和全量 `432` 个 unittest 通过；完整回归耗时 `62.291s`。
+
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 
 本轮目标：追问链路已经能通过 `GaoDoctorAgent QA` 展示为 evidence bundle 约束下的后续回答，但 `QA Safety` 区块只展示 `evidence_bundle_required` 和 QA 数量，没有明确显示有多少条追问实际使用了 evidence bundle。

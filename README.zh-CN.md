@@ -310,6 +310,8 @@ artifact。它用于测试上传、路由和 FHN skill 主线，不是临床图�
 启动 HTTP 服务后，也可以通过 `GET /v1/demo/public-safe` 直接运行同一条 suite。
 交互前端也提供 `运行 Public-safe MVP 样例` 按钮，会调用这个 endpoint 并直接渲染
 诊断报告、视觉证据、evidence bundle 和 memory audit。
+该样例的追问走 `POST /v1/demo/public-safe/qa`，只绑定到生成的 demo artifact，
+不会误用实时病例 memory。
 
 无 mask 视觉流水线：
 
@@ -336,7 +338,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 431 tests in 62.560s
+Ran 432 tests in 62.291s
 OK
 ```
 
