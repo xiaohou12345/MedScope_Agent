@@ -9771,6 +9771,39 @@ python -m unittest discover -v
 
 结果：goal scope/completion audit/runbook 文档守卫、diff 空白检查和全量 `437` 个 unittest 通过；完整回归耗时 `78.189s`。
 
+### 2026-06-06 Completion Audit Fresh Baseline 刷新耗时
+
+本轮目标：最终 completion audit 前重新跑 full regression，测试总数仍为 `440`，但 fresh run 的实际耗时为 `79.791s`。README、中文 README、scope、completion audit 和守卫应记录最新 tracked full regression 输出。
+
+新增/调整：
+
+- `README.md`、`README.zh-CN.md`
+  - Latest verified local status / 最近一次本地验证更新为 `Ran 440 tests in 79.791s / OK`。
+- `docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md`
+  - Current Verification Baseline 更新为 `Ran 440 tests in 79.791s / OK`。
+- `docs/CURRENT_GOAL_COMPLETION_AUDIT_20260605.md`
+  - Latest tracked full regression 更新为 `Ran 440 tests in 79.791s / OK`。
+- `tests/test_goal_closure_scope.py`
+  - closure baseline 守卫耗时从 `73.130s` 更新为 `79.791s`。
+
+验证：
+
+```bash
+python -m unittest discover -v
+```
+
+结果：全量 `440` 个 unittest 通过；完整回归耗时 `79.791s`。
+
+补充验证：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook tests.test_goal_closure_scope tests.test_segmentation_benchmark.SegmentationBenchmarkTest.test_metric_ready_case_applies_manifest_quality_gate_without_diagnosis_upgrade -v
+node --check web/app.js
+git diff --check
+```
+
+结果：completion audit focused guard、前端 JS 语法检查和 diff 空白检查通过。
+
 ### 2026-06-06 Current Closure Full Regression 基线刷新到 440
 
 本轮目标：上一轮新增 README 双语文档入口守卫后，当前测试集已经从 `439` 增至 `440`。README、中文 README、scope 和 completion audit 仍记录 `Ran 439 tests in 76.812s / OK`，需要用当前实际全量回归结果刷新 closure baseline。

@@ -43,7 +43,7 @@ benchmark result isolation guard, and completion audit guard, the current full
 regression is:
 
 ```text
-Ran 440 tests in 73.130s
+Ran 440 tests in 79.791s
 OK
 ```
 

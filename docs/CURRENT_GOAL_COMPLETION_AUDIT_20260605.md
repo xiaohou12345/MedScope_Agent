@@ -38,7 +38,7 @@ python -m unittest discover -v
 ```
 
 ```text
-Ran 440 tests in 73.130s
+Ran 440 tests in 79.791s
 OK
 ```
 

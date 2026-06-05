@@ -18,7 +18,7 @@ class GoalClosureScopeTest(unittest.TestCase):
         self.assertIn("not required for this goal", text)
         self.assertIn("421 tests", text)
         self.assertIn("440 tests", text)
-        self.assertIn("73.130s", text)
+        self.assertIn("79.791s", text)
         self.assertIn("OK", text)
         self.assertIn("public-safe fixture quality boundary guard", text)
         self.assertIn("benchmark result isolation guard", text)
