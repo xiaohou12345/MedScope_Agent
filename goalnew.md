@@ -9771,6 +9771,36 @@ python -m unittest discover -v
 
 结果：goal scope/completion audit/runbook 文档守卫、diff 空白检查和全量 `437` 个 unittest 通过；完整回归耗时 `78.189s`。
 
+### 2026-06-05 Scope Current Baseline 输出对齐
+
+本轮目标：`CURRENT_GOAL_CLOSURE_SCOPE_20260605.md` 已经写了当前 full regression 从 `421` 增至 `437`，但只写成 `437 tests passed`，而 README 和 completion audit 已记录实际 unittest 输出 `Ran 437 tests in 76.867s / OK`。scope 是当前 closure 的边界文档，验证基线应与审计证据格式一致。
+
+新增/调整：
+
+- `tests/test_goal_closure_scope.py`
+  - scope 文档守卫新增 `437 tests` 和 `76.867s` 断言，防止当前 full regression 基线回退成只保留旧 `421 tests` 或丢失实际运行输出。
+- `docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md`
+  - Current Verification Baseline 段从摘要 `437 tests passed` 改为实际输出：
+    - `Ran 437 tests in 76.867s`
+    - `OK`
+
+RED：
+
+```bash
+python -m unittest tests.test_goal_closure_scope.GoalClosureScopeTest.test_current_goal_scope_defers_real_fhn_data_without_claiming_real_benchmark -v
+```
+
+结果：测试按预期失败，scope 文档缺少 `76.867s`。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_goal_closure_scope tests.test_current_mvp_demo_runbook -v
+git diff --check
+```
+
+结果：goal scope/completion audit/runbook 文档守卫和 diff 空白检查通过；本轮不刷新 full regression baseline，继续引用已审计的 `Ran 437 tests in 76.867s / OK`。
+
 ### 2026-06-05 Scope Verification Guard 列表对齐
 
 本轮目标：completion audit 已加入后，`CURRENT_GOAL_CLOSURE_SCOPE_20260605.md` 的 full regression 说明仍只列到 `demo/QA-source visibility guard`，没有把后续新增的 public-safe fixture 质量边界、benchmark 结果隔离和 completion audit 守卫写进去。该文档是当前 goal closure 的边界说明，验证来源列表不能滞后。

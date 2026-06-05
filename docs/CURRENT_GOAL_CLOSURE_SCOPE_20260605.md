@@ -43,7 +43,8 @@ benchmark result isolation guard, and completion audit guard, the current full
 regression is:
 
 ```text
-437 tests passed
+Ran 437 tests in 76.867s
+OK
 ```
 
 The scope document adds a small documentation guard so future edits do not
