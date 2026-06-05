@@ -713,6 +713,7 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn(b"renderEvidenceGatewaySnapshot", body)
         self.assertIn("Evidence Gateway 快照".encode("utf-8"), body)
         self.assertIn(b"/v1/demo/evidence-gateway-snapshot", body)
+        self.assertIn(b"/v1/demo/public-safe", body)
         self.assertIn(b"/v1/demo/standard", body)
         self.assertIn(b"/v1/demo/real-vlm-medsam2", body)
         self.assertIn(b"/v1/demo/real-vlm-medsam2/response", body)
@@ -1125,6 +1126,34 @@ class HttpEntrypointTest(unittest.TestCase):
             self.assertEqual(audit_status, 200)
             self.assertEqual(audit["case_id"], "case_demo")
             self.assertIn("memory_completeness", audit)
+
+    def test_public_safe_demo_endpoint_generates_suite_without_real_data(self):
+        with TemporaryDirectory() as tmpdir:
+            output_root = Path(tmpdir) / "output"
+
+            status, payload = dispatch_demo_request(
+                method="GET",
+                path="/v1/demo/public-safe",
+                output_root=output_root,
+            )
+
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["demo_name"], "public_safe_medscope_mvp_demo")
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["safety"]["real_fhn_data_required"], False)
+            self.assertEqual(payload["safety"]["not_clinical_diagnosis"], True)
+            self.assertEqual(
+                payload["routing_decision"]["selected_skill"],
+                "femoral_head_necrosis",
+            )
+            self.assertTrue(Path(payload["response_path"]).exists())
+            self.assertTrue(Path(payload["evidence_bundle_path"]).exists())
+            self.assertTrue(Path(payload["memory_audit_path"]).exists())
+            self.assertTrue(Path(payload["qa_response_path"]).exists())
+            self.assertIn(
+                str(output_root / "fake" / "public_safe_demo_suite"),
+                payload["suite_output_dir"],
+            )
 
     def test_fhn_no_mask_demo_response_backfills_structured_protocol_report(self):
         with TemporaryDirectory() as tmpdir:

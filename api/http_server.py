@@ -16,6 +16,7 @@ from api.service import MedScopeReadinessError, MedScopeService
 from llm.connectivity import ApiConnectivityChecker
 from memory.memory_manager import MemoryManager
 from scripts.image_prompt_skill_baseline import run_image_prompt_skill_baseline
+from scripts.prepare_public_demo_fixture import run_public_safe_demo_suite
 from skill_editor.backend import (
     dispatch_skill_editor_api_request,
     dispatch_skill_editor_static_request,
@@ -685,6 +686,10 @@ def dispatch_demo_request(
         return _read_demo_json(
             Path(output_root) / "fake" / "evidence_gateway_snapshot.json",
             output_root=Path(output_root),
+        )
+    if method == "GET" and route_path == "/v1/demo/public-safe":
+        return 200, run_public_safe_demo_suite(
+            output_dir=Path(output_root) / "fake" / "public_safe_demo_suite",
         )
     real_demo_prefix = "/v1/demo/real-vlm-medsam2"
     if route_path == real_demo_prefix or route_path.startswith(f"{real_demo_prefix}/"):

@@ -38,6 +38,12 @@ python -m scripts.prepare_public_demo_fixture --suite \
 This suite uses a deterministic local visual runner, so it does not require a
 real VLM API, MedSAM2 backend, real FHN data, or real masks.
 
+The same suite is available through the HTTP API after the server starts:
+
+```bash
+curl http://127.0.0.1:8000/v1/demo/public-safe
+```
+
 Generate a public-safe synthetic input that can be committed or regenerated
 without private DICOM, NIfTI, patient data, or ignored `output/real` artifacts:
 

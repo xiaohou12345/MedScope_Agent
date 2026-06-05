@@ -37,7 +37,7 @@ After adding the scope, runbook, public-safe suite, and runtime-environment
 guards, the current full regression is:
 
 ```text
-430 tests passed
+431 tests passed
 ```
 
 The scope document adds a small documentation guard so future edits do not

@@ -9409,18 +9409,43 @@ python -m unittest tests.test_runtime_environment tests.test_current_mvp_demo_ru
 python -m unittest discover -v
 ```
 
-结果：`430` 个测试通过，耗时 `65.065s`。
+结果：`431` 个测试通过，耗时 `91.676s`。
+
+### 2026-06-05 Public-safe Demo HTTP Endpoint 补齐
+
+本轮目标：public-safe MVP suite 已经能通过 CLI 跑通，但服务器/前端演示时还需要一个 HTTP 入口，避免部署后必须手动进入 shell 先跑脚本。
+
+新增/调整：
+
+- `api/http_server.py`
+  - 新增 `GET /v1/demo/public-safe`
+  - 调用 `run_public_safe_demo_suite(output_dir=<output_root>/fake/public_safe_demo_suite)`
+  - 返回 suite summary，并生成 response、evidence bundle、memory audit 和 follow-up QA artifact。
+- `web/app.js`
+  - 新增 `fetchPublicSafeDemo()`，让前端静态资源中显式保留 public-safe demo route。
+- README / 中文 README / current MVP runbook
+  - 记录 `GET /v1/demo/public-safe`。
+- `tests/test_http_entrypoint.py`
+  - 覆盖 endpoint 生成 suite 且不需要真实 FHN 数据。
+  - 覆盖前端静态资源包含 `/v1/demo/public-safe`。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_public_safe_demo_endpoint_generates_suite_without_real_data tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
+node --check web/app.js
+```
 
 补充验证：
 
 ```bash
-python -m unittest tests.test_http_entrypoint -v
-python -m unittest tests.test_memory_manager tests.test_service_entrypoint -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_public_safe_demo_endpoint_generates_suite_without_real_data tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist tests.test_current_mvp_demo_runbook tests.test_goal_closure_scope -v
 python -m unittest discover -v
-curl -s http://127.0.0.1:8022/static/app.js | rg "GaoDoctorAgent QA|追问回答|基于已有 evidence bundle 回答追问"
+node --check web/app.js
+git diff --check
 ```
 
-结果：HTTP、MemoryManager、Service 相关测试与全量 `291` 个 unittest 通过；8022 演示服务已能读取包含 QA 扩展节点的新前端文件。
+结果：Public-safe HTTP endpoint 定向测试、前端静态资源检查、runbook/scope 文档守卫、JS 语法检查、diff 空白检查与全量 `431` 个 unittest 通过。本轮不需要真实 FHN 数据、真实 mask 或 benchmark manifest；这些保持为后续数据到位后的验证项。
 
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 

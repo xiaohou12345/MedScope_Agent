@@ -236,6 +236,7 @@ Other useful routes:
 - `GET /v1/memory/cases/{case_id}`
 - `GET /v1/memory/cases/{case_id}/evidence-bundle`
 - `GET /v1/memory/cases/{case_id}/audit`
+- `GET /v1/demo/public-safe`
 - `GET /v1/demo/standard`
 - `POST /v1/baseline/image-prompt-skill`
 
@@ -302,6 +303,8 @@ The suite writes a synthetic, non-patient hip X-ray-like PNG and deterministic
 service artifacts for response, evidence bundle, memory audit, and follow-up QA.
 Use it to test upload, routing, and the FHN skill path without private
 DICOM/NIfTI files. It is not a clinical image or a segmentation benchmark.
+After starting the HTTP server, the same suite is available at
+`GET /v1/demo/public-safe`.
 
 No-mask visual pipeline:
 
@@ -338,7 +341,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 430 tests in 65.065s
+Ran 431 tests in 91.676s
 OK
 ```
 

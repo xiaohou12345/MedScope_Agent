@@ -237,6 +237,7 @@ curl -X POST http://127.0.0.1:8000/v1/medscope \
 - `GET /v1/memory/cases/{case_id}`
 - `GET /v1/memory/cases/{case_id}/evidence-bundle`
 - `GET /v1/memory/cases/{case_id}/audit`
+- `GET /v1/demo/public-safe`
 - `GET /v1/demo/standard`
 - `POST /v1/baseline/image-prompt-skill`
 
@@ -306,6 +307,7 @@ python -m scripts.prepare_public_demo_fixture \
 suite 会生成一张合成的、非患者数据的髋关节 X-ray-like PNG，并运行确定性
 service demo，写出 response、evidence bundle、memory audit 和 follow-up QA
 artifact。它用于测试上传、路由和 FHN skill 主线，不是临床图像，也不是分割 benchmark。
+启动 HTTP 服务后，也可以通过 `GET /v1/demo/public-safe` 直接运行同一条 suite。
 
 无 mask 视觉流水线：
 
@@ -332,7 +334,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 430 tests in 65.065s
+Ran 431 tests in 91.676s
 OK
 ```
 

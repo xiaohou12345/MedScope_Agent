@@ -289,6 +289,10 @@ async function fetchEvidenceGatewaySnapshot() {
   return fetchDemoJson("/v1/demo/evidence-gateway-snapshot");
 }
 
+async function fetchPublicSafeDemo() {
+  return fetchDemoJson("/v1/demo/public-safe");
+}
+
 async function fetchRealVlmMedSAM2Demo() {
   try {
     return await fetchRealVlmMedSAM2Response();
