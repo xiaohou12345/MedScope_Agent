@@ -35,8 +35,8 @@ The latest completed full regression before this scope lock was:
 
 After adding the scope, runbook, public-safe suite, runtime-environment guards,
 artifact-bound public-safe demo QA route, README API/next-step guard, runbook
-frontend smoke-demo order guard, and bilingual readiness route guard, the
-current full regression is:
+frontend smoke-demo order guard, bilingual readiness route guard, and frontend
+demo-source visibility guard, the current full regression is:
 
 ```text
 434 tests passed

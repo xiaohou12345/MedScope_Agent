@@ -9607,6 +9607,39 @@ python -m unittest discover -v
 
 结果：README/runbook 文档守卫、diff 空白检查和全量 `434` 个 unittest 通过；完整回归耗时 `63.539s`。
 
+### 2026-06-05 Public-safe 前端 Demo Source 可见性补齐
+
+本轮目标：runbook 推荐演示顺序要求确认 `demo_source=public_safe_demo_suite`，但前端此前只把 `demo_source` 用于内部 QA route 状态切换，演示者没有一个直接可见的位置确认当前病例来自 public-safe demo artifact。
+
+新增/调整：
+
+- `web/app.js`
+  - 新增 `renderDemoSourceSummary()`。
+  - `renderVisualOutput()` 在患者可见影像摘要上方显示 `Demo / Artifact Source`，包含 `demo_source`、`qa_source` 和 `case_id` 中存在的字段。
+  - 普通实时病例没有这些字段时不额外显示该区块。
+- `tests/test_http_entrypoint.py`
+  - 前端静态资源守卫新增 `renderDemoSourceSummary` 和 `demo_source: payload.demo_source`，防止 runbook 的确认步骤失去 UI 依据。
+
+RED：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
+```
+
+结果：测试按预期失败，前端静态 JS 中缺少 `renderDemoSourceSummary`。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
+node --check web/app.js
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_public_safe_demo_endpoint_generates_suite_without_real_data tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist tests.test_current_mvp_demo_runbook tests.test_goal_closure_scope -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：前端静态守卫、JS 语法检查、public-safe HTTP/doc targeted 测试、diff 空白检查和全量 `434` 个 unittest 通过；完整回归耗时 `59.517s`。
+
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 
 本轮目标：追问链路已经能通过 `GaoDoctorAgent QA` 展示为 evidence bundle 约束下的后续回答，但 `QA Safety` 区块只展示 `evidence_bundle_required` 和 QA 数量，没有明确显示有多少条追问实际使用了 evidence bundle。

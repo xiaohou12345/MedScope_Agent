@@ -1905,13 +1905,21 @@ function renderVisualOutput(payload) {
   const modality = bundleImage.modality || payload.visual_input_contract?.modality || "-";
   const bodyPart = bundleImage.body_part || payload.visual_input_contract?.body_part || "-";
   const displayState = buildVisualDisplayState(payload, visualBundle);
-  elements.visualMeta.innerHTML = renderPatientVisualSummary({
-    visualBundle,
-    displayState,
-    modality,
-    bodyPart,
-    findingCount: numeric.finding_count,
+  const demoSourceSummary = renderDemoSourceSummary({
+    demo_source: payload.demo_source,
+    qa_source: payload.qa_source,
+    case_id: payload.case_id,
   });
+  elements.visualMeta.innerHTML = `
+    ${demoSourceSummary}
+    ${renderPatientVisualSummary({
+      visualBundle,
+      displayState,
+      modality,
+      bodyPart,
+      findingCount: numeric.finding_count,
+    })}
+  `;
   const comparisonHtml = renderLesionComparison({
     original_path: originalPath,
     original_preview_path: outputs.original_preview_path,
@@ -2081,6 +2089,21 @@ function renderPatientVisualSummary({visualBundle, displayState, modality, bodyP
           </ul>
         </div>
       ` : ""}
+    </div>
+  `;
+}
+
+function renderDemoSourceSummary(source) {
+  const visible = Object.fromEntries(
+    Object.entries(source || {}).filter(([, value]) => value !== null && value !== undefined && value !== "")
+  );
+  if (!Object.keys(visible).length) {
+    return "";
+  }
+  return `
+    <div class="trace-subblock">
+      <strong>Demo / Artifact Source</strong>
+      ${renderMetricGrid(visible)}
     </div>
   `;
 }
