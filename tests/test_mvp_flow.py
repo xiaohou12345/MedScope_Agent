@@ -829,6 +829,80 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             )
             self.assertTrue(saved_case["patient_memory"]["qa_history"][0]["evidence_bundle_used"])
 
+    def test_follow_up_qa_explains_clinical_context_source_and_limits(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            case_id = "case_clinical_context_qa"
+            memory.save_case_memory(
+                case_id=case_id,
+                patient_memory={
+                    "case_id": case_id,
+                    "patient_message": "右髋疼痛三个月，长期激素治疗，偶尔饮酒",
+                    "patient_info": {
+                        "clinical_context": "右髋疼痛三个月，长期激素治疗，偶尔饮酒",
+                        "clinical_context_source": "patient_message",
+                    },
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "case_id": case_id,
+                    "image_path": "data/images/fhn_xray.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "visual_features": {},
+                },
+                skill_memory={
+                    "disease": "股骨头坏死",
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "skill_type": "guideline_based",
+                    "evidence_level": "high",
+                    "source": "guideline",
+                },
+                reasoning_memory={
+                    "case_id": case_id,
+                    "used_skill": "femoral_head_necrosis_v0.1",
+                    "key_evidence": [],
+                    "diagnostic_result": "证据不足",
+                    "uncertainty": ["X 光证据不足"],
+                    "report": {
+                        "clinical_context_bundle": {
+                            "schema_version": "clinical_context_bundle.v1",
+                            "source": "patient_message",
+                            "source_fields": ["clinical_context"],
+                            "raw_context": "右髋疼痛三个月，长期激素治疗，偶尔饮酒",
+                            "risk_modifiers": {
+                                "provided_risk_factors": [
+                                    "corticosteroid_use",
+                                    "alcohol_use",
+                                ],
+                                "missing_clinical_context": ["trauma_history"],
+                                "suspicion_modifier_only": True,
+                            },
+                            "diagnostic_limits": {
+                                "can_confirm_without_imaging": False,
+                                "diagnosis_usable": False,
+                                "diagnosis_usable_level": "risk_modifier_only",
+                                "role": "clinical risk changes suspicion level only; it cannot confirm ONFH without imaging evidence.",
+                            },
+                        }
+                    },
+                },
+            )
+            doctor = GaoDoctorAgent(memory_manager=memory)
+
+            result = doctor.handle_message(
+                patient_message="长期激素和饮酒这些病史能确诊吗？",
+                case_id=case_id,
+            )
+
+            self.assertEqual(result["intent"], "qa")
+            self.assertIn("patient_message", result["reply_to_patient"])
+            self.assertIn("corticosteroid_use", result["reply_to_patient"])
+            self.assertIn("alcohol_use", result["reply_to_patient"])
+            self.assertIn("risk modifier", result["reply_to_patient"])
+            self.assertIn("不能", result["reply_to_patient"])
+            self.assertIn("确诊", result["reply_to_patient"])
+
     def test_vision_agent_returns_evidence_without_final_diagnosis(self):
         evidence = VisionAgent().analyze_image(
             image_path="data/images/demo_xray.png",

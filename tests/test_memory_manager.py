@@ -323,9 +323,15 @@ class MemoryManagerQueryTest(unittest.TestCase):
                 clinical["source"],
                 "patient_message",
             )
+            self.assertEqual(clinical["schema_version"], "clinical_context_bundle.v1")
             self.assertIn("长期激素治疗", clinical["raw_context"])
+            self.assertIn("clinical_context", clinical["source_fields"])
             self.assertEqual(
                 clinical["provided_risk_factors"],
+                ["corticosteroid_use", "alcohol_use"],
+            )
+            self.assertEqual(
+                clinical["risk_modifiers"]["provided_risk_factors"],
                 ["corticosteroid_use", "alcohol_use"],
             )
             self.assertEqual(
@@ -335,6 +341,10 @@ class MemoryManagerQueryTest(unittest.TestCase):
             self.assertFalse(clinical["can_confirm_without_imaging"])
             self.assertEqual(
                 clinical["diagnosis_usable_level"],
+                "risk_modifier_only",
+            )
+            self.assertEqual(
+                clinical["diagnostic_limits"]["diagnosis_usable_level"],
                 "risk_modifier_only",
             )
 

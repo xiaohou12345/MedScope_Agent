@@ -24,6 +24,82 @@ class VisualProtocolValidatorTest(unittest.TestCase):
                 self.assertTrue(result["valid"], result)
                 self.assertEqual(result["errors"], [])
 
+    def test_static_guideline_skills_have_valid_evidence_protocol(self):
+        validator = VisualProtocolValidator()
+
+        for skill_path in (
+            Path("skills/femoral_head_necrosis.yaml"),
+            Path("skills/pneumonia_chest_xray.yaml"),
+        ):
+            with self.subTest(skill_path=str(skill_path)):
+                skill = json.loads(skill_path.read_text(encoding="utf-8"))
+                result = validator.validate_evidence_protocol(skill)
+
+                self.assertTrue(result["valid"], result)
+                self.assertEqual(result["errors"], [])
+
+    def test_non_fhn_skill_declares_evidence_acquisition_protocol(self):
+        skill = json.loads(Path("skills/pneumonia_chest_xray.yaml").read_text(encoding="utf-8"))
+
+        imaging = skill["imaging_evidence_protocol"]
+        targets = {item["target"]: item for item in imaging["finding_targets"]}
+        quantitative = skill["quantitative_evidence_protocol"]
+        clinical = skill["clinical_context_protocol"]
+        integrated = skill["integrated_reasoning_protocol"]
+
+        self.assertEqual(imaging["disease_target"], "community_acquired_pneumonia")
+        self.assertEqual(targets["lung_opacity"]["execution_mode"], "vlm_plus_segmenter")
+        self.assertEqual(targets["fever_or_cough"]["execution_mode"], "clinical_context_only")
+        self.assertEqual(
+            targets["fever_or_cough"]["diagnosis_usable_level"],
+            "risk_modifier_only",
+        )
+        self.assertTrue(quantitative["image_feature_quantification"])
+        self.assertTrue(quantitative["measurement_evidence"])
+        self.assertIn("fever", clinical["symptom_fields"])
+        self.assertIn(
+            "clinical context cannot confirm pneumonia without imaging and clinical assessment",
+            clinical["reasoning_rule"],
+        )
+        self.assertIn("clinical_context_source", integrated["required_sections"])
+
+    def test_evidence_protocol_requires_clinical_context_limits(self):
+        skill = self._minimal_valid_skill()
+        skill["imaging_evidence_protocol"] = {
+            "disease_target": "minimal_disease",
+            "finding_targets": [
+                {
+                    "target": "target_region",
+                    "execution_mode": "vlm_only",
+                    "evidence_type": "visual_observation",
+                    "diagnosis_usable_level": "observation_only",
+                }
+            ],
+        }
+        skill["quantitative_evidence_protocol"] = {
+            "image_feature_quantification": [],
+            "measurement_evidence": [],
+        }
+        skill["clinical_context_protocol"] = {
+            "risk_factors": ["risk_demo"],
+        }
+        skill["integrated_reasoning_protocol"] = {
+            "required_sections": ["imaging_support", "clinical_risk_support"],
+            "safety_rules": [],
+        }
+
+        result = VisualProtocolValidator().validate_evidence_protocol(skill)
+
+        self.assertFalse(result["valid"])
+        self.assertIn(
+            "clinical_context_protocol.reasoning_rule must state clinical context cannot confirm diagnosis",
+            result["errors"],
+        )
+        self.assertIn(
+            "integrated_reasoning_protocol.required_sections must include clinical_context_source",
+            result["errors"],
+        )
+
     def test_femoral_head_skill_declares_stage_ii_xray_findings(self):
         skill = json.loads(Path("skills/femoral_head_necrosis.yaml").read_text(encoding="utf-8"))
         finding_targets = {

@@ -421,6 +421,7 @@
       "quantitative_support",
       "differential_considerations",
       "clinical_risk_support",
+      "clinical_context_source",
       "missing_evidence",
       "modality_limitation",
       "recommended_next_step"

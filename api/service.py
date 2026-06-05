@@ -328,52 +328,27 @@ class MedScopeService:
     def _skill_protocol_readiness(self, skill: dict[str, Any]) -> tuple[bool, str]:
         if not isinstance(skill, dict):
             return False, "local skill is not a valid object"
+        evidence_validation = VisualProtocolValidator().validate_evidence_protocol(skill)
+        if skill.get("imaging_evidence_protocol") or any(
+            bool(skill.get(field))
+            for field in (
+                "quantitative_evidence_protocol",
+                "differential_diagnosis_protocol",
+                "clinical_context_protocol",
+                "integrated_reasoning_protocol",
+            )
+        ):
+            if not evidence_validation.get("valid"):
+                errors = "; ".join(str(error) for error in evidence_validation.get("errors", []))
+                return False, f"local skill has invalid evidence_protocol: {errors}"
+            return True, "local skill has valid evidence_protocol"
         if skill.get("visual_protocol"):
             validation = VisualProtocolValidator().validate_skill(skill)
             if not validation.get("valid"):
                 errors = "; ".join(str(error) for error in validation.get("errors", []))
                 return False, f"local skill has invalid visual_protocol: {errors}"
             return True, "local skill has valid visual_protocol"
-        if skill.get("imaging_evidence_protocol"):
-            validation = self._validate_imaging_evidence_protocol(
-                skill.get("imaging_evidence_protocol")
-            )
-            if not validation["valid"]:
-                return False, f"local skill has invalid imaging_evidence_protocol: {'; '.join(validation['errors'])}"
-            return True, "local skill has valid imaging_evidence_protocol"
-        supporting_protocol_fields = [
-            "quantitative_evidence_protocol",
-            "differential_diagnosis_protocol",
-            "clinical_context_protocol",
-            "integrated_reasoning_protocol",
-        ]
-        if any(bool(skill.get(field)) for field in supporting_protocol_fields):
-            return False, "local skill is missing imaging_evidence_protocol for visual evidence acquisition"
         return False, "local skill is missing required protocol"
-
-    def _validate_imaging_evidence_protocol(self, protocol: Any) -> dict[str, Any]:
-        errors: list[str] = []
-        if not isinstance(protocol, dict) or not protocol:
-            return {
-                "valid": False,
-                "errors": ["imaging_evidence_protocol is required"],
-            }
-        if not str(protocol.get("disease_target") or "").strip():
-            errors.append("imaging_evidence_protocol.disease_target is required")
-        finding_targets = protocol.get("finding_targets")
-        if not isinstance(finding_targets, list) or not finding_targets:
-            errors.append("imaging_evidence_protocol.finding_targets is required")
-        else:
-            for index, finding in enumerate(finding_targets):
-                field = f"imaging_evidence_protocol.finding_targets[{index}]"
-                if not isinstance(finding, dict):
-                    errors.append(f"{field} must be an object")
-                    continue
-                if not str(finding.get("target") or "").strip():
-                    errors.append(f"{field}.target is required")
-                if not str(finding.get("execution_mode") or "").strip():
-                    errors.append(f"{field}.execution_mode is required")
-        return {"valid": not errors, "errors": errors}
 
     def _disease_name_for(self, disease_key: str) -> str:
         names = {

@@ -200,6 +200,7 @@ class MemoryManager:
         patient_info = patient_memory.get("patient_info") or {}
         reasoning_report = (record.get("reasoning_memory") or {}).get("report") or {}
         assessment = reasoning_report.get("clinical_context_assessment") or {}
+        existing_bundle = reasoning_report.get("clinical_context_bundle")
         raw_context = (
             patient_info.get("clinical_context")
             or patient_info.get("history")
@@ -208,18 +209,56 @@ class MemoryManager:
         )
         if isinstance(raw_context, list):
             raw_context = "；".join(str(item) for item in raw_context)
+        source_fields = [
+            key
+            for key in ("clinical_context", "history", "risk_factors", "symptoms")
+            if patient_info.get(key)
+        ]
+        if isinstance(existing_bundle, dict) and existing_bundle.get("schema_version"):
+            bundle = dict(existing_bundle)
+        else:
+            provided = list(assessment.get("provided_risk_factors") or [])
+            missing = list(assessment.get("missing_clinical_context") or [])
+            bundle = {
+                "schema_version": "clinical_context_bundle.v1",
+                "source": patient_info.get("clinical_context_source") or (
+                    "structured_patient_info" if raw_context else "missing"
+                ),
+                "source_fields": source_fields,
+                "raw_context": str(raw_context),
+                "risk_modifiers": {
+                    "provided_risk_factors": provided,
+                    "missing_clinical_context": missing,
+                    "suspicion_modifier_only": True,
+                },
+                "diagnostic_limits": {
+                    "can_confirm_without_imaging": bool(
+                        assessment.get("can_confirm_without_imaging", False)
+                    ),
+                    "diagnosis_usable": False,
+                    "diagnosis_usable_level": "risk_modifier_only",
+                    "role": assessment.get(
+                        "role",
+                        "clinical context can modify suspicion only; it cannot replace imaging evidence.",
+                    ),
+                },
+            }
+        risk_modifiers = bundle.get("risk_modifiers") or {}
+        diagnostic_limits = bundle.get("diagnostic_limits") or {}
         return {
+            **bundle,
             "evidence_type": "clinical_context",
-            "source": patient_info.get("clinical_context_source") or (
-                "structured_patient_info" if raw_context else "missing"
+            "provided_risk_factors": list(risk_modifiers.get("provided_risk_factors") or []),
+            "missing_clinical_context": list(risk_modifiers.get("missing_clinical_context") or []),
+            "can_confirm_without_imaging": bool(
+                diagnostic_limits.get("can_confirm_without_imaging", False)
             ),
-            "raw_context": str(raw_context),
-            "provided_risk_factors": list(assessment.get("provided_risk_factors") or []),
-            "missing_clinical_context": list(assessment.get("missing_clinical_context") or []),
-            "can_confirm_without_imaging": bool(assessment.get("can_confirm_without_imaging", False)),
-            "diagnosis_usable": False,
-            "diagnosis_usable_level": "risk_modifier_only",
-            "role": assessment.get(
+            "diagnosis_usable": bool(diagnostic_limits.get("diagnosis_usable", False)),
+            "diagnosis_usable_level": diagnostic_limits.get(
+                "diagnosis_usable_level",
+                "risk_modifier_only",
+            ),
+            "role": diagnostic_limits.get(
                 "role",
                 "clinical context can modify suspicion only; it cannot replace imaging evidence.",
             ),

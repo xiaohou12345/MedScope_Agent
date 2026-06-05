@@ -659,7 +659,7 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
             "search_or_generate_skill",
         )
         self.assertIn(
-            "invalid imaging_evidence_protocol",
+            "invalid evidence_protocol",
             result["routing_decision"]["skill_search_reason"],
         )
         self.assertEqual(

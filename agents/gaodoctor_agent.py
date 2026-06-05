@@ -1607,6 +1607,8 @@ class GaoDoctorAgent:
             return self._answer_identity_follow_up()
         if self._is_prognosis_question(question):
             return self._answer_prognosis_follow_up_with_template(evidence_bundle)
+        if self._is_clinical_context_question(question):
+            return self._answer_clinical_context_follow_up_with_template(evidence_bundle)
         if self._is_diagnosis_confirmation_question(question):
             return self._answer_diagnosis_confirmation_with_template(evidence_bundle)
         integrated = evidence_bundle.get("integrated_reasoning_evidence") or {}
@@ -1676,6 +1678,58 @@ class GaoDoctorAgent:
 
     def _is_prognosis_question(self, question: str) -> bool:
         return any(marker in question for marker in ["活多久", "能活", "寿命", "生存期"])
+
+    def _is_clinical_context_question(self, question: str) -> bool:
+        clinical_markers = [
+            "病史",
+            "风险",
+            "危险因素",
+            "激素",
+            "饮酒",
+            "酗酒",
+            "外伤",
+            "history",
+            "risk factor",
+            "steroid",
+            "alcohol",
+            "trauma",
+        ]
+        diagnosis_markers = ["确诊", "诊断", "说明", "支持", "能不能", "能否", "吗"]
+        lowered = question.lower()
+        return any(marker in lowered for marker in clinical_markers) and any(
+            marker in lowered for marker in diagnosis_markers
+        )
+
+    def _answer_clinical_context_follow_up_with_template(
+        self,
+        evidence_bundle: dict[str, Any],
+    ) -> str:
+        clinical = evidence_bundle.get("clinical_context_evidence") or {}
+        risk_modifiers = clinical.get("risk_modifiers") or {}
+        limits = clinical.get("diagnostic_limits") or {}
+        source = clinical.get("source") or "missing"
+        factors = [
+            str(item)
+            for item in risk_modifiers.get("provided_risk_factors")
+            or clinical.get("provided_risk_factors")
+            or []
+            if str(item).strip()
+        ]
+        factor_text = "、".join(factors) if factors else "当前没有结构化到明确风险因素"
+        raw_context = str(clinical.get("raw_context") or "").strip()
+        raw_text = f"原始上下文是：{raw_context}。" if raw_context else ""
+        limit_role = str(
+            limits.get("role")
+            or clinical.get("role")
+            or "clinical context can modify suspicion only; it cannot replace imaging evidence."
+        )
+        return (
+            f"这部分临床上下文来源是 {source}。"
+            f"已识别的 risk modifier 包括：{factor_text}。"
+            f"{raw_text}"
+            f"限制是：{limit_role} "
+            "也就是说，它只能提高或降低怀疑程度，不能单独确诊。"
+        )
 
     def _is_diagnosis_confirmation_question(self, question: str) -> bool:
         return any(marker in question for marker in ["是", "是不是", "有没有", "有吗", "吗"]) and any(

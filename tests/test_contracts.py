@@ -207,6 +207,18 @@ class ContractBoundaryTest(unittest.TestCase):
                 initial_evidence_status="confirmed_diagnosis",
             )
 
+        for diagnostic_status in ("supported", "not_supported"):
+            with self.subTest(diagnostic_status=diagnostic_status):
+                with self.assertRaises(ValueError):
+                    SkillRoutingDecision(
+                        selected_skill="femoral_head_necrosis",
+                        selected_vision_mode="no_mask_skill",
+                        source="auto",
+                        reason="routing must not encode diagnostic conclusions",
+                        confidence=0.75,
+                        initial_evidence_status=diagnostic_status,
+                    )
+
     def test_visual_analysis_contract_rejects_final_diagnosis(self):
         with self.assertRaises(ValueError):
             VisualAnalysisResult.from_dict(

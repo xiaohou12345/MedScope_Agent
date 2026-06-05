@@ -188,8 +188,6 @@ class SkillRoutingDecision:
 
     ALLOWED_SOURCES: ClassVar[set[str]] = {"auto", "explicit", "default"}
     ALLOWED_EVIDENCE_STATUSES: ClassVar[set[str]] = {
-        "supported",
-        "not_supported",
         "insufficient",
         "nonspecific",
         "requires_evidence_acquisition",

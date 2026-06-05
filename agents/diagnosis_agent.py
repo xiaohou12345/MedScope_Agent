@@ -85,6 +85,7 @@ class DiagnosisDoctorAgent:
             )
             self._attach_visual_fact_usage(report, evidence)
             self._attach_guideline_evidence(report, skill_descriptor)
+            self._attach_clinical_context_bundle(report, patient_info, skill_descriptor)
             self._attach_clinical_hypotheses_assessment(report, routing_decision)
             report["visual_input_contract"] = visual_input_contract
             return report
@@ -102,6 +103,7 @@ class DiagnosisDoctorAgent:
                 skill_descriptor=skill_descriptor,
             )
             self._attach_visual_fact_usage(report, evidence)
+            self._attach_clinical_context_bundle(report, patient_info, skill_descriptor)
             self._attach_clinical_hypotheses_assessment(report, routing_decision)
             report["visual_input_contract"] = visual_input_contract
             return report
@@ -119,6 +121,7 @@ class DiagnosisDoctorAgent:
                 self._apply_alignment_constraints(llm_report, checked_alignment_plan)
                 self._attach_visual_fact_usage(llm_report, evidence)
                 self._attach_guideline_evidence(llm_report, skill_descriptor)
+                self._attach_clinical_context_bundle(llm_report, patient_info, skill_descriptor)
                 self._attach_clinical_hypotheses_assessment(llm_report, routing_decision)
                 llm_report["visual_input_contract"] = visual_input_contract
                 return llm_report
@@ -136,9 +139,22 @@ class DiagnosisDoctorAgent:
         self._apply_alignment_constraints(report, checked_alignment_plan)
         self._attach_visual_fact_usage(report, evidence)
         self._attach_guideline_evidence(report, skill_descriptor)
+        self._attach_clinical_context_bundle(report, patient_info, skill_descriptor)
         self._attach_clinical_hypotheses_assessment(report, routing_decision)
         report["visual_input_contract"] = visual_input_contract
         return report
+
+    def _attach_clinical_context_bundle(
+        self,
+        report: dict[str, Any],
+        patient_info: dict[str, Any],
+        skill_descriptor: dict[str, Any],
+    ) -> None:
+        bundle = self._build_clinical_context_bundle(patient_info, skill_descriptor)
+        report["clinical_context_bundle"] = bundle
+        assessment = report.get("clinical_context_assessment")
+        if isinstance(assessment, dict):
+            assessment["clinical_context_bundle"] = bundle
 
     def _attach_guideline_evidence(
         self,
@@ -510,6 +526,10 @@ class DiagnosisDoctorAgent:
             "can_confirm_without_imaging": False,
             "role": "clinical risk changes suspicion level only; it cannot confirm ONFH without imaging evidence.",
         }
+        clinical_context_bundle = self._build_clinical_context_bundle(
+            patient_info,
+            skill_descriptor,
+        )
         missing_evidence = [
             item.get("visual_observation", {}).get("reason") or item.get("target")
             for item in missing
@@ -520,6 +540,7 @@ class DiagnosisDoctorAgent:
             "quantitative_evidence_summary": quantitative_summary,
             "differential_considerations": differential,
             "clinical_context_assessment": clinical_context,
+            "clinical_context_bundle": clinical_context_bundle,
             "missing_evidence": missing_evidence,
             "modality_limitations": modality_limitations,
             "recommendation": recommendations,
@@ -529,6 +550,7 @@ class DiagnosisDoctorAgent:
                 quantitative_summary=quantitative_summary,
                 differential_considerations=differential,
                 clinical_context=clinical_context,
+                clinical_context_bundle=clinical_context_bundle,
                 modality_limitations=modality_limitations,
                 recommendations=recommendations,
             ),
@@ -650,6 +672,7 @@ class DiagnosisDoctorAgent:
         quantitative_summary: dict[str, Any],
         differential_considerations: list[dict[str, Any]],
         clinical_context: dict[str, Any],
+        clinical_context_bundle: dict[str, Any],
         modality_limitations: list[str],
         recommendations: list[str],
     ) -> dict[str, Any]:
@@ -715,6 +738,8 @@ class DiagnosisDoctorAgent:
                     clinical_context.get("missing_clinical_context") or []
                 ),
                 "can_confirm_without_imaging": False,
+                "clinical_context_source": clinical_context_bundle.get("source"),
+                "clinical_context_bundle": clinical_context_bundle,
             },
             "missing_evidence": {
                 "missing_required_targets": list(
@@ -723,6 +748,49 @@ class DiagnosisDoctorAgent:
             },
             "modality_limitation": list(modality_limitations),
             "recommended_next_step": list(recommendations),
+        }
+
+    def _build_clinical_context_bundle(
+        self,
+        patient_info: dict[str, Any],
+        skill_descriptor: dict[str, Any],
+    ) -> dict[str, Any]:
+        raw_values: list[str] = []
+        source_fields: list[str] = []
+        for key in ("clinical_context", "history", "risk_factors", "symptoms"):
+            value = patient_info.get(key)
+            if value is None or value == "":
+                continue
+            source_fields.append(key)
+            if isinstance(value, list):
+                raw_values.extend(str(item) for item in value if str(item).strip())
+            else:
+                raw_values.append(str(value))
+        raw_context = "；".join(raw_values)
+        source = patient_info.get("clinical_context_source") or (
+            "structured_patient_info" if raw_context else "missing"
+        )
+        provided = self._clinical_risk_factors(patient_info, skill_descriptor)
+        missing = self._missing_clinical_context(patient_info, skill_descriptor)
+        return {
+            "schema_version": "clinical_context_bundle.v1",
+            "source": source,
+            "source_fields": source_fields,
+            "raw_context": raw_context,
+            "risk_modifiers": {
+                "provided_risk_factors": provided,
+                "missing_clinical_context": missing,
+                "suspicion_modifier_only": True,
+            },
+            "diagnostic_limits": {
+                "can_confirm_without_imaging": False,
+                "diagnosis_usable": False,
+                "diagnosis_usable_level": "risk_modifier_only",
+                "role": (
+                    "clinical context changes suspicion level only; it cannot "
+                    "replace imaging evidence or confirm diagnosis."
+                ),
+            },
         }
 
     def _clinical_risk_factors(

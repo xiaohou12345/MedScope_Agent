@@ -200,6 +200,156 @@
       ]
     }
   },
+  "imaging_evidence_protocol": {
+    "disease_target": "community_acquired_pneumonia",
+    "clinical_focus": "成人社区获得性肺炎胸片 evidence acquisition protocol",
+    "available_modalities": ["Chest X-ray", "Chest CT"],
+    "anatomical_roi": [
+      {
+        "target": "lung_fields",
+        "display_name": "双肺野",
+        "role": "primary_roi",
+        "required_for": ["opacity_area_ratio", "laterality", "zone_or_lobe"]
+      },
+      {
+        "target": "pleural_space",
+        "display_name": "胸膜腔",
+        "role": "supporting_roi",
+        "required_for": ["pleural_effusion_present"]
+      }
+    ],
+    "finding_targets": [
+      {
+        "target": "lung_opacity",
+        "display_name": "肺部浸润影或阴影",
+        "description": "胸片上局灶或多灶肺野密度增高候选区域。",
+        "required_modalities": ["Chest X-ray"],
+        "execution_mode": "vlm_plus_segmenter",
+        "evidence_type": "candidate_mask",
+        "localization_mode": "bbox",
+        "segmentation_mode": "candidate_mask",
+        "diagnosis_usable_level": "candidate_support",
+        "measurement_dependencies": ["lung_fields_roi", "candidate_mask_qc"],
+        "measurement_usable": false,
+        "quality_requirements": ["prompt_box_alignment", "candidate_mask_qc", "anatomical_roi_alignment"],
+        "limitations": ["候选 mask 只能作为影像支持证据，不能单独确诊肺炎或病原体。"]
+      },
+      {
+        "target": "consolidation",
+        "display_name": "实变影",
+        "description": "肺叶、肺段或片状密度增高伴气支气管征等实变候选区域。",
+        "required_modalities": ["Chest X-ray", "Chest CT"],
+        "execution_mode": "vlm_plus_segmenter",
+        "evidence_type": "candidate_mask",
+        "localization_mode": "bbox",
+        "segmentation_mode": "candidate_mask",
+        "diagnosis_usable_level": "candidate_support",
+        "measurement_dependencies": ["lung_fields_roi", "candidate_mask_qc"],
+        "measurement_usable": false,
+        "quality_requirements": ["prompt_box_alignment", "candidate_mask_qc", "anatomical_roi_alignment"],
+        "limitations": ["实变可支持感染性过程，但需结合临床症状、体征和实验室信息。"]
+      },
+      {
+        "target": "pleural_effusion",
+        "display_name": "胸腔积液",
+        "description": "肋膈角变钝或胸膜腔液体候选表现。",
+        "required_modalities": ["Chest X-ray", "Chest CT"],
+        "execution_mode": "vlm_only",
+        "evidence_type": "visual_observation",
+        "localization_mode": "score",
+        "segmentation_mode": "none",
+        "diagnosis_usable_level": "supporting_observation",
+        "measurement_dependencies": [],
+        "measurement_usable": false,
+        "limitations": ["胸腔积液是并发或伴随征象，不能单独确诊社区获得性肺炎。"]
+      },
+      {
+        "target": "fever_or_cough",
+        "display_name": "发热或咳嗽等临床综合征",
+        "description": "患者主诉、病史或结构化 patient_info 中的发热、咳嗽、咳痰、气促等信息。",
+        "required_modalities": [],
+        "execution_mode": "clinical_context_only",
+        "evidence_type": "clinical_context",
+        "localization_mode": "none",
+        "segmentation_mode": "none",
+        "diagnosis_usable_level": "risk_modifier_only",
+        "measurement_dependencies": [],
+        "measurement_usable": false,
+        "limitations": ["临床症状只能提高怀疑程度，不能替代影像和临床评估直接确诊。"]
+      }
+    ]
+  },
+  "quantitative_evidence_protocol": {
+    "image_feature_quantification": [
+      {
+        "feature_name": "opacity_texture_score",
+        "target": "lung_opacity",
+        "status": "exploratory",
+        "validation_status": "requires_validation",
+        "diagnosis_usable": false,
+        "diagnosis_usable_level": "exploratory_only"
+      },
+      {
+        "feature_name": "consolidation_pattern_score",
+        "target": "consolidation",
+        "status": "exploratory",
+        "validation_status": "requires_validation",
+        "diagnosis_usable": false,
+        "diagnosis_usable_level": "exploratory_only"
+      }
+    ],
+    "measurement_evidence": [
+      {
+        "measurement_name": "opacity_area_ratio",
+        "target": "lung_opacity",
+        "requires": ["lung_fields_roi", "candidate_mask_qc"],
+        "measurement_usable_default": false
+      },
+      {
+        "measurement_name": "laterality_and_zone",
+        "target": "lung_opacity",
+        "requires": ["lung_fields_roi", "candidate_mask_qc"],
+        "measurement_usable_default": false
+      },
+      {
+        "measurement_name": "pleural_effusion_present",
+        "target": "pleural_effusion",
+        "requires": ["pleural_space_roi", "image_quality"],
+        "measurement_usable_default": false
+      }
+    ]
+  },
+  "clinical_context_protocol": {
+    "risk_factors": [
+      "advanced_age",
+      "chronic_cardiopulmonary_disease",
+      "immunosuppression",
+      "recent_respiratory_infection",
+      "smoking_history"
+    ],
+    "symptom_fields": ["fever", "cough", "sputum", "dyspnea", "pleuritic_chest_pain"],
+    "clinical_fields": ["age", "symptom_duration", "oxygen_saturation", "temperature", "inflammatory_markers"],
+    "source_fields": ["patient_message", "patient_info", "clinical_context", "history", "risk_factors"],
+    "missing_policy": "missing_clinical_context",
+    "reasoning_rule": "clinical context cannot confirm pneumonia without imaging and clinical assessment; it can only modify suspicion level."
+  },
+  "integrated_reasoning_protocol": {
+    "required_sections": [
+      "imaging_support",
+      "quantitative_support",
+      "clinical_risk_support",
+      "clinical_context_source",
+      "missing_evidence",
+      "modality_limitation",
+      "recommended_next_step"
+    ],
+    "safety_rules": [
+      "clinical context cannot confirm pneumonia without imaging and clinical assessment",
+      "candidate masks cannot determine pathogen or complete clinical diagnosis",
+      "negative or unclear chest X-ray cannot rule out pneumonia when clinical suspicion remains high",
+      "missing clinical context must not be treated as negative evidence"
+    ]
+  },
   "report_requirements": {
     "include": ["诊断倾向", "影像依据", "不确定性说明", "建议进一步检查", "治疗建议"]
   }
