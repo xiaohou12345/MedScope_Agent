@@ -309,6 +309,7 @@ python -m scripts.prepare_public_demo_fixture \
 suite 会生成一张合成的、非患者数据的髋关节 X-ray-like PNG，并运行确定性
 service demo，写出 response、evidence bundle、memory audit 和 follow-up QA
 artifact。它用于测试上传、路由和 FHN skill 主线，不是临床图像，也不是分割 benchmark。
+它不证明病灶检测质量。
 启动 HTTP 服务后，也可以通过 `GET /v1/demo/public-safe` 直接运行同一条 suite。
 交互前端也提供 `运行 Public-safe MVP 样例` 按钮，会调用这个 endpoint 并直接渲染
 诊断报告、视觉证据、evidence bundle 和 memory audit。
@@ -340,7 +341,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 434 tests in 60.658s
+Ran 434 tests in 59.537s
 OK
 ```
 

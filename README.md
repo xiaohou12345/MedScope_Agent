@@ -304,6 +304,7 @@ The suite writes a synthetic, non-patient hip X-ray-like PNG and deterministic
 service artifacts for response, evidence bundle, memory audit, and follow-up QA.
 Use it to test upload, routing, and the FHN skill path without private
 DICOM/NIfTI files. It is not a clinical image or a segmentation benchmark.
+It does not prove lesion detection quality.
 After starting the HTTP server, the same suite is available at
 `GET /v1/demo/public-safe`. The interactive frontend also includes a
 `运行 Public-safe MVP 样例` button that runs this endpoint and renders the
@@ -346,7 +347,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 434 tests in 60.658s
+Ran 434 tests in 59.537s
 OK
 ```
 

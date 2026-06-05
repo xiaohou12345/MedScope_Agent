@@ -44,12 +44,22 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
         self.assertIn("GET /v1/readiness", api_routes)
         self.assertIn("POST /v1/demo/public-safe/qa", api_routes)
         self.assertNotIn("Expand public-safe fixtures", readme)
+        public_safe_section = readme.split("Public-safe MVP suite for fresh clones:", 1)[1].split(
+            "No-mask visual pipeline:",
+            1,
+        )[0]
+        self.assertIn("does not prove lesion detection quality", public_safe_section)
 
         zh_readme = (REPO_ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
         zh_api_routes = zh_readme.split("常用接口：", 1)[1].split("## 常用 Demo", 1)[0]
         self.assertIn("GET /v1/readiness", zh_api_routes)
         self.assertIn("POST /v1/demo/public-safe/qa", zh_api_routes)
         self.assertNotIn("把公开安全 fixture 扩展成", zh_readme)
+        zh_public_safe_section = zh_readme.split("fresh clone 可用的公开安全 MVP suite：", 1)[1].split(
+            "无 mask 视觉流水线：",
+            1,
+        )[0]
+        self.assertIn("不证明病灶检测质量", zh_public_safe_section)
 
     def test_runbook_recommends_frontend_public_safe_button_for_smoke_demo(self):
         text = RUNBOOK.read_text(encoding="utf-8")

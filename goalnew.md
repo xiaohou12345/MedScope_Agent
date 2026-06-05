@@ -9674,6 +9674,37 @@ python -m unittest discover -v
 
 结果：前端静态守卫、JS 语法检查、public-safe HTTP/QA/doc targeted 测试、diff 空白检查和全量 `434` 个 unittest 通过；完整回归耗时 `60.658s`。
 
+### 2026-06-05 Public-safe Fixture 质量边界 README 守卫补齐
+
+本轮目标：回到当前 MVP closure 主线，避免把上一轮 QA 可见性小补丁误当作整轮目标。public-safe suite 的核心用途是 smoke/readiness 和证据链演示，不是证明病灶检测质量；runbook 已有 meeting-safe/avoid 表述，但 README 英/中文段落还没有被测试守住这条边界。
+
+新增/调整：
+
+- `README.md`
+  - public-safe suite 段落新增 `It does not prove lesion detection quality.`。
+- `README.zh-CN.md`
+  - 对齐新增 `它不证明病灶检测质量。`。
+- `tests/test_current_mvp_demo_runbook.py`
+  - README public-safe 段落守卫新增英文/中文“不证明病灶检测质量”断言。
+
+RED：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook.CurrentMvpDemoRunbookTest.test_readmes_document_public_safe_qa_route_as_current_api -v
+```
+
+结果：测试按预期失败，英文 README public-safe 段落缺少 `does not prove lesion detection quality`。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_current_mvp_demo_runbook tests.test_goal_closure_scope -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：current MVP runbook/scope 文档守卫、diff 空白检查和全量 `434` 个 unittest 通过；完整回归耗时 `59.537s`。
+
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 
 本轮目标：追问链路已经能通过 `GaoDoctorAgent QA` 展示为 evidence bundle 约束下的后续回答，但 `QA Safety` 区块只展示 `evidence_bundle_required` 和 QA 数量，没有明确显示有多少条追问实际使用了 evidence bundle。
