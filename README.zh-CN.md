@@ -238,6 +238,7 @@ curl -X POST http://127.0.0.1:8000/v1/medscope \
 - `GET /v1/memory/cases/{case_id}/evidence-bundle`
 - `GET /v1/memory/cases/{case_id}/audit`
 - `GET /v1/demo/public-safe`
+- `POST /v1/demo/public-safe/qa`
 - `GET /v1/demo/standard`
 - `POST /v1/baseline/image-prompt-skill`
 
@@ -338,7 +339,7 @@ python -m unittest discover -v
 最近一次本地验证：
 
 ```text
-Ran 432 tests in 62.291s
+Ran 433 tests in 61.359s
 OK
 ```
 
@@ -372,7 +373,7 @@ node --check web/app.js
 建议下一步：
 
 1. 先把当前 MVP goal 收敛到架构说明、患者端报告/QA、evidence bundle 审计和 benchmark 基础设施。
-2. 把公开安全 fixture 扩展成覆盖上传、QA、memory audit 的小型脚本 demo suite。
+2. 把 public-safe HTTP/前端 demo 保持为后续报告、QA 和 memory audit UI 改动的 smoke gate。
 3. 等真实 FHN 标注数据和 mask 到位后，再向 `benchmarks/segmentation/` 增加 `evaluator_type: binary_mask` 和 `metric_gates`。
 4. 如果进入固定部署，再增加锁文件或 pinned environment export。
 5. 专病模型接入必须继续走 visual backend contract 和 quality gate。

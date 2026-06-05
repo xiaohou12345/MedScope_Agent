@@ -237,6 +237,7 @@ Other useful routes:
 - `GET /v1/memory/cases/{case_id}/evidence-bundle`
 - `GET /v1/memory/cases/{case_id}/audit`
 - `GET /v1/demo/public-safe`
+- `POST /v1/demo/public-safe/qa`
 - `GET /v1/demo/standard`
 - `POST /v1/baseline/image-prompt-skill`
 
@@ -345,7 +346,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 432 tests in 62.291s
+Ran 433 tests in 61.359s
 OK
 ```
 
@@ -379,7 +380,7 @@ Important limitations:
 Recommended next engineering steps:
 
 1. Close the current MVP goal around architecture clarity, patient-facing report/QA behavior, evidence bundle audit, and benchmark infrastructure.
-2. Expand public-safe fixtures into a small scripted demo suite that covers upload, QA, and memory audit.
+2. Keep the public-safe HTTP/frontend demo as the smoke gate for future report, QA, and memory-audit UI changes.
 3. After real FHN labeled data and masks are obtained, add benchmark cases to `benchmarks/segmentation/` with `evaluator_type: binary_mask` and manifest `metric_gates`.
 4. Add a lockfile or pinned environment export if exact deployment reproducibility becomes necessary.
 5. Keep specialist model integration behind the visual backend contract and quality gate.

@@ -38,6 +38,17 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
                 readme = (REPO_ROOT / readme_name).read_text(encoding="utf-8")
                 self.assertIn(target, readme)
 
+    def test_readmes_document_public_safe_qa_route_as_current_api(self):
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        api_routes = readme.split("Other useful routes:", 1)[1].split("## Useful Demos", 1)[0]
+        self.assertIn("POST /v1/demo/public-safe/qa", api_routes)
+        self.assertNotIn("Expand public-safe fixtures", readme)
+
+        zh_readme = (REPO_ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+        zh_api_routes = zh_readme.split("常用接口：", 1)[1].split("## 常用 Demo", 1)[0]
+        self.assertIn("POST /v1/demo/public-safe/qa", zh_api_routes)
+        self.assertNotIn("把公开安全 fixture 扩展成", zh_readme)
+
 
 if __name__ == "__main__":
     unittest.main()
