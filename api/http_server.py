@@ -16,6 +16,13 @@ from skill_editor.backend import (
     dispatch_skill_editor_api_request,
     dispatch_skill_editor_static_request,
 )
+from skill_editor.doctor_view import (
+    build_doctor_skill_summary,
+    build_doctor_skill_view,
+    evidence_level_label,
+    execution_mode_label,
+    skill_type_label,
+)
 
 
 STATIC_ROOT = Path(__file__).resolve().parent.parent / "web"
@@ -264,62 +271,15 @@ def _is_safe_skill_key(skill_key: str) -> bool:
 
 
 def _doctor_skill_summary(*, skill_key: str, skill: dict, output_root: Path) -> dict:
-    clinical = skill.get("clinical_features") or {}
-    protocol = skill.get("visual_protocol") or {}
-    return {
-        "skill_key": skill_key,
-        "disease_name": skill.get("disease_name") or skill_key,
-        "skill_id": skill.get("skill_id"),
-        "skill_type": skill.get("skill_type"),
-        "evidence_level": skill.get("evidence_level"),
-        "source": skill.get("source"),
-        "doctor_summary": {
-            "symptom_count": len(clinical.get("common_symptoms") or []),
-            "risk_factor_count": len(clinical.get("risk_factors") or []),
-            "image_requirement_count": len(skill.get("required_image_views") or []),
-            "visual_finding_count": len(protocol.get("finding_targets") or []),
-            "source_count": len(skill.get("source_documents") or []),
-        },
-        "review_status": "draft_saved"
-        if _latest_skill_review_draft(skill_key=skill_key, output_root=output_root)["exists"]
-        else "no_draft",
-    }
+    return build_doctor_skill_summary(
+        skill_key=skill_key,
+        skill=skill,
+        draft_exists=_latest_skill_review_draft(skill_key=skill_key, output_root=output_root)["exists"],
+    )
 
 
 def _doctor_skill_view(skill: dict) -> dict:
-    clinical = skill.get("clinical_features") or {}
-    protocol = skill.get("visual_protocol") or {}
-    return {
-        "identity": {
-            "disease_name": skill.get("disease_name"),
-            "skill_id": skill.get("skill_id"),
-            "skill_type": _skill_type_label(skill.get("skill_type")),
-            "evidence_level": _evidence_level_label(skill.get("evidence_level")),
-            "source": skill.get("source"),
-        },
-        "clinical_profile": {
-            "common_symptoms": list(clinical.get("common_symptoms") or []),
-            "risk_factors": list(clinical.get("risk_factors") or []),
-        },
-        "imaging_requirements": [
-            {"label": str(item), "review_prompt": "这个检查是否是诊断该病必须或推荐的影像？"}
-            for item in skill.get("required_image_views") or []
-        ],
-        "visual_findings": _doctor_visual_findings(protocol),
-        "staging_rules": _doctor_staging_rules(skill.get("staging_rules") or {}),
-        "safety_notes": _doctor_safety_notes(protocol),
-        "report_requirements": list((skill.get("report_requirements") or {}).get("include") or []),
-        "source_documents": [
-            {
-                "title": document.get("title") or document.get("source_id") or "未命名来源",
-                "publisher": document.get("publisher") or document.get("source_kind"),
-                "url": document.get("url"),
-                "evidence_note": document.get("evidence_note"),
-            }
-            for document in skill.get("source_documents") or []
-            if isinstance(document, dict)
-        ],
-    }
+    return build_doctor_skill_view(skill)
 
 
 def _doctor_visual_findings(protocol: dict) -> list[dict]:
@@ -392,27 +352,15 @@ def _doctor_safety_notes(protocol: dict) -> list[dict]:
 
 
 def _skill_type_label(value: object) -> str:
-    labels = {
-        "guideline_based": "正式指南 Skill",
-        "data_mined_hypothesis": "数据挖掘假设 Skill",
-    }
-    return labels.get(str(value), str(value or "未标注"))
+    return skill_type_label(value)
 
 
 def _evidence_level_label(value: object) -> str:
-    labels = {"high": "高", "medium": "中", "low": "低"}
-    return labels.get(str(value), str(value or "未标注"))
+    return evidence_level_label(value)
 
 
 def _execution_mode_label(value: object) -> str:
-    labels = {
-        "vlm_only": "只做视觉观察，不生成分割 mask",
-        "vlm_plus_segmenter": "先定位候选区域，再生成候选分割",
-        "specialist_segmenter": "使用专病分割模型",
-        "measurement_only": "只做形态或数值测量",
-        "insufficient_input": "当前影像不足，不能执行",
-    }
-    return labels.get(str(value), "按当前工具计划处理")
+    return execution_mode_label(value)
 
 
 def _latest_skill_review_draft(*, skill_key: str, output_root: Path) -> dict:

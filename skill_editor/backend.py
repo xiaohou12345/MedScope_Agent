@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from skill_editor.doctor_view import build_doctor_skill_view
+
 
 EDITOR_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = EDITOR_ROOT.parent
@@ -302,6 +304,7 @@ def _skill_detail(*, skill_key: str, skill_path: Path, version_root: Path) -> di
         "skill_key": skill_key,
         "path": str(skill_path),
         "editor": _skill_to_editor(skill),
+        "doctor_view": build_doctor_skill_view(skill),
         "raw": skill,
         "versions": _list_versions(kind="skills", document_key=skill_key, version_root=version_root),
     }

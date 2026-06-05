@@ -234,25 +234,7 @@ function renderPreview() {
     els.previewView.innerHTML = markdownToHtml(state.detail.markdown || "");
     return;
   }
-  const editor = collectSkillEditor();
-  const raw = state.detail.raw || {};
-  els.previewView.innerHTML = `
-    <h2>${escapeHtml(editor.disease_name || state.key)}</h2>
-    ${renderField("Skill ID", editor.skill_id)}
-    ${renderField("证据等级", editor.evidence_level)}
-    ${renderField("来源", editor.source)}
-    ${renderList("常见症状", editor.common_symptoms)}
-    ${renderList("风险因素", editor.risk_factors)}
-    ${renderList("需要的影像检查", editor.required_image_views)}
-    ${renderList("解剖关注区域", editor.anatomy)}
-    ${renderList("影像征象", editor.lesion_features)}
-    ${renderList("视觉 Agent 目标", editor.segmentation_targets)}
-    ${renderList("报告需要包含", editor.report_requirements)}
-    ${renderStagingRules(raw.staging_rules)}
-    ${renderVisualProtocol(raw.visual_protocol)}
-    ${renderSourceDocuments(raw.source_documents)}
-    ${renderQualityControl(raw.quality_control)}
-  `;
+  els.previewView.innerHTML = renderDoctorSkillPreview(state.detail.doctor_view || {}, collectSkillEditor());
 }
 
 function renderRaw() {
@@ -359,99 +341,166 @@ function renderList(label, text) {
   return `<h3>${escapeHtml(label)}</h3><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
-function renderStagingRules(stagingRules) {
-  if (!stagingRules || typeof stagingRules !== "object" || Array.isArray(stagingRules)) return "";
-  const rows = Object.entries(stagingRules).map(([stage, rule]) => {
-    if (!rule || typeof rule !== "object" || Array.isArray(rule)) {
-      return `<li><strong>${escapeHtml(stage)}：</strong>${escapeHtml(rule)}</li>`;
-    }
-    const features = Object.entries(rule)
-      .filter(([key]) => key !== "description")
-      .flatMap(([, value]) => Array.isArray(value) ? value : [value])
-      .filter((value) => value !== undefined && value !== null && String(value).trim());
-    return `
-      <li>
-        <strong>${escapeHtml(stage)}：</strong>${escapeHtml(rule.description || "")}
-        ${features.length ? `<ul>${features.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
-      </li>
-    `;
-  });
-  return `<h3>分期 / 判断规则</h3><ul>${rows.join("")}</ul>`;
-}
-
-function renderVisualProtocol(protocol) {
-  if (!protocol || typeof protocol !== "object" || Array.isArray(protocol)) return "";
+function renderDoctorSkillPreview(view, editor) {
+  const identity = view.identity || {};
+  const clinical = view.clinical_profile || {};
   return `
-    <h3>视觉协议</h3>
-    ${renderField("疾病目标", protocol.disease_target)}
-    ${renderField("临床关注点", protocol.clinical_focus)}
-    ${renderObjectList("影像对齐任务", protocol.alignment_tasks, ["task", "reason", "required_modalities"])}
-    ${renderObjectList("视觉发现目标", protocol.finding_targets, ["display_name", "target", "description", "required_modalities", "diagnostic_role", "execution_mode"])}
-    ${renderObjectList("证据不足规则", protocol.insufficiency_rules, ["condition", "status", "reason"])}
-    ${renderObjectList("建议补充影像", protocol.required_next_images, ["modality", "region", "reason"])}
-    ${renderObjectList("疑似方向", protocol.suspected_conditions, ["condition", "reason"])}
-    ${renderJsonBlock("Required Modalities", protocol.required_modalities)}
-    ${renderJsonBlock("Measurements", protocol.measurements)}
+    <h2>${escapeHtml(identity.disease_name || editor.disease_name || state.key)}</h2>
+    <div class="doctor-summary-grid">
+      ${renderSummaryCard("Skill ID", identity.skill_id || editor.skill_id)}
+      ${renderSummaryCard("Skill 类型", identity.skill_type)}
+      ${renderSummaryCard("证据等级", identity.evidence_level || editor.evidence_level)}
+      ${renderSummaryCard("来源", identity.source || editor.source)}
+    </div>
+    ${renderArraySection("常见症状", clinical.common_symptoms)}
+    ${renderArraySection("危险因素", clinical.risk_factors)}
+    ${renderObjectLabelSection("需要的影像检查", view.imaging_requirements, "label")}
+    ${renderObjectLabelSection("影像征象", view.visual_findings, "display_name", "暂无影像征象")}
+    ${renderAlignmentTasks(view.alignment_tasks)}
+    ${renderRequiredModalities(view.required_modalities)}
+    ${renderMeasurements(view.measurements)}
+    ${renderObjectLabelSection("疑似方向", view.suspected_conditions, "condition")}
+    ${renderStages(view.staging_rules)}
+    ${renderSafetyNotes(view.safety_notes)}
+    ${renderArraySection("报告需要包含", view.report_requirements)}
+    ${renderSources(view.source_documents)}
+    ${renderQuality(view.quality_control)}
   `;
 }
 
-function renderSourceDocuments(documents) {
-  if (!Array.isArray(documents) || !documents.length) return "";
+function renderSummaryCard(label, value) {
+  if (!value) return "";
+  return `<div class="summary-card"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>`;
+}
+
+function renderArraySection(label, items, emptyText = "") {
+  if (!Array.isArray(items) || !items.length) {
+    return emptyText ? `<h3>${escapeHtml(label)}</h3><p class="muted">${escapeHtml(emptyText)}</p>` : "";
+  }
+  return `<h3>${escapeHtml(label)}</h3><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function renderObjectLabelSection(label, items, labelKey, emptyText = "") {
+  if (!Array.isArray(items) || !items.length) {
+    return emptyText ? `<h3>${escapeHtml(label)}</h3><p class="muted">${escapeHtml(emptyText)}</p>` : "";
+  }
   return `
-    <h3>指南 / 来源文献</h3>
+    <h3>${escapeHtml(label)}</h3>
     <ul>
-      ${documents.map((doc) => `
+      ${items.map((item) => `
         <li>
-          <strong>${escapeHtml(doc.title || doc.source_id || "未命名来源")}</strong>
-          ${doc.publisher ? ` · ${escapeHtml(doc.publisher)}` : ""}
-          ${doc.url ? `<br><span>${escapeHtml(doc.url)}</span>` : ""}
-          ${doc.evidence_note ? `<br><span>${escapeHtml(doc.evidence_note)}</span>` : ""}
+          <strong>${escapeHtml(item[labelKey] || item.label || item.condition || "未命名")}</strong>
+          ${item.description ? `<br><span>${escapeHtml(item.description)}</span>` : ""}
+          ${item.doctor_execution_label ? `<br><span>${escapeHtml(item.doctor_execution_label)}</span>` : ""}
+          ${Array.isArray(item.required_modalities) && item.required_modalities.length ? `<br><span>需要影像：${escapeHtml(item.required_modalities.join("、"))}</span>` : ""}
         </li>
       `).join("")}
     </ul>
   `;
 }
 
-function renderQualityControl(quality) {
-  if (!quality || typeof quality !== "object" || Array.isArray(quality)) return "";
-  const rows = Object.entries(quality)
-    .filter(([key]) => key !== "doctor_review_notes")
-    .map(([key, value]) => `<li><strong>${escapeHtml(key)}：</strong>${escapeHtml(formatValue(value))}</li>`);
-  const notes = Array.isArray(quality.doctor_review_notes) ? quality.doctor_review_notes : [];
+function renderAlignmentTasks(tasks) {
+  if (!Array.isArray(tasks) || !tasks.length) return "";
   return `
-    <h3>质控 / 医生备注</h3>
-    ${rows.length ? `<ul>${rows.join("")}</ul>` : ""}
-    ${notes.length ? `<ul>${notes.map((note) => `<li>${escapeHtml(note.note || note)}</li>`).join("")}</ul>` : ""}
-  `;
-}
-
-function renderObjectList(label, items, keys) {
-  if (!Array.isArray(items) || !items.length) return "";
-  return `
-    <h4>${escapeHtml(label)}</h4>
+    <h3>影像对齐任务</h3>
     <ul>
-      ${items.map((item) => {
-        if (!item || typeof item !== "object" || Array.isArray(item)) return `<li>${escapeHtml(formatValue(item))}</li>`;
-        const title = item.display_name || item.task || item.condition || item.modality || item.target || label;
-        const details = keys
-          .filter((key) => item[key] !== undefined && item[key] !== null && item[key] !== "")
-          .map((key) => `<li><strong>${escapeHtml(key)}：</strong>${escapeHtml(formatValue(item[key]))}</li>`)
-          .join("");
-        return `<li><strong>${escapeHtml(title)}</strong>${details ? `<ul>${details}</ul>` : ""}</li>`;
-      }).join("")}
+      ${tasks.map((task) => `
+        <li>
+          <strong>${escapeHtml(task.label || task.task || "任务")}</strong>
+          ${task.reason ? `<br><span>${escapeHtml(task.reason)}</span>` : ""}
+          ${Array.isArray(task.required_modalities) && task.required_modalities.length ? `<br><span>需要影像：${escapeHtml(task.required_modalities.join("、"))}</span>` : ""}
+        </li>
+      `).join("")}
     </ul>
   `;
 }
 
-function renderJsonBlock(label, value) {
-  if (value === undefined || value === null || (typeof value === "object" && !Object.keys(value).length)) return "";
-  return `<h4>${escapeHtml(label)}</h4><pre>${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+function renderRequiredModalities(items) {
+  if (!Array.isArray(items) || !items.length) return "";
+  return `
+    <h3>视觉判断所需影像</h3>
+    <ul>
+      ${items.map((item) => `<li><strong>${escapeHtml(item.label || item.target)}：</strong>${escapeHtml((item.modalities || []).join("、"))}</li>`).join("")}
+    </ul>
+  `;
 }
 
-function formatValue(value) {
-  if (Array.isArray(value)) return value.join("、");
-  if (value && typeof value === "object") return JSON.stringify(value, null, 2);
-  return value ?? "";
+function renderMeasurements(items) {
+  if (!Array.isArray(items) || !items.length) return "";
+  return `
+    <h3>定量指标</h3>
+    <ul>
+      ${items.map((item) => `
+        <li>
+          <strong>${escapeHtml(item.label || item.name)}</strong>
+          ${item.description ? `：${escapeHtml(item.description)}` : ""}
+          ${item.unit ? `（单位：${escapeHtml(item.unit)}）` : ""}
+          ${Array.isArray(item.required_modalities) && item.required_modalities.length ? `<br><span>需要影像：${escapeHtml(item.required_modalities.join("、"))}</span>` : ""}
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderStages(stages) {
+  if (!Array.isArray(stages) || !stages.length) return "";
+  return `
+    <h3>分期 / 判断规则</h3>
+    <ul>
+      ${stages.map((stage) => `
+        <li>
+          <strong>${escapeHtml(stage.label || stage.stage || "规则")}</strong>
+          ${stage.description ? `：${escapeHtml(stage.description)}` : ""}
+          ${Array.isArray(stage.features) && stage.features.length ? `<ul>${stage.features.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderSafetyNotes(notes) {
+  if (!Array.isArray(notes) || !notes.length) return "";
+  return `
+    <h3>证据不足和下一步检查</h3>
+    <ul>
+      ${notes.map((note) => `
+        <li>
+          <strong>${escapeHtml(note.status || note.condition || "提示")}</strong>
+          ${note.reason ? `：${escapeHtml(note.reason)}` : ""}
+          ${note.modality || note.region ? `<br><span>建议：${escapeHtml([note.modality, note.region].filter(Boolean).join(" / "))}</span>` : ""}
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderSources(sources) {
+  if (!Array.isArray(sources) || !sources.length) return "";
+  return `
+    <h3>指南来源</h3>
+    <ul class="source-list">
+      ${sources.map((doc) => `
+        <li>
+          <strong>${escapeHtml(doc.title || "未命名来源")}</strong>
+          ${doc.publisher ? `<br><span>${escapeHtml(doc.publisher)}</span>` : ""}
+          ${doc.evidence_note ? `<br><span>${escapeHtml(doc.evidence_note)}</span>` : ""}
+          ${doc.url ? `<br><a href="${escapeHtml(doc.url)}" target="_blank" rel="noreferrer">打开来源</a>` : ""}
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderQuality(quality) {
+  if (!quality) return "";
+  const items = Array.isArray(quality.items) ? quality.items : [];
+  const notes = Array.isArray(quality.doctor_review_notes) ? quality.doctor_review_notes : [];
+  if (!items.length && !notes.length) return "";
+  return `
+    <h3>质控 / 医生备注</h3>
+    ${items.length ? `<ul>${items.map((item) => `<li><strong>${escapeHtml(item.label)}：</strong>${escapeHtml(item.value)}</li>`).join("")}</ul>` : ""}
+    ${notes.length ? `<ul>${notes.map((note) => `<li>${escapeHtml(note.note || "")}</li>`).join("")}</ul>` : ""}
+  `;
 }
 
 function splitLines(value) {

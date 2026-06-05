@@ -87,6 +87,58 @@ class SkillEditorTest(unittest.TestCase):
             self.assertEqual(updated["quality_control"]["doctor_review_notes"][0]["author"], "张医生")
             self.assertEqual(len(payload["versions"]), 1)
 
+    def test_skill_detail_returns_unified_doctor_view_for_editor_preview(self):
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            skills_dir = root / "skills"
+            versions = root / "versions"
+            skills_dir.mkdir()
+            (skills_dir / "glioma.yaml").write_text(
+                json.dumps(
+                    {
+                        "disease_name": "成人弥漫性胶质瘤",
+                        "skill_id": "glioma_v0.1",
+                        "skill_type": "guideline_based",
+                        "evidence_level": "high",
+                        "clinical_features": {"common_symptoms": ["头痛"], "risk_factors": []},
+                        "required_image_views": ["MRI T1", "MRI T1ce"],
+                        "staging_rules": {
+                            "integrated_diagnosis_required": {
+                                "description": "需要整合组织学和分子诊断",
+                                "features": ["IDH 状态"],
+                            }
+                        },
+                        "visual_protocol": {
+                            "required_modalities": {"whole_tumor": ["FLAIR"]},
+                            "required_next_images": [
+                                {"modality": "MRI", "region": "brain", "reason": "建议补全 T1ce。"}
+                            ],
+                            "suspected_conditions": [
+                                {"disease": "成人弥漫性胶质瘤", "reason": "患者描述匹配胶质瘤 skill。"}
+                            ],
+                        },
+                        "source_documents": [{"title": "EANO guideline", "publisher": "EANO"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            status, payload = dispatch_skill_editor_api_request(
+                method="GET",
+                path="/skill-editor/api/skills/glioma",
+                skills_dir=skills_dir,
+                version_root=versions,
+            )
+
+            self.assertEqual(status, 200)
+            view = payload["doctor_view"]
+            self.assertEqual(view["identity"]["skill_type"], "正式指南 Skill")
+            self.assertEqual(view["required_modalities"][0]["label"], "全肿瘤范围")
+            self.assertEqual(view["required_modalities"][0]["modalities"], ["FLAIR"])
+            self.assertEqual(view["safety_notes"][0]["status"], "建议补充检查")
+            self.assertEqual(view["source_documents"][0]["title"], "EANO guideline")
+
     def test_prompt_editor_creates_updates_and_restores_prompt_md(self):
         with TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
