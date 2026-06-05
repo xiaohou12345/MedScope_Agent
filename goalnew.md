@@ -9771,6 +9771,37 @@ python -m unittest discover -v
 
 结果：goal scope/completion audit/runbook 文档守卫、diff 空白检查和全量 `437` 个 unittest 通过；完整回归耗时 `78.189s`。
 
+### 2026-06-05 Scope Verification Guard 列表对齐
+
+本轮目标：completion audit 已加入后，`CURRENT_GOAL_CLOSURE_SCOPE_20260605.md` 的 full regression 说明仍只列到 `demo/QA-source visibility guard`，没有把后续新增的 public-safe fixture 质量边界、benchmark 结果隔离和 completion audit 守卫写进去。该文档是当前 goal closure 的边界说明，验证来源列表不能滞后。
+
+新增/调整：
+
+- `tests/test_goal_closure_scope.py`
+  - scope 文档守卫新增 `public-safe fixture quality boundary guard`、`benchmark result isolation guard` 和 `completion audit guard` 断言。
+- `docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md`
+  - Current Verification Baseline 段补齐上述三个 guard，保持 `437 tests passed` 的来源说明与当前测试集一致。
+- `README.md`、`README.zh-CN.md`、`docs/CURRENT_GOAL_COMPLETION_AUDIT_20260605.md`、`goalnew.md`
+  - 同步本轮实际 full regression 结果：`437 tests in 76.867s`。
+
+RED：
+
+```bash
+python -m unittest tests.test_goal_closure_scope.GoalClosureScopeTest.test_current_goal_scope_defers_real_fhn_data_without_claiming_real_benchmark -v
+```
+
+结果：测试按预期失败，scope 文档缺少 `public-safe fixture quality boundary guard`。
+
+GREEN / 补充验证：
+
+```bash
+python -m unittest tests.test_goal_closure_scope tests.test_current_mvp_demo_runbook -v
+git diff --check
+python -m unittest discover -v
+```
+
+结果：goal scope/completion audit/runbook 文档守卫、diff 空白检查和全量 `437` 个 unittest 通过；完整回归耗时 `76.867s`。
+
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 
 本轮目标：追问链路已经能通过 `GaoDoctorAgent QA` 展示为 evidence bundle 约束下的后续回答，但 `QA Safety` 区块只展示 `evidence_bundle_required` 和 QA 数量，没有明确显示有多少条追问实际使用了 evidence bundle。

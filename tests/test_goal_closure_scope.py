@@ -16,6 +16,9 @@ class GoalClosureScopeTest(unittest.TestCase):
         self.assertIn("real FHN data and masks are deferred", text)
         self.assertIn("not required for this goal", text)
         self.assertIn("421 tests", text)
+        self.assertIn("public-safe fixture quality boundary guard", text)
+        self.assertIn("benchmark result isolation guard", text)
+        self.assertIn("completion audit guard", text)
         self.assertNotIn("real FHN benchmark completed", text)
         self.assertNotIn("metric-ready real benchmark completed", text)
 
