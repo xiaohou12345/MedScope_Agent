@@ -688,9 +688,10 @@ def dispatch_demo_request(
             output_root=Path(output_root),
         )
     if method == "GET" and route_path == "/v1/demo/public-safe":
-        return 200, run_public_safe_demo_suite(
+        summary = run_public_safe_demo_suite(
             output_dir=Path(output_root) / "fake" / "public_safe_demo_suite",
         )
+        return _build_public_safe_demo_payload(summary, output_root=Path(output_root))
     real_demo_prefix = "/v1/demo/real-vlm-medsam2"
     if route_path == real_demo_prefix or route_path.startswith(f"{real_demo_prefix}/"):
         return _dispatch_real_vlm_medsam2_demo_request(
@@ -1939,6 +1940,45 @@ def _read_demo_json(path: Path, output_root: Path = DEFAULT_OUTPUT_ROOT) -> tupl
         return 200, json.loads(resolved.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         return 500, {"error": f"invalid demo json: {exc}"}
+
+
+def _build_public_safe_demo_payload(summary: dict, output_root: Path) -> tuple[int, dict]:
+    response_status, response = _read_demo_json(Path(summary["response_path"]), output_root=output_root)
+    if response_status != 200:
+        return response_status, response
+    bundle_status, evidence_bundle = _read_demo_json(
+        Path(summary["evidence_bundle_path"]),
+        output_root=output_root,
+    )
+    if bundle_status != 200:
+        return bundle_status, evidence_bundle
+    audit_status, memory_audit = _read_demo_json(Path(summary["memory_audit_path"]), output_root=output_root)
+    if audit_status != 200:
+        return audit_status, memory_audit
+    qa_status, qa_response = _read_demo_json(Path(summary["qa_response_path"]), output_root=output_root)
+    if qa_status != 200:
+        return qa_status, qa_response
+    payload = {
+        **response,
+        "demo_name": summary.get("demo_name"),
+        "status": summary.get("status"),
+        "demo_source": "public_safe_demo_suite",
+        "public_safe_demo_summary": summary,
+        "safety": summary.get("safety", {}),
+        "suite_output_dir": summary.get("suite_output_dir"),
+        "fixture_manifest_path": summary.get("fixture_manifest_path"),
+        "response_path": summary.get("response_path"),
+        "evidence_bundle_path": summary.get("evidence_bundle_path"),
+        "memory_audit_path": summary.get("memory_audit_path"),
+        "qa_response_path": summary.get("qa_response_path"),
+        "summary_path": summary.get("summary_path"),
+        "summary_markdown_path": summary.get("summary_markdown_path"),
+        "evidence_bundle": evidence_bundle,
+        "memory_audit": memory_audit,
+        "demo_qa_response": qa_response,
+        "steps": summary.get("steps", {}),
+    }
+    return 200, payload
 
 
 def _parse_positive_int(value: str, default: int) -> int:

@@ -9447,6 +9447,36 @@ git diff --check
 
 结果：Public-safe HTTP endpoint 定向测试、前端静态资源检查、runbook/scope 文档守卫、JS 语法检查、diff 空白检查与全量 `431` 个 unittest 通过。本轮不需要真实 FHN 数据、真实 mask 或 benchmark manifest；这些保持为后续数据到位后的验证项。
 
+### 2026-06-05 Public-safe Demo 前端入口补齐
+
+本轮目标：上一阶段已经有 `GET /v1/demo/public-safe`，但前端只能通过未使用的 `fetchPublicSafeDemo()` 引用该 route；演示时仍需要手动 curl，不够直接。
+
+新增/调整：
+
+- `web/index.html`
+  - 在病例输入样例区新增 `运行 Public-safe MVP 样例` 按钮。
+  - 前端 cache buster 更新到 `frontend-demo-20260605`，避免浏览器继续使用旧 JS。
+- `web/app.js`
+  - 新增 `publicSafeDemoButton` 元素引用。
+  - 新增 `runPublicSafeDemo()`，点击后直接调用 `/v1/demo/public-safe`，并用现有 `renderPayload()` 展示病例 response。
+  - 将按钮纳入 `setCasePending()`，运行中不能重复点击。
+- `api/http_server.py`
+  - `GET /v1/demo/public-safe` 现在返回可直接渲染的病例 payload，同时保留 `public_safe_demo_summary`、artifact paths、safety、evidence bundle、memory audit 和 demo QA response。
+- README / 中文 README / current MVP runbook
+  - 记录前端按钮和 HTTP endpoint 的关系。
+- `tests/test_http_entrypoint.py`
+  - 覆盖前端按钮存在、JS 事件入口存在、cache buster 更新、endpoint 返回可渲染 payload。
+
+验证：
+
+```bash
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_public_safe_demo_endpoint_generates_suite_without_real_data tests.test_http_entrypoint.HttpEntrypointTest.test_root_serves_interactive_frontend tests.test_http_entrypoint.HttpEntrypointTest.test_root_frontend_assets_use_current_cache_buster tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
+node --check web/app.js
+python -m unittest discover -v
+```
+
+结果：public-safe endpoint、前端按钮、cache buster、JS 语法检查和全量 `431` 个 unittest 通过；完整回归耗时 `62.560s`。
+
 ### 2026-05-25 QA Safety 补充 Evidence Bundle 使用计数
 
 本轮目标：追问链路已经能通过 `GaoDoctorAgent QA` 展示为 evidence bundle 约束下的后续回答，但 `QA Safety` 区块只展示 `evidence_bundle_required` 和 QA 数量，没有明确显示有多少条追问实际使用了 evidence bundle。

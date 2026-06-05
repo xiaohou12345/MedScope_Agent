@@ -304,7 +304,9 @@ service artifacts for response, evidence bundle, memory audit, and follow-up QA.
 Use it to test upload, routing, and the FHN skill path without private
 DICOM/NIfTI files. It is not a clinical image or a segmentation benchmark.
 After starting the HTTP server, the same suite is available at
-`GET /v1/demo/public-safe`.
+`GET /v1/demo/public-safe`. The interactive frontend also includes a
+`运行 Public-safe MVP 样例` button that runs this endpoint and renders the
+diagnosis report, visual evidence, evidence bundle, and memory audit directly.
 
 No-mask visual pipeline:
 
@@ -341,7 +343,7 @@ python -m unittest discover -v
 Latest verified local status:
 
 ```text
-Ran 431 tests in 91.676s
+Ran 431 tests in 62.560s
 OK
 ```
 

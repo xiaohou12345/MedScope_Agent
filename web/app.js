@@ -25,6 +25,7 @@ const elements = {
   statusText: document.getElementById("statusText"),
   healthButton: document.getElementById("healthButton"),
   sampleGliomaButton: document.getElementById("sampleGliomaButton"),
+  publicSafeDemoButton: document.getElementById("publicSafeDemoButton"),
   realVlmMedSAM2Button: document.getElementById("realVlmMedSAM2Button"),
   evidenceGatewaySnapshotButton: document.getElementById("evidenceGatewaySnapshotButton"),
   xrayInsufficientButton: document.getElementById("xrayInsufficientButton"),
@@ -290,7 +291,9 @@ async function fetchEvidenceGatewaySnapshot() {
 }
 
 async function fetchPublicSafeDemo() {
-  return fetchDemoJson("/v1/demo/public-safe");
+  const payload = await fetchDemoJson("/v1/demo/public-safe");
+  payload.demo_source = payload.demo_source || "public_safe_demo_suite";
+  return payload;
 }
 
 async function fetchRealVlmMedSAM2Demo() {
@@ -3916,6 +3919,7 @@ function setCasePending(isPending, label = "运行分析") {
   state.casePending = isPending;
   elements.submitButton.disabled = isPending;
   elements.sampleGliomaButton.disabled = isPending;
+  elements.publicSafeDemoButton.disabled = isPending;
   elements.realVlmMedSAM2Button.disabled = isPending;
   elements.evidenceGatewaySnapshotButton.disabled = isPending;
   elements.xrayInsufficientButton.disabled = isPending;
@@ -4388,6 +4392,21 @@ function loadFhnNoMaskSample() {
   elements.uploadStatus.textContent = "已载入 FHN no-mask 多征象样例；将调用 VLM 生成 box prompt，再由 MedSAM2 分割候选病灶。";
 }
 
+function loadPublicSafeDemoInputs() {
+  elements.patientMessage.value = "public-safe MVP 演示：髋部疼痛，展示自动 skill 路由、视觉候选证据、诊断报告、evidence bundle 和 memory audit";
+  elements.imagePath.value = "";
+  state.uploadedImagePaths = [];
+  state.uploadedImageNames = [];
+  state.useSampleMask = false;
+  state.sampleDiseaseKey = "";
+  state.sampleVisionMode = "";
+  elements.visionModeSelect.value = "";
+  state.demoCaseSlug = "";
+  state.realDemoMode = false;
+  elements.symptoms.value = "髋关节疼痛";
+  elements.uploadStatus.textContent = "正在运行 public-safe MVP 样例；使用合成非患者影像，不需要真实 FHN 数据或真实 mask。";
+}
+
 function setSampleButtonsDisabled(isDisabled) {
   setCasePending(isDisabled);
 }
@@ -4400,6 +4419,33 @@ async function runStandardSample() {
   loadStandardSample();
   resetViews();
   setStatus("已载入标准样例，点击“运行分析”开始", "ok");
+}
+
+async function runPublicSafeDemo() {
+  if (state.casePending) {
+    setStatus("上一个病例仍在分析中", "warn");
+    return;
+  }
+  loadPublicSafeDemoInputs();
+  resetViews();
+  setCasePending(true);
+  showCaseThinking("Public-safe MVP 样例运行中");
+  startCaseProgress("运行 Public-safe MVP 样例", [
+    {after: 0, text: "正在生成合成非患者影像和病例输入"},
+    {after: 2, text: "正在执行自动 skill 路由和视觉候选证据链"},
+    {after: 4, text: "正在写出 response、evidence bundle、memory audit 和 QA artifact"},
+  ]);
+  setStatus("Public-safe MVP 样例运行中...");
+  try {
+    const payload = await fetchPublicSafeDemo();
+    renderPayload(payload);
+    setStatus("Public-safe MVP 样例完成", "ok");
+  } catch (error) {
+    renderCaseError(error, "Public-safe MVP 样例运行失败");
+    setStatus(error.message, "error");
+  } finally {
+    setCasePending(false);
+  }
 }
 
 async function runRealVlmMedSAM2Sample() {
@@ -4478,6 +4524,7 @@ function resetViews() {
 
 elements.healthButton.addEventListener("click", checkHealth);
 elements.sampleGliomaButton.addEventListener("click", runStandardSample);
+elements.publicSafeDemoButton.addEventListener("click", runPublicSafeDemo);
 elements.realVlmMedSAM2Button.addEventListener("click", runRealVlmMedSAM2Sample);
 elements.evidenceGatewaySnapshotButton.addEventListener("click", runEvidenceGatewaySnapshot);
 elements.xrayInsufficientButton.addEventListener("click", runXrayInsufficientSample);
