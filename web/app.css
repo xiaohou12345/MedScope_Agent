@@ -1486,6 +1486,107 @@ body.lightbox-open {
   min-height: 420px;
 }
 
+.research-evidence-review-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.research-evidence-review-panel .panel-title span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.research-review-workspace,
+.research-review-summary,
+.research-review-card,
+.research-paper-item,
+.research-claim-item,
+.research-gate-item {
+  display: grid;
+  gap: 10px;
+}
+
+.research-review-summary {
+  border: 1px solid #b8d5df;
+  border-radius: 8px;
+  background: #f5fbfd;
+  padding: 14px;
+}
+
+.research-review-summary h3,
+.research-review-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.research-review-summary p,
+.research-review-card p,
+.research-review-paths span {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.research-safety-badges,
+.research-gate-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.research-safety-badges span,
+.research-gate-badges span,
+.research-claim-item em {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.research-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.research-review-card,
+.research-review-paths {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 14px;
+}
+
+.research-paper-item,
+.research-claim-item,
+.research-gate-item {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.research-paper-item span,
+.research-claim-item span,
+.research-gate-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.research-debug-details pre {
+  overflow: auto;
+  max-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111827;
+  color: #f8fafc;
+  padding: 12px;
+  font-size: 12px;
+}
+
 .skill-comparison-panel {
   display: grid;
   gap: 14px;
@@ -1828,6 +1929,7 @@ body.lightbox-open {
 }
 
 @media (max-width: 980px) {
+  .research-review-grid,
   .skill-version-grid,
   .skill-target-table div,
   .skill-quantification-group article,

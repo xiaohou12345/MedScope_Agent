@@ -17,6 +17,7 @@ from llm.connectivity import ApiConnectivityChecker
 from memory.memory_manager import MemoryManager
 from scripts.image_prompt_skill_baseline import run_image_prompt_skill_baseline
 from scripts.prepare_public_demo_fixture import run_public_safe_demo_suite
+from scripts.research_evidence_builder import build_research_evidence_review_package
 from skill_editor.backend import (
     dispatch_skill_editor_api_request,
     dispatch_skill_editor_static_request,
@@ -869,6 +870,8 @@ def dispatch_http_request(
         return 200, {"status": "ok"}
     if method == "GET" and route_path == "/v1/readiness":
         return 200, build_readiness_payload()
+    if route_path == "/v1/research-evidence-review":
+        return dispatch_research_evidence_review_request(method=method, body=body)
     if method == "POST" and route_path == "/v1/medscope":
         try:
             payload = json.loads(body.decode("utf-8")) if body else {}
@@ -915,6 +918,86 @@ def dispatch_http_request(
         except json.JSONDecodeError as exc:
             return 400, {"error": f"invalid json: {exc}"}
     return 404, {"error": "not found"}
+
+
+def dispatch_research_evidence_review_request(
+    *,
+    method: str,
+    body: bytes = b"",
+) -> tuple[int, dict]:
+    if method not in {"GET", "POST"}:
+        return 404, {"error": "not found"}
+    if method == "GET":
+        request = _default_research_evidence_review_request()
+    else:
+        try:
+            request = json.loads(body.decode("utf-8")) if body else {}
+        except json.JSONDecodeError as exc:
+            return 400, {"error": f"invalid json: {exc}"}
+    package = build_research_evidence_review_package(
+        disease_key=request.get("disease_key") or "femoral_head_necrosis",
+        target_skill_id=request.get("target_skill_id") or "femoral_head_necrosis_v0.1",
+        modality=request.get("modality") or "MRI",
+        research_question=request.get("research_question")
+        or "MRI quantitative feature proposal for femoral head osteonecrosis",
+        supplied_metadata=list(request.get("supplied_metadata") or []),
+        supplied_texts=list(request.get("supplied_texts") or []),
+        guideline_skill=dict(request.get("guideline_skill") or {}),
+        pubmed_enabled=bool(request.get("pubmed_enabled", False)),
+        pubmed_limit=int(request.get("pubmed_limit") or 10),
+        human_review_decisions=list(request.get("human_review_decisions") or []),
+        output_dir=DEFAULT_OUTPUT_ROOT / "fake" / "research_evidence_review",
+    )
+    package["display_policy"] = {
+        "collapsed_by_default": True,
+        "audience": "doctor_or_researcher_review",
+        "raw_json_hidden_by_default": True,
+        "research_evidence_label": "research evidence is not guideline evidence",
+        "proposal_only_before_approval": True,
+    }
+    package["runtime_safety"].update(
+        {
+            "proposal_only": True,
+            "formal_skill_updated": False,
+            "diagnosis_rules_modified": False,
+            "registry_updated": False,
+            "promotion_requires_human_approval": True,
+        }
+    )
+    return 200, package
+
+
+def _default_research_evidence_review_request() -> dict:
+    return {
+        "disease_key": "femoral_head_necrosis",
+        "target_skill_id": "femoral_head_necrosis_v0.1",
+        "modality": "MRI",
+        "research_question": "MRI texture disorder and necrotic area ratio as proposal-only supplemental evidence",
+        "supplied_metadata": [
+            {
+                "source_id": "demo_onfh_texture_2025",
+                "title": "MRI texture disorder score for early osteonecrosis",
+                "journal": "Demo Research Review",
+                "publication_year": 2025,
+                "source_type": "journal article",
+                "study_design": "multi center retrospective",
+                "sample_size": 420,
+                "population": "adult hip pain cohort",
+                "modality": "MRI",
+                "evidence_level": "moderate",
+                "candidate_claim_type": "candidate_measurement_protocol",
+                "target_protocol_section": "quantitative_evidence_protocol.image_feature_quantification",
+                "abstract": "Demo metadata for review UI; not a guideline recommendation.",
+            }
+        ],
+        "guideline_skill": {
+            "skill_id": "femoral_head_necrosis_v0.1",
+            "supported_modalities": ["X-ray"],
+            "evidence_protocol_sections": [
+                "quantitative_evidence_protocol.image_feature_quantification"
+            ],
+        },
+    }
 
 
 def _run_image_baseline_from_payload(payload: dict) -> dict:

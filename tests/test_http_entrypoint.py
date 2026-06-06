@@ -208,6 +208,53 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertNotIn("raw YAML", comparison_section)
         self.assertNotIn("annotation_id", js)
 
+    def test_frontend_exposes_collapsible_research_evidence_review_panel_without_raw_json_by_default(self):
+        status, body, content_type = dispatch_static_request("/")
+        js_status, js_body, js_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/html; charset=utf-8")
+        self.assertEqual(js_status, 200)
+        self.assertEqual(js_type, "application/javascript; charset=utf-8")
+        html = body.decode("utf-8")
+        js = js_body.decode("utf-8")
+        self.assertIn("Research Evidence Review", html)
+        self.assertIn("researchEvidenceReviewView", html)
+        self.assertIn("research evidence is not guideline evidence", html)
+        self.assertIn("proposal-only", html)
+        self.assertIn("/v1/research-evidence-review", js)
+        self.assertIn("renderResearchEvidenceReview", js)
+        self.assertIn("proposal_only=true", js)
+        self.assertIn("formal_skill_updated=false", js)
+        self.assertIn("promotion_requires_human_approval=true", js)
+        review_section = html[
+            html.index("research-evidence-review-details"):
+            html.index("skill-comparison-details")
+        ]
+        self.assertNotIn("raw JSON", review_section)
+        self.assertNotIn("调试 JSON", review_section)
+
+    def test_research_evidence_review_endpoint_returns_proposal_only_review_package(self):
+        status, payload = dispatch_http_request(
+            method="GET",
+            path="/v1/research-evidence-review",
+            service_factory=FakeService,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["schema_version"], "research_evidence_review_package.v1")
+        self.assertEqual(payload["proposal_status"], "proposal_only")
+        self.assertFalse(payload["runtime_safety"]["formal_skill_updated"])
+        self.assertFalse(payload["runtime_safety"]["diagnosis_rules_modified"])
+        self.assertFalse(payload["runtime_safety"]["registry_updated"])
+        self.assertTrue(payload["runtime_safety"]["promotion_requires_human_approval"])
+        self.assertEqual(
+            payload["display_policy"]["research_evidence_label"],
+            "research evidence is not guideline evidence",
+        )
+        self.assertIn("gateway_review_artifact", payload)
+        self.assertIn("formal_skill_extension_patch_preview", payload)
+
     def test_root_keeps_evidence_gateway_snapshot_inside_debug_section(self):
         status, body, content_type = dispatch_static_request("/")
 

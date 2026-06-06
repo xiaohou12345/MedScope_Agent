@@ -11,6 +11,8 @@ import json
 import re
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -63,21 +65,32 @@ class ResearchEvidenceRetriever:
             )
 
         pubmed_records: list[dict[str, Any]] = []
+        pubmed_error: str | None = None
         query = _build_pubmed_query(disease_key, modality, research_question)
         if pubmed_enabled:
-            pubmed_records = self.pubmed_client(query, pubmed_limit)
-            offset = len(normalized_evidence)
-            for index, metadata in enumerate(pubmed_records, start=offset + 1):
-                normalized_evidence.append(
-                    normalize_research_metadata(
-                        metadata,
-                        disease_key=disease_key,
-                        requested_modality=modality,
-                        research_question=research_question,
-                        source_origin="pubmed",
-                        index=index,
+            try:
+                pubmed_records = self.pubmed_client(query, pubmed_limit)
+                offset = len(normalized_evidence)
+                for index, metadata in enumerate(pubmed_records, start=offset + 1):
+                    normalized_evidence.append(
+                        normalize_research_metadata(
+                            metadata,
+                            disease_key=disease_key,
+                            requested_modality=modality,
+                            research_question=research_question,
+                            source_origin="pubmed",
+                            index=index,
+                        )
                     )
-                )
+            except Exception as exc:  # PubMed is optional; supplied metadata remains usable.
+                pubmed_records = []
+                pubmed_error = str(exc)
+
+        status = "supplied_metadata_normalized"
+        if pubmed_enabled and pubmed_error:
+            status = "pubmed_unavailable_supplied_metadata_fallback"
+        elif pubmed_enabled:
+            status = "supplied_and_pubmed_metadata_normalized"
 
         return {
             "schema_version": "research_evidence_retrieval.v1",
@@ -92,11 +105,9 @@ class ResearchEvidenceRetriever:
                 "pubmed_retrieval_attempted": pubmed_enabled,
                 "pubmed_result_count": len(pubmed_records),
                 "pubmed_query": query if pubmed_enabled else None,
-                "status": (
-                    "supplied_and_pubmed_metadata_normalized"
-                    if pubmed_enabled
-                    else "supplied_metadata_normalized"
-                ),
+                "pubmed_error": pubmed_error,
+                "fallback_used": bool(pubmed_error),
+                "status": status,
             },
             "normalized_research_evidence": normalized_evidence,
             "runtime_safety": {
@@ -156,13 +167,29 @@ class ResearchClaimBuilder:
     ) -> list[dict[str, Any]]:
         claims: list[dict[str, Any]] = []
         for index, evidence in enumerate(normalized_research_evidence, start=1):
-            claim_type = _normalize_claim_type(evidence.get("candidate_claim_type"))
+            legacy_candidate_type = _normalize_legacy_candidate_type(
+                evidence.get("candidate_claim_type")
+            )
+            claim_type = _normalize_claim_type(
+                evidence.get("claim_type") or legacy_candidate_type,
+                evidence=evidence,
+            )
+            source_id = evidence.get("source_id")
+            source_ids = list(evidence.get("source_ids") or ([source_id] if source_id else []))
+            proposed_skill_section = _target_section_for_claim(
+                evidence,
+                legacy_candidate_type,
+            )
             claim = {
                 "claim_id": _build_claim_id(disease_key, evidence, index),
                 "claim_type": claim_type,
+                "legacy_candidate_type": legacy_candidate_type,
                 "summary": _build_claim_summary(evidence, claim_type),
-                "source_id": evidence.get("source_id"),
-                "target_protocol_section": _target_section_for_claim(evidence, claim_type),
+                "source_id": source_id,
+                "source_ids": source_ids,
+                "target_protocol_section": proposed_skill_section,
+                "proposed_skill_section": proposed_skill_section,
+                "target_disease": disease_key,
                 "modality": evidence.get("modality") or "unknown",
                 "applicability": {
                     "population": evidence.get("population") or "unknown",
@@ -170,6 +197,11 @@ class ResearchClaimBuilder:
                 },
                 "limitations": _claim_limitations(evidence),
                 "evidence_level": evidence.get("evidence_level") or "unknown",
+                "guideline_conflict_status": "not_evaluated",
+                "promotion_allowed": False,
+                "diagnosis_usable_level": "not_diagnosis_usable",
+                "requires_human_review": True,
+                "exploratory_only": True,
                 "requires_external_validation": bool(
                     evidence.get("requires_external_validation", True)
                 ),
@@ -238,6 +270,10 @@ def build_research_evidence_review_package(
             "formal_skill_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
+            "diagnosis_rules_modified": False,
+            "registry_updated": False,
+            "promotion_requires_human_approval": True,
+            "formal_update": False,
             "formal_update_allowed": False,
             "diagnosis_allowed": False,
         }
@@ -291,6 +327,10 @@ def build_research_evidence_review_package(
             "formal_skill_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
+            "diagnosis_rules_modified": False,
+            "registry_updated": False,
+            "promotion_requires_human_approval": True,
+            "formal_update": False,
             "formal_update_allowed": False,
             "diagnosis_allowed": False,
         },
@@ -376,6 +416,8 @@ def normalize_research_metadata(
     )
     doi = _first_present(metadata, "doi", "DOI")
     pmid = _first_present(metadata, "pmid", "PMID", "uid")
+    journal = _first_present(metadata, "journal", "source", "fulljournalname")
+    abstract = _first_present(metadata, "abstract", "summary")
     source_id = _normalize_source_id(
         metadata.get("source_id"),
         pmid=pmid,
@@ -387,10 +429,13 @@ def normalize_research_metadata(
     modality = _normalize_modality(_first_present(metadata, "modality", "imaging_modality") or requested_modality)
     normalized = {
         "source_id": source_id,
+        "source_ids": [source_id],
         "title": str(title).strip(),
         "year": year,
         "publication_year": year,
         "source_type": source_type,
+        "journal": str(journal).strip() if journal else "unknown",
+        "abstract": str(abstract).strip() if abstract else "unknown",
         "doi": str(doi).strip() if doi else None,
         "DOI": str(doi).strip() if doi else None,
         "sample_size": sample_size,
@@ -399,14 +444,47 @@ def normalize_research_metadata(
         "study_design": study_design,
         "evidence_level": evidence_level,
         "disease_key": disease_key,
+        "target_disease": disease_key,
         "research_question": research_question,
         "source_origin": source_origin,
+        "limitations": _normalize_limitations(metadata.get("limitations")),
     }
+    normalized["source_metadata"] = {
+        "title": normalized["title"],
+        "year": normalized["year"],
+        "journal": normalized["journal"],
+        "PMID": str(pmid).strip() if pmid else "unknown",
+        "DOI": normalized["DOI"] or "unknown",
+        "source_type": source_type,
+    }
+    normalized["source_trace"] = {
+        "title": normalized["title"],
+        "year": normalized["year"],
+        "journal": normalized["journal"],
+        "PMID": str(pmid).strip() if pmid else "unknown",
+        "DOI": normalized["DOI"] or "unknown",
+        "abstract": normalized["abstract"],
+        "query": _build_pubmed_query(disease_key, requested_modality, research_question),
+        "retrieved_at": _utc_now_iso(),
+        "source_type": source_type,
+    }
+    normalized["proposed_imaging_finding"] = str(
+        _first_present(metadata, "proposed_imaging_finding", "imaging_finding")
+        or "unknown"
+    )
+    normalized["proposed_measurement_or_ai_feature"] = str(
+        _first_present(
+            metadata,
+            "proposed_measurement_or_ai_feature",
+            "measurement",
+            "ai_feature",
+        )
+        or "unknown"
+    )
     for optional_key in (
         "candidate_claim_type",
         "target_protocol_section",
         "requires_external_validation",
-        "limitations",
     ):
         if optional_key in metadata:
             normalized[optional_key] = metadata[optional_key]
@@ -476,7 +554,7 @@ def _normalize_source(source: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(source)
     normalized.setdefault("source_type", "unknown")
     normalized.setdefault("evidence_level", "unknown")
-    normalized.setdefault("sample_size", 0)
+    normalized.setdefault("sample_size", "unknown")
     normalized.setdefault("publication_year", None)
     return normalized
 
@@ -500,15 +578,24 @@ def _build_candidate_extension(
     source: dict[str, Any],
     index: int,
 ) -> dict[str, Any]:
-    candidate_type = str(claim.get("claim_type") or "research_evidence_proposal")
+    candidate_type = str(
+        claim.get("legacy_candidate_type")
+        or claim.get("candidate_type")
+        or claim.get("claim_type")
+        or "research_evidence_proposal"
+    )
     if candidate_type not in ALLOWED_CANDIDATE_TYPES:
         candidate_type = "research_evidence_proposal"
     candidate = {
         "item_id": str(claim.get("claim_id") or f"research_claim_{index:03d}"),
         "candidate_type": candidate_type,
+        "claim_type": claim.get("claim_type"),
+        "source_ids": list(claim.get("source_ids") or []),
         "source_id": source.get("source_id"),
         "source_type": source.get("source_type"),
         "target_protocol_section": claim.get("target_protocol_section"),
+        "proposed_skill_section": claim.get("proposed_skill_section")
+        or claim.get("target_protocol_section"),
         "summary": claim.get("summary"),
         "modality": claim.get("modality"),
         "applicability": dict(claim.get("applicability") or {}),
@@ -521,6 +608,9 @@ def _build_candidate_extension(
         "formal_update_allowed": False,
         "diagnosis_allowed": False,
         "required_approval": "evidence_gateway_and_human_review",
+        "promotion_allowed": False,
+        "requires_human_review": True,
+        "diagnosis_usable_level": "not_diagnosis_usable",
     }
     candidate["quality_gate"] = _validate_candidate(candidate, source)
     return candidate
@@ -560,6 +650,7 @@ def _build_quality_gate(candidate_extensions: list[dict[str, Any]]) -> dict[str,
         "runtime_safety": {
             "read_only": True,
             "proposal_only": True,
+            "formal_update": False,
             "formal_skill_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
@@ -617,16 +708,80 @@ def _validate_candidate(candidate: dict[str, Any], source: dict[str, Any]) -> di
         failed_checks.append("claim_summary_missing")
 
     decision = "blocked" if failed_checks else "candidate_review_only"
+    gate_status = _build_candidate_gate_status(
+        candidate=candidate,
+        source=source,
+        passed_checks=passed_checks,
+        failed_checks=failed_checks,
+    )
     return {
         "item_id": candidate.get("item_id"),
         "candidate_type": candidate.get("candidate_type"),
         "source_id": candidate.get("source_id"),
         "decision": decision,
+        "gate_status": gate_status,
         "passed_checks": passed_checks,
         "failed_checks": failed_checks,
         "formal_update_allowed": False,
         "diagnosis_allowed": False,
         "allowed_action": "proposal_only_no_formal_update",
+    }
+
+
+def _build_candidate_gate_status(
+    *,
+    candidate: dict[str, Any],
+    source: dict[str, Any],
+    passed_checks: list[str],
+    failed_checks: list[str],
+) -> dict[str, Any]:
+    def status_for(pass_key: str, fail_key: str, *, blocked: bool = True) -> dict[str, str]:
+        if pass_key in passed_checks:
+            return {"status": "passed", "reason": pass_key}
+        if fail_key in failed_checks:
+            return {
+                "status": "blocked" if blocked else "requires_review",
+                "reason": fail_key,
+            }
+        return {"status": "unknown", "reason": "not_evaluated"}
+
+    return {
+        "source_quality": status_for(
+            "trusted_source_type",
+            "source_type_not_peer_reviewed_or_guideline",
+        ),
+        "freshness": status_for(
+            "fresh_or_current_source",
+            "stale_or_missing_publication_year",
+            blocked=False,
+        ),
+        "applicability": {
+            "status": "blocked"
+            if ("modality_mismatch" in failed_checks or "population_mismatch" in failed_checks)
+            else "passed",
+            "reason": "modality_or_population_applicability",
+        },
+        "modality_match": status_for("modality_applicable", "modality_mismatch"),
+        "population_match": status_for("population_applicable", "population_mismatch"),
+        "sample_size": status_for("sample_size_minimum_met", "sample_size_below_minimum"),
+        "guideline_conflict": {
+            "status": "not_evaluated",
+            "reason": "guideline_skill_not_checked_at_quality_gate",
+        },
+        "reproducibility_or_external_validation": {
+            "status": "requires_review"
+            if candidate.get("requires_external_validation", True)
+            else "passed",
+            "reason": (
+                "external_validation_required"
+                if candidate.get("requires_external_validation", True)
+                else "external_validation_reported"
+            ),
+        },
+        "human_review_required": {
+            "status": "required",
+            "reason": "research_evidence_requires_human_review",
+        },
     }
 
 
@@ -660,15 +815,19 @@ def _coerce_year(value: Any) -> int | None:
     return int(match.group(0))
 
 
-def _coerce_sample_size(value: Any) -> int:
+def _coerce_sample_size(value: Any) -> int | str:
     if value is None:
-        return 0
+        return "unknown"
     if isinstance(value, int):
         return value
     match = re.search(r"\d+", str(value).replace(",", ""))
     if not match:
-        return 0
+        return "unknown"
     return int(match.group(0))
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def _first_present(metadata: dict[str, Any], *keys: str) -> Any:
@@ -677,6 +836,15 @@ def _first_present(metadata: dict[str, Any], *keys: str) -> Any:
         if value not in (None, ""):
             return value
     return None
+
+
+def _normalize_limitations(value: Any) -> list[str]:
+    if isinstance(value, list):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return items or ["unknown"]
+    if value not in (None, ""):
+        return [str(value).strip()]
+    return ["unknown"]
 
 
 def _normalize_source_id(
@@ -793,6 +961,7 @@ def _extract_research_evidence_from_text(
     text = str(text_source.get("text") or "")
     base_metadata = dict(text_source)
     base_metadata.pop("text", None)
+    base_metadata.setdefault("abstract", text)
     base_metadata.setdefault("source_id", f"text_source_{index:03d}")
     base_metadata.setdefault("modality", _infer_modality_from_text(text, requested_modality))
     base_metadata.setdefault("study_design", _infer_study_design_from_text(text))
@@ -835,7 +1004,7 @@ def _infer_modality_from_text(text: str, requested_modality: str) -> str:
         return "Chest X-ray"
     if "x-ray" in lower or "xray" in lower:
         return "X-ray"
-    if "ct" in lower:
+    if re.search(r"\bct\b", lower):
         return "CT"
     return requested_modality
 
@@ -859,7 +1028,7 @@ def _infer_study_design_from_text(text: str) -> str:
     return "unknown"
 
 
-def _infer_sample_size_from_text(text: str) -> int:
+def _infer_sample_size_from_text(text: str) -> int | str:
     patterns = [
         r"\bn\s*=\s*(\d[\d,]*)",
         r"\bstudy of\s+(\d[\d,]*)\b",
@@ -869,7 +1038,7 @@ def _infer_sample_size_from_text(text: str) -> int:
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             return _coerce_sample_size(match.group(1))
-    return 0
+    return "unknown"
 
 
 def _infer_population_from_text(text: str) -> str:
@@ -967,11 +1136,35 @@ def _source_origin_for_text_kind(text_kind: Any) -> str:
     return "supplied_text"
 
 
-def _normalize_claim_type(value: Any) -> str:
+def _normalize_legacy_candidate_type(value: Any) -> str:
     raw = str(value or "").strip()
     if raw in ALLOWED_CANDIDATE_TYPES and raw != "research_evidence_proposal":
         return raw
     return "candidate_skill_extension"
+
+
+def _normalize_claim_type(value: Any, *, evidence: dict[str, Any]) -> str:
+    raw = str(value or "").strip()
+    if raw in {
+        "imaging_feature",
+        "quantitative_feature",
+        "geometric_or_morphologic_measurement",
+        "clinical_risk_association",
+        "differential_diagnosis_clue",
+    }:
+        return raw
+    if raw == "differential_diagnosis_clue":
+        return "differential_diagnosis_clue"
+    if raw == "clinical_risk_context_clue":
+        return "clinical_risk_association"
+    if raw == "candidate_measurement_protocol":
+        section = str(evidence.get("target_protocol_section") or "").lower()
+        title = str(evidence.get("title") or "").lower()
+        measurement_text = f"{section} {title}"
+        if any(term in measurement_text for term in ("collapse", "area ratio", "roundness", "morphologic", "geometry")):
+            return "geometric_or_morphologic_measurement"
+        return "quantitative_feature"
+    return "imaging_feature"
 
 
 def _build_claim_id(disease_key: str, evidence: dict[str, Any], index: int) -> str:
@@ -1062,9 +1255,13 @@ def _build_gateway_review_artifact(
         "runtime_safety": {
             "research_mode_only": True,
             "proposal_only": True,
+            "formal_update": False,
             "formal_skill_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
+            "diagnosis_rules_modified": False,
+            "registry_updated": False,
+            "promotion_requires_human_approval": True,
             "formal_update_allowed": False,
             "diagnosis_allowed": False,
         },
@@ -1077,6 +1274,10 @@ def _build_review_item(
 ) -> dict[str, Any]:
     conflict_reasons = _guideline_conflict_reasons(candidate, guideline_skill)
     quality_gate = candidate.get("quality_gate") or {}
+    gate_status = _review_gate_status(
+        quality_gate.get("gate_status") or {},
+        conflict_reasons=conflict_reasons,
+    )
     exploratory_only = bool(
         conflict_reasons
         or candidate.get("evidence_level") in {"low", "unknown"}
@@ -1089,6 +1290,7 @@ def _build_review_item(
         "source_id": candidate.get("source_id"),
         "target_protocol_section": candidate.get("target_protocol_section"),
         "quality_gate_decision": quality_gate.get("decision"),
+        "gate_status": gate_status,
         "guideline_conflict_status": (
             "human_review_required" if conflict_reasons else "no_direct_conflict_detected"
         ),
@@ -1101,6 +1303,47 @@ def _build_review_item(
         "formal_update_allowed": False,
         "diagnosis_allowed": False,
     }
+
+
+def _review_gate_status(
+    gate_status: dict[str, Any],
+    *,
+    conflict_reasons: list[str],
+) -> dict[str, Any]:
+    normalized = {key: dict(value or {}) for key, value in gate_status.items()}
+    required_keys = [
+        "source_quality",
+        "freshness",
+        "applicability",
+        "modality_match",
+        "population_match",
+        "sample_size",
+        "guideline_conflict",
+        "reproducibility_or_external_validation",
+        "human_review_required",
+    ]
+    for key in required_keys:
+        normalized.setdefault(key, {"status": "unknown", "reason": "not_evaluated"})
+    if "modality_not_in_guideline_skill" in conflict_reasons:
+        normalized["modality_match"] = {
+            "status": "blocked",
+            "reason": "modality_not_in_guideline_skill",
+        }
+    if conflict_reasons:
+        normalized["guideline_conflict"] = {
+            "status": "requires_review",
+            "reason": ",".join(conflict_reasons),
+        }
+    else:
+        normalized["guideline_conflict"] = {
+            "status": "passed",
+            "reason": "no_direct_conflict_detected",
+        }
+    normalized["human_review_required"] = {
+        "status": "required",
+        "reason": "research_evidence_requires_human_review",
+    }
+    return {key: normalized[key] for key in required_keys}
 
 
 def _guideline_conflict_reasons(
@@ -1875,37 +2118,70 @@ def _default_pubmed_metadata_client(query: str, limit: int) -> list[dict[str, An
     pmids = search_payload.get("esearchresult", {}).get("idlist", [])
     if not pmids:
         return []
-    summary_params = urllib.parse.urlencode(
+    fetch_params = urllib.parse.urlencode(
         {
             "db": "pubmed",
             "id": ",".join(pmids),
-            "retmode": "json",
+            "retmode": "xml",
         }
     )
-    summary_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?{summary_params}"
-    with urllib.request.urlopen(summary_url, timeout=20) as response:
-        summary_payload = json.loads(response.read().decode("utf-8"))
-    result = summary_payload.get("result", {})
+    fetch_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?{fetch_params}"
+    with urllib.request.urlopen(fetch_url, timeout=20) as response:
+        xml_payload = response.read().decode("utf-8")
+    return parse_pubmed_xml_metadata(xml_payload)
+
+
+def parse_pubmed_xml_metadata(xml_payload: str) -> list[dict[str, Any]]:
+    root = ET.fromstring(xml_payload)
     records: list[dict[str, Any]] = []
-    for pmid in pmids:
-        item = result.get(str(pmid), {})
-        article_ids = item.get("articleids") or []
-        doi = None
-        for article_id in article_ids:
-            if article_id.get("idtype") == "doi":
-                doi = article_id.get("value")
-                break
+    for article in root.findall(".//PubmedArticle"):
+        pmid = _xml_text(article, ".//MedlineCitation/PMID")
+        title = _xml_text(article, ".//Article/ArticleTitle")
+        journal = _xml_text(article, ".//Article/Journal/Title")
+        year = _xml_text(article, ".//Article/Journal/JournalIssue/PubDate/Year")
+        doi = _xml_article_id(article, "doi")
+        publication_types = [
+            _element_text(item)
+            for item in article.findall(".//Article/PublicationTypeList/PublicationType")
+            if _element_text(item)
+        ]
+        abstract_parts = [
+            _element_text(item)
+            for item in article.findall(".//Article/Abstract/AbstractText")
+            if _element_text(item)
+        ]
         records.append(
             {
                 "pmid": pmid,
-                "article_title": item.get("title"),
-                "pub_date": item.get("pubdate"),
+                "article_title": title,
+                "journal": journal,
+                "pub_date": year,
                 "source_type": "peer_reviewed_journal",
                 "doi": doi,
-                "publication_types": item.get("pubtype") or [],
+                "abstract": " ".join(abstract_parts).strip() or None,
+                "publication_types": publication_types,
             }
         )
     return records
+
+
+def _xml_text(root: ET.Element, path: str) -> str | None:
+    element = root.find(path)
+    return _element_text(element)
+
+
+def _element_text(element: ET.Element | None) -> str | None:
+    if element is None:
+        return None
+    text = "".join(element.itertext()).strip()
+    return text or None
+
+
+def _xml_article_id(article: ET.Element, id_type: str) -> str | None:
+    for item in article.findall(".//ArticleIdList/ArticleId"):
+        if item.attrib.get("IdType") == id_type:
+            return _element_text(item)
+    return None
 
 
 def _write_outputs(payload: dict[str, Any], output: Path) -> None:

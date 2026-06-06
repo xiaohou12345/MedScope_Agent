@@ -58,6 +58,7 @@ const elements = {
   skillDetailView: document.getElementById("skillDetailView"),
   skillReviewStatus: document.getElementById("skillReviewStatus"),
   skillProtocolComparisonView: document.getElementById("skillProtocolComparisonView"),
+  researchEvidenceReviewView: document.getElementById("researchEvidenceReviewView"),
 };
 
 const skillComparisonFallbackLabels = {
@@ -247,6 +248,15 @@ async function fetchSkillDetail(skillKey) {
 
 async function fetchSkillProtocolComparison() {
   const response = await fetch("/v1/skills/femoral_head_necrosis/comparison");
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  return body;
+}
+
+async function fetchResearchEvidenceReview() {
+  const response = await fetch("/v1/research-evidence-review");
   const body = await response.json();
   if (!response.ok) {
     throw new Error(formatApiError(body, response.status));
@@ -955,6 +965,148 @@ async function loadSkillProtocolComparison() {
   } catch (error) {
     elements.skillProtocolComparisonView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
   }
+}
+
+async function loadResearchEvidenceReview() {
+  if (!elements.researchEvidenceReviewView) {
+    return;
+  }
+  elements.researchEvidenceReviewView.innerHTML = '<div class="trace-empty">Research Evidence Review 加载中...</div>';
+  try {
+    const payload = await fetchResearchEvidenceReview();
+    renderResearchEvidenceReview(payload);
+  } catch (error) {
+    elements.researchEvidenceReviewView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderResearchEvidenceReview(payload) {
+  const retrieval = payload.research_evidence_retrieval || {};
+  const request = retrieval.request || {};
+  const papers = Array.isArray(retrieval.normalized_research_evidence)
+    ? retrieval.normalized_research_evidence
+    : Array.isArray(payload.normalized_research_evidence) ? payload.normalized_research_evidence : [];
+  const claims = payload.claim_builder?.candidate_claims || [];
+  const reviewItems = payload.gateway_review_artifact?.review_items || [];
+  const safety = payload.runtime_safety || {};
+  const paths = payload.output_paths || {};
+  elements.researchEvidenceReviewView.innerHTML = `
+    <div class="research-review-workspace">
+      <section class="research-review-summary">
+        <h3>${escapeHtml(request.research_question || "Research Evidence Review")}</h3>
+        <p>research evidence is not guideline evidence；当前证据只进入 proposal-only / dry-run，不直接作为诊断规则或正式 skill 更新。</p>
+        <div class="research-safety-badges">
+          ${[
+            "proposal_only=true",
+            "formal_skill_updated=false",
+            "diagnosis_rules_modified=false",
+            "registry_updated=false",
+            "promotion_requires_human_approval=true",
+          ].map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+        </div>
+        ${renderMetricGrid({
+          "Disease": payload.disease_key,
+          "Target skill": payload.target_skill_id,
+          "Papers": papers.length,
+          "Claims": claims.length,
+          "Gateway": payload.gateway_review_artifact?.review_status || "-",
+          "Patch preview": payload.formal_skill_extension_patch_preview?.patch_status || "-",
+        })}
+      </section>
+      <section class="research-review-grid">
+        ${renderResearchPaperList(papers)}
+        ${renderResearchClaimList(claims)}
+        ${renderResearchGateList(reviewItems)}
+        ${renderResearchDryRunSummary(payload)}
+      </section>
+      <section class="research-review-paths">
+        <strong>Proposal artifact</strong>
+        <span>${escapeHtml(paths.proposal_json_path || "生成后写入 output/fake/research_evidence_review")}</span>
+      </section>
+      <details class="research-debug-details">
+        <summary>开发调试数据</summary>
+        <pre>${escapeHtml(JSON.stringify({
+          schema_version: payload.schema_version,
+          runtime_safety: safety,
+          output_paths: paths,
+        }, null, 2))}</pre>
+      </details>
+    </div>
+  `;
+}
+
+function renderResearchPaperList(papers) {
+  return `
+    <article class="research-review-card">
+      <h3>retrieved papers / supplied metadata</h3>
+      ${papers.length ? papers.map((paper) => `
+        <div class="research-paper-item">
+          <strong>${escapeHtml(paper.title || "unknown")}</strong>
+          <span>${escapeHtml([paper.journal, paper.year || paper.publication_year, paper.pmid || paper.PMID].filter(Boolean).join(" · ") || "metadata")}</span>
+          <p>${escapeHtml((paper.abstract || paper.source_trace?.abstract || "abstract unknown").slice(0, 220))}</p>
+        </div>
+      `).join("") : '<p>暂无论文 metadata。</p>'}
+    </article>
+  `;
+}
+
+function renderResearchClaimList(claims) {
+  return `
+    <article class="research-review-card">
+      <h3>candidate claims</h3>
+      ${claims.length ? claims.map((claim) => `
+        <div class="research-claim-item">
+          <strong>${escapeHtml(claim.claim_type || claim.legacy_candidate_type || "candidate")}</strong>
+          <span>${escapeHtml(claim.proposed_skill_section || claim.target_protocol_section || "-")}</span>
+          <p>${escapeHtml(claim.summary || "")}</p>
+          <em>promotion_allowed=false · requires_human_review=true · ${escapeHtml(claim.diagnosis_usable_level || "not_diagnosis_usable")}</em>
+        </div>
+      `).join("") : '<p>暂无 candidate claim。</p>'}
+    </article>
+  `;
+}
+
+function renderResearchGateList(reviewItems) {
+  return `
+    <article class="research-review-card">
+      <h3>Evidence Gateway gate status</h3>
+      ${reviewItems.length ? reviewItems.map((item) => `
+        <div class="research-gate-item">
+          <strong>${escapeHtml(item.item_id || "review item")}</strong>
+          <span>${escapeHtml(item.guideline_conflict_status || "-")}</span>
+          ${renderResearchGateBadges(item.gate_status || {})}
+        </div>
+      `).join("") : '<p>暂无 gate status。</p>'}
+    </article>
+  `;
+}
+
+function renderResearchGateBadges(gates) {
+  return `
+    <div class="research-gate-badges">
+      ${Object.entries(gates).map(([key, value]) => `
+        <span>${escapeHtml(key)}: ${escapeHtml(value?.status || "unknown")}</span>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderResearchDryRunSummary(payload) {
+  const checklist = payload.human_review_checklist || {};
+  const patch = payload.formal_skill_extension_patch_preview || {};
+  return `
+    <article class="research-review-card">
+      <h3>dry-run / patch-preview summary</h3>
+      ${renderMetricGrid({
+        "Dry run": payload.promotion_dry_run?.promotion_status || "-",
+        "Controlled draft": payload.controlled_skill_extension_draft?.draft_status || "-",
+        "Patch preview": patch.patch_status || "-",
+        "Human review": checklist.review_status || "-",
+        "Pre-apply audit": patch.pre_apply_audit?.audit_status || "-",
+      })}
+      <p>Patch preview 只允许 research-mode / supplemental section；正式 skill、diagnosis rules 和 registry 都不会在这里被修改。</p>
+    </article>
+  `;
 }
 
 function renderSkillProtocolComparison(payload) {
@@ -4913,5 +5065,6 @@ elements.resetButton.addEventListener("click", () => {
 
 updateQaControls();
 checkHealth();
+loadResearchEvidenceReview();
 loadSkillProtocolComparison();
 loadSkillList();

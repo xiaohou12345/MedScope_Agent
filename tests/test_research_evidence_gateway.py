@@ -12,10 +12,163 @@ from scripts.research_evidence_builder import (
     build_research_evidence_proposal,
     build_research_evidence_proposal_from_request,
     build_research_evidence_review_package,
+    parse_pubmed_xml_metadata,
 )
 
 
 class ResearchEvidenceGatewayTest(unittest.TestCase):
+    def test_retriever_falls_back_to_supplied_metadata_when_pubmed_is_unavailable_and_keeps_source_trace(self) -> None:
+        def failing_pubmed_client(query: str, limit: int) -> list[dict]:
+            raise RuntimeError("network unavailable")
+
+        result = ResearchEvidenceRetriever(pubmed_client=failing_pubmed_client).retrieve(
+            disease_key="femoral_head_necrosis",
+            modality="MRI",
+            research_question="MRI radiomics measurement protocol",
+            supplied_metadata=[
+                {
+                    "title": "MRI radiomics for osteonecrosis",
+                    "journal": "Skeletal Radiology",
+                    "year": 2025,
+                    "PMID": "45678901",
+                    "DOI": "10.1000/onfh-radiomics",
+                    "abstract": "A retrospective MRI radiomics study without reported sample size.",
+                    "source_type": "journal article",
+                }
+            ],
+            pubmed_enabled=True,
+            pubmed_limit=3,
+        )
+
+        self.assertEqual(result["retrieval"]["status"], "pubmed_unavailable_supplied_metadata_fallback")
+        self.assertTrue(result["retrieval"]["pubmed_retrieval_attempted"])
+        self.assertEqual(result["retrieval"]["pubmed_result_count"], 0)
+        self.assertIn("network unavailable", result["retrieval"]["pubmed_error"])
+        evidence = result["normalized_research_evidence"][0]
+        self.assertEqual(evidence["sample_size"], "unknown")
+        self.assertEqual(evidence["source_trace"]["title"], "MRI radiomics for osteonecrosis")
+        self.assertEqual(evidence["source_trace"]["journal"], "Skeletal Radiology")
+        self.assertEqual(evidence["source_trace"]["PMID"], "45678901")
+        self.assertEqual(evidence["source_trace"]["DOI"], "10.1000/onfh-radiomics")
+        self.assertIn("retrospective MRI radiomics", evidence["source_trace"]["abstract"])
+        self.assertEqual(evidence["source_trace"]["query"], result["retrieval"]["pubmed_query"])
+        self.assertEqual(evidence["source_trace"]["source_type"], "peer_reviewed_journal")
+        self.assertIn("retrieved_at", evidence["source_trace"])
+        self.assertEqual(evidence["target_disease"], "femoral_head_necrosis")
+        self.assertEqual(evidence["limitations"], ["unknown"])
+
+    def test_extractor_marks_unknown_fields_without_fabricating_sample_size_or_modality(self) -> None:
+        extraction = ResearchEvidenceExtractor().extract(
+            disease_key="femoral_head_necrosis",
+            modality="unknown",
+            research_question="new imaging features",
+            supplied_texts=[
+                {
+                    "source_id": "abstract_unknowns",
+                    "title": "Exploratory osteonecrosis imaging findings",
+                    "source_type": "journal article",
+                    "text_kind": "abstract",
+                    "text": "This abstract describes exploratory imaging findings but does not report modality or cohort size.",
+                }
+            ],
+        )
+
+        evidence = extraction["extracted_research_evidence"][0]
+        self.assertEqual(evidence["sample_size"], "unknown")
+        self.assertEqual(evidence["modality"], "unknown")
+        self.assertEqual(evidence["source_trace"]["abstract"], "This abstract describes exploratory imaging findings but does not report modality or cohort size.")
+        self.assertEqual(evidence["source_metadata"]["title"], "Exploratory osteonecrosis imaging findings")
+        self.assertEqual(evidence["target_disease"], "femoral_head_necrosis")
+        self.assertEqual(evidence["proposed_imaging_finding"], "unknown")
+        self.assertEqual(evidence["proposed_measurement_or_ai_feature"], "unknown")
+
+    def test_claim_builder_emits_canonical_candidate_claim_contract(self) -> None:
+        claims = ResearchClaimBuilder().build_claims(
+            disease_key="femoral_head_necrosis",
+            normalized_research_evidence=[
+                {
+                    "source_id": "study_texture",
+                    "source_ids": ["study_texture"],
+                    "title": "MRI texture disorder score for ONFH",
+                    "source_type": "peer_reviewed_journal",
+                    "sample_size": 420,
+                    "population": "adult hip pain cohort",
+                    "modality": "MRI",
+                    "evidence_level": "moderate",
+                    "candidate_claim_type": "candidate_measurement_protocol",
+                    "target_protocol_section": "quantitative_evidence_protocol.image_feature_quantification",
+                    "limitations": ["retrospective study"],
+                }
+            ],
+        )
+
+        claim = claims[0]
+        self.assertEqual(claim["claim_type"], "quantitative_feature")
+        self.assertEqual(claim["legacy_candidate_type"], "candidate_measurement_protocol")
+        self.assertEqual(claim["source_ids"], ["study_texture"])
+        self.assertEqual(
+            claim["proposed_skill_section"],
+            "quantitative_evidence_protocol.image_feature_quantification",
+        )
+        self.assertEqual(claim["target_disease"], "femoral_head_necrosis")
+        self.assertEqual(claim["guideline_conflict_status"], "not_evaluated")
+        self.assertFalse(claim["promotion_allowed"])
+        self.assertEqual(claim["diagnosis_usable_level"], "not_diagnosis_usable")
+        self.assertTrue(claim["requires_human_review"])
+        self.assertTrue(claim["exploratory_only"])
+
+    def test_gateway_outputs_named_goal_gate_statuses_and_formal_update_false(self) -> None:
+        package = build_research_evidence_review_package(
+            disease_key="femoral_head_necrosis",
+            target_skill_id="femoral_head_necrosis_v0.1",
+            modality="MRI",
+            research_question="MRI necrotic area ratio as supplemental measurement",
+            supplied_metadata=[
+                {
+                    "source_id": "study_necrotic_ratio",
+                    "title": "MRI necrotic area ratio for ONFH staging",
+                    "source_type": "journal article",
+                    "publication_year": 2025,
+                    "study_design": "multi center retrospective",
+                    "sample_size": 420,
+                    "modality": "MRI",
+                    "population": "adult hip pain cohort",
+                    "evidence_level": "moderate",
+                    "candidate_claim_type": "candidate_measurement_protocol",
+                    "target_protocol_section": (
+                        "quantitative_evidence_protocol.measurement_evidence"
+                    ),
+                }
+            ],
+            guideline_skill={
+                "skill_id": "femoral_head_necrosis_v0.1",
+                "supported_modalities": ["X-ray"],
+                "evidence_protocol_sections": [
+                    "quantitative_evidence_protocol.measurement_evidence"
+                ],
+            },
+        )
+
+        gate_status = package["gateway_review_artifact"]["review_items"][0]["gate_status"]
+        self.assertEqual(
+            set(gate_status),
+            {
+                "source_quality",
+                "freshness",
+                "applicability",
+                "modality_match",
+                "population_match",
+                "sample_size",
+                "guideline_conflict",
+                "reproducibility_or_external_validation",
+                "human_review_required",
+            },
+        )
+        self.assertEqual(gate_status["modality_match"]["status"], "blocked")
+        self.assertEqual(gate_status["guideline_conflict"]["status"], "requires_review")
+        self.assertFalse(package["gateway_review_artifact"]["runtime_safety"]["formal_update"])
+        self.assertFalse(package["proposal"]["quality_gate"]["runtime_safety"]["formal_update"])
+
     def test_extractor_builds_structured_evidence_from_abstract_text(self) -> None:
         extraction = ResearchEvidenceExtractor().extract(
             disease_key="femoral_head_necrosis",
@@ -284,6 +437,16 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
 
         self.assertEqual(
             [claim["claim_type"] for claim in claims],
+            [
+                "quantitative_feature",
+                "differential_diagnosis_clue",
+                "clinical_risk_association",
+                "imaging_feature",
+                "imaging_feature",
+            ],
+        )
+        self.assertEqual(
+            [claim["legacy_candidate_type"] for claim in claims],
             [
                 "candidate_measurement_protocol",
                 "differential_diagnosis_clue",
@@ -1037,6 +1200,48 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         self.assertEqual(evidence["doi"], "10.1000/pubmed-onfh")
         self.assertEqual(evidence["DOI"], "10.1000/pubmed-onfh")
         self.assertEqual(evidence["evidence_level"], "moderate")
+
+    def test_pubmed_xml_parser_preserves_title_journal_doi_and_abstract(self) -> None:
+        records = parse_pubmed_xml_metadata(
+            """
+            <PubmedArticleSet>
+              <PubmedArticle>
+                <MedlineCitation>
+                  <PMID>12345678</PMID>
+                  <Article>
+                    <Journal>
+                      <Title>Skeletal Radiology</Title>
+                      <JournalIssue>
+                        <PubDate><Year>2025</Year></PubDate>
+                      </JournalIssue>
+                    </Journal>
+                    <ArticleTitle>MRI measurement for osteonecrosis</ArticleTitle>
+                    <Abstract>
+                      <AbstractText>Necrotic area ratio was evaluated in MRI.</AbstractText>
+                      <AbstractText Label="LIMITATIONS">External validation is required.</AbstractText>
+                    </Abstract>
+                    <PublicationTypeList>
+                      <PublicationType>Journal Article</PublicationType>
+                    </PublicationTypeList>
+                  </Article>
+                  <ArticleIdList>
+                    <ArticleId IdType="doi">10.1000/pubmed-xml</ArticleId>
+                  </ArticleIdList>
+                </MedlineCitation>
+              </PubmedArticle>
+            </PubmedArticleSet>
+            """
+        )
+
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        self.assertEqual(record["pmid"], "12345678")
+        self.assertEqual(record["article_title"], "MRI measurement for osteonecrosis")
+        self.assertEqual(record["journal"], "Skeletal Radiology")
+        self.assertEqual(record["pub_date"], "2025")
+        self.assertEqual(record["doi"], "10.1000/pubmed-xml")
+        self.assertIn("Necrotic area ratio", record["abstract"])
+        self.assertIn("External validation", record["abstract"])
 
     def test_request_builder_connects_normalized_metadata_to_gateway_proposal_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
