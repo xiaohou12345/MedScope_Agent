@@ -298,6 +298,21 @@
         "limitations": ["缺少可靠 ROI/contour/landmark 时 measurement_usable 必须为 false。"]
       },
       {
+        "target": "subchondral_fracture",
+        "display_name": "软骨下骨骨折或新月征",
+        "description": "股骨头关节面下方线样透亮或骨折候选区域，可提示塌陷风险或 ARCO III 边界，但需要轮廓/塌陷测量配合。",
+        "required_modalities": ["X-ray"],
+        "execution_mode": "vlm_plus_segmenter",
+        "evidence_type": "candidate_mask",
+        "localization_mode": "bbox",
+        "segmentation_mode": "candidate_mask",
+        "diagnosis_usable_level": "candidate_support",
+        "measurement_dependencies": ["femoral_head_roi", "articular_surface_alignment", "candidate_mask_qc"],
+        "measurement_usable": false,
+        "quality_requirements": ["prompt_box_alignment", "candidate_mask_qc", "articular_surface_alignment"],
+        "limitations": ["软骨下骨折候选 mask 不能单独完成分期；需要结合股骨头轮廓、塌陷深度和投照质量。"]
+      },
+      {
         "target": "early_osteonecrosis",
         "display_name": "早期股骨头坏死",
         "description": "早期坏死可能 X 光阴性，需 MRI 骨髓信号评估。",
@@ -361,6 +376,13 @@
         "target": "sclerotic_band_or_cystic_change",
         "requires": ["femoral_head_roi", "candidate_mask_qc"],
         "quality_requirements": ["candidate_mask_qc", "anatomical_roi_alignment"],
+        "measurement_usable_default": false
+      },
+      {
+        "measurement_name": "subchondral_fracture_extent",
+        "target": "subchondral_fracture",
+        "requires": ["femoral_head_roi", "articular_surface_alignment", "candidate_mask_qc"],
+        "quality_requirements": ["candidate_mask_qc", "articular_surface_alignment", "view_quality"],
         "measurement_usable_default": false
       },
       {

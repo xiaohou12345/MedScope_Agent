@@ -92,6 +92,8 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
         self.assertEqual(targets["sclerotic_band"]["execution_mode"], "vlm_plus_segmenter")
         self.assertEqual(targets["cystic_change"]["diagnosis_usable_level"], "candidate_support")
         self.assertEqual(targets["trabecular_blurring"]["segmentation_mode"], "none")
+        self.assertEqual(targets["subchondral_fracture"]["execution_mode"], "vlm_plus_segmenter")
+        self.assertEqual(targets["subchondral_fracture"]["diagnosis_usable_level"], "candidate_support")
         self.assertEqual(targets["collapse"]["execution_mode"], "measurement_only")
         self.assertEqual(targets["early_osteonecrosis"]["execution_mode"], "insufficient_input")
 
@@ -142,6 +144,10 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
         self.assertEqual(by_target["collapse"]["evidence_type"], "anatomical_measurement")
         self.assertEqual(by_target["collapse"]["measurement_usable"], False)
         self.assertIn("contour", by_target["collapse"]["measurement_dependencies"])
+
+        self.assertEqual(by_target["subchondral_fracture"]["execution_mode"], "vlm_plus_segmenter")
+        self.assertEqual(by_target["subchondral_fracture"]["evidence_type"], "candidate_mask")
+        self.assertFalse(by_target["subchondral_fracture"]["diagnosis_usable_without_qc"])
 
         self.assertEqual(by_target["early_osteonecrosis"]["execution_mode"], "insufficient_input")
         self.assertEqual(by_target["early_osteonecrosis"]["status"], "missing_input")

@@ -33,6 +33,7 @@ class OnfhCocoProtocolEvaluationTest(unittest.TestCase):
                     {"id": 1, "name": "MRI-T2双线征"},
                     {"id": 2, "name": "硬化带"},
                     {"id": 3, "name": "未映射标签"},
+                    {"id": 4, "name": "软骨下骨骨折"},
                 ],
                 "annotations": [
                     {
@@ -55,6 +56,13 @@ class OnfhCocoProtocolEvaluationTest(unittest.TestCase):
                         "category_id": 3,
                         "area": 5,
                         "bbox": [0, 0, 1, 5],
+                    },
+                    {
+                        "id": 13,
+                        "image_id": 2,
+                        "category_id": 4,
+                        "area": 20,
+                        "bbox": [20, 30, 5, 4],
                     },
                 ],
             }
@@ -79,8 +87,8 @@ class OnfhCocoProtocolEvaluationTest(unittest.TestCase):
         self.assertEqual(payload["evaluation_scope"]["primary_modality"], "Xray")
         self.assertFalse(payload["evaluation_scope"]["include_auxiliary_modalities"])
         self.assertEqual(payload["dataset"]["source_image_count"], 2)
-        self.assertEqual(payload["dataset"]["source_annotation_count"], 3)
-        self.assertEqual(payload["dataset"]["evaluated_annotation_count"], 2)
+        self.assertEqual(payload["dataset"]["source_annotation_count"], 4)
+        self.assertEqual(payload["dataset"]["evaluated_annotation_count"], 3)
         self.assertEqual(payload["dataset"]["auxiliary_excluded_annotation_count"], 1)
         self.assertTrue(payload["safety"]["real_data_evaluation_only"])
         self.assertTrue(payload["safety"]["patient_paths_redacted"])
@@ -98,17 +106,20 @@ class OnfhCocoProtocolEvaluationTest(unittest.TestCase):
         )
         self.assertEqual(labels["MRI-T2双线征"]["baseline_status"], "auxiliary_excluded")
         self.assertEqual(labels["未映射标签"]["current_protocol_status"], "unmapped_label")
+        self.assertEqual(labels["软骨下骨骨折"]["target"], "subchondral_fracture")
+        self.assertEqual(labels["软骨下骨骨折"]["current_protocol_status"], "covered")
+        self.assertEqual(labels["软骨下骨骨折"]["baseline_status"], "gap")
 
         aggregate = payload["aggregate"]
-        self.assertEqual(aggregate["mapped_annotation_count"], 1)
+        self.assertEqual(aggregate["mapped_annotation_count"], 2)
         self.assertEqual(aggregate["unmapped_annotation_count"], 1)
-        self.assertEqual(aggregate["current_protocol_covered_annotation_count"], 1)
+        self.assertEqual(aggregate["current_protocol_covered_annotation_count"], 2)
         self.assertEqual(aggregate["baseline_covered_annotation_count"], 1)
-        self.assertEqual(aggregate["total_mask_area_px"], 45)
+        self.assertEqual(aggregate["total_mask_area_px"], 65)
 
         self.assertIn("MRI-T2双线征", payload["auxiliary_modalities"]["excluded_labels"])
         self.assertIn("未映射标签", payload["coverage_gaps"]["unmapped_labels"])
-        self.assertEqual(payload["coverage_gaps"]["baseline_missing_labels"], [])
+        self.assertEqual(payload["coverage_gaps"]["baseline_missing_labels"], ["软骨下骨骨折"])
 
         sample = payload["sample_evidence_items"][0]
         self.assertNotIn("张三", json.dumps(sample, ensure_ascii=False))

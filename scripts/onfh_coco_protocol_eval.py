@@ -58,9 +58,9 @@ ONFH_LABEL_TO_TARGET = {
         "protocol_gap_note": None,
     },
     "软骨下骨骨折": {
-        "target": "collapse",
-        "evidence_family": "xray_or_mri_collapse_boundary",
-        "protocol_gap_note": "Current protocol models collapse measurement but not subchondral fracture as a separate target.",
+        "target": "subchondral_fracture",
+        "evidence_family": "xray_subchondral_fracture",
+        "protocol_gap_note": None,
     },
     "混杂密度区": {
         "target": "trabecular_blurring",
