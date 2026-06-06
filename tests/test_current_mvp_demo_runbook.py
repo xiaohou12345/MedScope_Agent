@@ -4,6 +4,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNBOOK = REPO_ROOT / "docs" / "CURRENT_MVP_DEMO_RUNBOOK_20260605.md"
+PROGRESS_SYNC = REPO_ROOT / "docs" / "PROJECT_PROGRESS_SYNC_20260607.zh-CN.md"
 
 
 class CurrentMvpDemoRunbookTest(unittest.TestCase):
@@ -33,6 +34,20 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
 
     def test_readmes_link_current_mvp_demo_runbook(self):
         target = "docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md"
+        for readme_name in ["README.md", "README.zh-CN.md"]:
+            with self.subTest(readme_name=readme_name):
+                readme = (REPO_ROOT / readme_name).read_text(encoding="utf-8")
+                self.assertIn(target, readme)
+
+    def test_project_progress_sync_is_the_current_docs_entrypoint(self):
+        self.assertTrue(PROGRESS_SYNC.exists())
+        text = PROGRESS_SYNC.read_text(encoding="utf-8")
+        self.assertIn("MedScope Agent 项目进度同步", text)
+        self.assertIn("推荐下一轮 Goal 顺序", text)
+        self.assertIn("已合并 / 删除的冗余文档", text)
+        self.assertIn("不要重做 Research Evidence Ingestion v1", text)
+
+        target = "docs/PROJECT_PROGRESS_SYNC_20260607.zh-CN.md"
         for readme_name in ["README.md", "README.zh-CN.md"]:
             with self.subTest(readme_name=readme_name):
                 readme = (REPO_ROOT / readme_name).read_text(encoding="utf-8")
