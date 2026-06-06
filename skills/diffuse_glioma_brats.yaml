@@ -149,6 +149,64 @@
       ]
     }
   },
+  "quantitative_evidence_protocol": {
+    "schema_version": "quantitative_evidence_protocol.v1",
+    "protocol_sections": ["image_feature_quantification", "measurement_evidence"],
+    "quality_gate_defaults": {
+      "measurement_usable_default": false,
+      "requires_quality_requirements_for_usable_measurement": true,
+      "exploratory_feature_validation_required": true
+    },
+    "diagnosis_boundary": "MRI tumor volumes and mass-effect measurements support imaging assessment and treatment planning context, but integrated diffuse glioma diagnosis still requires histopathology and molecular evidence.",
+    "image_feature_quantification": [
+      {
+        "feature_name": "edema_present",
+        "target": "edema",
+        "status": "supporting_observation",
+        "validation_status": "requires_validation",
+        "diagnosis_usable": false,
+        "diagnosis_usable_level": "exploratory_only"
+      },
+      {
+        "feature_name": "segmentation_quality",
+        "target": "whole_tumor",
+        "status": "quality_signal",
+        "validation_status": "requires_validation",
+        "diagnosis_usable": false,
+        "diagnosis_usable_level": "exploratory_only"
+      }
+    ],
+    "measurement_evidence": [
+      {
+        "measurement_name": "whole_tumor_volume_ml",
+        "target": "whole_tumor",
+        "requires": ["whole_tumor_mask", "voxel_spacing", "segmentation_qc"],
+        "quality_requirements": ["mask_quality", "sequence_alignment", "voxel_spacing_present"],
+        "measurement_usable_default": false
+      },
+      {
+        "measurement_name": "tumor_core_volume_ml",
+        "target": "tumor_core",
+        "requires": ["tumor_core_mask", "T1_T1ce_T2_alignment", "segmentation_qc"],
+        "quality_requirements": ["mask_quality", "sequence_alignment", "voxel_spacing_present"],
+        "measurement_usable_default": false
+      },
+      {
+        "measurement_name": "enhancing_tumor_volume_ml",
+        "target": "enhancing_tumor",
+        "requires": ["enhancing_tumor_mask", "T1ce_sequence", "segmentation_qc"],
+        "quality_requirements": ["contrast_sequence_present", "mask_quality", "voxel_spacing_present"],
+        "measurement_usable_default": false
+      },
+      {
+        "measurement_name": "mass_effect",
+        "target": "mass_effect",
+        "requires": ["midline_reference", "ventricle_landmarks", "multisequence_alignment"],
+        "quality_requirements": ["landmark_quality", "sequence_alignment"],
+        "measurement_usable_default": false
+      }
+    ]
+  },
   "report_requirements": {
     "include": ["诊断倾向", "影像依据", "不确定性说明", "建议进一步检查", "治疗建议"]
   }

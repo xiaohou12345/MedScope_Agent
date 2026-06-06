@@ -1225,10 +1225,12 @@ class GaoDoctorAgent:
             return [self._normalize_evidence_item(item) for item in explicit_items]
 
         protocol_by_target = self._evidence_protocol_by_target(disease_skill)
+        quantitative_protocol_by_target = self._quantitative_protocol_by_target(disease_skill)
         items = [
             self._evidence_item_from_finding(
                 finding,
                 protocol_by_target.get(str(finding.get("target") or "")),
+                quantitative_protocol_by_target.get(str(finding.get("target") or "")),
             )
             for finding in evidence.get("findings") or []
             if isinstance(finding, dict)
@@ -1269,14 +1271,64 @@ class GaoDoctorAgent:
             if isinstance(item, dict) and item.get("target")
         }
 
+    def _quantitative_protocol_by_target(self, disease_skill: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        quantitative_protocol = disease_skill.get("quantitative_evidence_protocol") or {}
+        by_target: dict[str, dict[str, Any]] = {}
+        for item in quantitative_protocol.get("image_feature_quantification") or []:
+            if not isinstance(item, dict) or not item.get("target"):
+                continue
+            target = str(item.get("target"))
+            entry = by_target.setdefault(target, {"feature_items": [], "measurement_items": []})
+            entry["feature_items"].append(dict(item))
+        for item in quantitative_protocol.get("measurement_evidence") or []:
+            if not isinstance(item, dict) or not item.get("target"):
+                continue
+            for target in self._expand_quantitative_targets(str(item.get("target"))):
+                entry = by_target.setdefault(target, {"feature_items": [], "measurement_items": []})
+                entry["measurement_items"].append(dict(item))
+        return by_target
+
+    def _expand_quantitative_targets(self, target: str) -> list[str]:
+        targets = [target]
+        if "_or_" in target:
+            targets.extend(part for part in target.split("_or_") if part)
+        return targets
+
     def _evidence_item_from_finding(
         self,
         finding: dict[str, Any],
         protocol_item: dict[str, Any] | None = None,
+        quantitative_protocol_item: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         protocol_item = protocol_item or {}
+        quantitative_protocol_item = quantitative_protocol_item or {}
+        measurements = dict(finding.get("measurements") or {})
+        feature_items = [
+            dict(item)
+            for item in quantitative_protocol_item.get("feature_items") or []
+            if isinstance(item, dict)
+        ]
+        measurement_items = [
+            dict(item)
+            for item in quantitative_protocol_item.get("measurement_items") or []
+            if isinstance(item, dict)
+        ]
+        has_quantitative_feature = self._has_quantitative_feature_measurement(
+            measurements=measurements,
+            feature_items=feature_items,
+        )
+        has_measurement_protocol = bool(measurement_items) and (
+            str(protocol_item.get("evidence_type") or "") == "anatomical_measurement"
+            or str(protocol_item.get("execution_mode") or "") == "measurement_only"
+        )
         diagnosis_level = str(
             finding.get("diagnosis_usable_level")
+            or self._diagnosis_level_from_quantitative_protocol(
+                feature_items=feature_items,
+                measurement_items=measurement_items,
+                has_measurement_protocol=has_measurement_protocol,
+                has_quantitative_feature=has_quantitative_feature,
+            )
             or protocol_item.get("diagnosis_usable_level")
             or ""
         )
@@ -1287,6 +1339,10 @@ class GaoDoctorAgent:
                 else "not_usable"
             )
         evidence_type = str(finding.get("evidence_type") or protocol_item.get("evidence_type") or "")
+        if has_measurement_protocol:
+            evidence_type = evidence_type or "anatomical_measurement"
+        elif has_quantitative_feature:
+            evidence_type = "image_feature_quantification"
         if not evidence_type:
             evidence_type = (
                 "anatomical_measurement"
@@ -1295,19 +1351,41 @@ class GaoDoctorAgent:
                 if diagnosis_level == "exploratory_only"
                 else "candidate_mask"
             )
-        measurements = dict(finding.get("measurements") or {})
-        if protocol_item.get("measurement_dependencies"):
+        measurement_dependencies = list(protocol_item.get("measurement_dependencies") or [])
+        if has_measurement_protocol and not measurement_dependencies:
+            measurement_dependencies = [
+                str(dependency)
+                for item in measurement_items
+                for dependency in item.get("requires") or []
+            ]
+        if measurement_dependencies:
             measurements.setdefault(
                 "measurement_dependencies",
-                list(protocol_item.get("measurement_dependencies") or []),
+                measurement_dependencies,
             )
         if "measurement_usable" not in measurements:
+            quantitative_default = self._measurement_usable_default(measurement_items)
             measurements["measurement_usable"] = bool(
                 finding.get(
                     "measurement_usable",
-                    protocol_item.get("measurement_usable", False),
+                    protocol_item.get("measurement_usable", quantitative_default),
                 )
             )
+        quality = dict(finding.get("quality") or {})
+        quantitative_protocol = self._quantitative_protocol_summary(
+            feature_items=feature_items,
+            measurement_items=measurement_items,
+        )
+        if has_quantitative_feature and feature_items:
+            quality.setdefault(
+                "validation_status",
+                str(feature_items[0].get("validation_status") or "requires_validation"),
+            )
+        diagnosis_usable = bool(finding.get("diagnosis_usable", False))
+        if diagnosis_level == "exploratory_only":
+            diagnosis_usable = False
+        if diagnosis_level == "measurement_support":
+            diagnosis_usable = diagnosis_usable and measurements.get("measurement_usable") is True
         return {
             "target": str(finding.get("target") or ""),
             "image_id": finding.get("image_id"),
@@ -1323,11 +1401,77 @@ class GaoDoctorAgent:
             },
             "segmentation": dict(finding.get("segmentation") or {}),
             "measurements": measurements,
-            "quality": dict(finding.get("quality") or {}),
-            "diagnosis_usable": bool(finding.get("diagnosis_usable", False)),
+            "quality": quality,
+            "diagnosis_usable": diagnosis_usable,
             "diagnosis_usable_level": diagnosis_level,
+            **({"quantitative_protocol": quantitative_protocol} if quantitative_protocol else {}),
             "limitations": list(finding.get("limitations") or []),
         }
+
+    def _diagnosis_level_from_quantitative_protocol(
+        self,
+        *,
+        feature_items: list[dict[str, Any]],
+        measurement_items: list[dict[str, Any]],
+        has_measurement_protocol: bool,
+        has_quantitative_feature: bool,
+    ) -> str:
+        if has_measurement_protocol and measurement_items:
+            return "measurement_support"
+        if has_quantitative_feature and feature_items:
+            return str(feature_items[0].get("diagnosis_usable_level") or "exploratory_only")
+        return ""
+
+    def _measurement_usable_default(self, measurement_items: list[dict[str, Any]]) -> bool:
+        if not measurement_items:
+            return False
+        return all(item.get("measurement_usable_default") is True for item in measurement_items)
+
+    def _has_quantitative_feature_measurement(
+        self,
+        *,
+        measurements: dict[str, Any],
+        feature_items: list[dict[str, Any]],
+    ) -> bool:
+        if not measurements or not feature_items:
+            return False
+        feature_names = {
+            str(item.get("feature_name"))
+            for item in feature_items
+            if item.get("feature_name")
+        }
+        return any(name in measurements for name in feature_names)
+
+    def _quantitative_protocol_summary(
+        self,
+        *,
+        feature_items: list[dict[str, Any]],
+        measurement_items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        summary: dict[str, Any] = {}
+        if feature_items:
+            summary["feature_names"] = [
+                str(item.get("feature_name"))
+                for item in feature_items
+                if item.get("feature_name")
+            ]
+            summary["validation_statuses"] = [
+                str(item.get("validation_status"))
+                for item in feature_items
+                if item.get("validation_status")
+            ]
+        if measurement_items:
+            summary["measurement_names"] = [
+                str(item.get("measurement_name"))
+                for item in measurement_items
+                if item.get("measurement_name")
+            ]
+            summary["quality_requirements"] = [
+                str(requirement)
+                for item in measurement_items
+                for requirement in item.get("quality_requirements") or []
+            ]
+        return summary
 
     def _normalize_evidence_item(self, item: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(item)

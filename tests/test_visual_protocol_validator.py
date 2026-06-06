@@ -63,6 +63,95 @@ class VisualProtocolValidatorTest(unittest.TestCase):
         )
         self.assertIn("clinical_context_source", integrated["required_sections"])
 
+    def test_static_skills_declare_versioned_quantitative_contract(self):
+        validator = VisualProtocolValidator()
+
+        for skill_path in (
+            Path("skills/femoral_head_necrosis.yaml"),
+            Path("skills/diffuse_glioma_brats.yaml"),
+            Path("skills/pneumonia_chest_xray.yaml"),
+            Path("skills/idiopathic_pulmonary_fibrosis_hrct.yaml"),
+        ):
+            with self.subTest(skill_path=str(skill_path)):
+                skill = json.loads(skill_path.read_text(encoding="utf-8"))
+                quantitative = skill["quantitative_evidence_protocol"]
+
+                self.assertEqual(
+                    quantitative["schema_version"],
+                    "quantitative_evidence_protocol.v1",
+                )
+                self.assertIn("image_feature_quantification", quantitative["protocol_sections"])
+                self.assertIn("measurement_evidence", quantitative["protocol_sections"])
+                self.assertIn("diagnosis_boundary", quantitative)
+                self.assertIn("quality_gate_defaults", quantitative)
+                result = validator.validate_quantitative_evidence_protocol(quantitative)
+                self.assertTrue(result["valid"], result)
+
+    def test_quantitative_protocol_requires_item_level_contract(self):
+        skill = self._minimal_valid_skill()
+        skill["imaging_evidence_protocol"] = {
+            "disease_target": "minimal_disease",
+            "finding_targets": [
+                {
+                    "target": "target_region",
+                    "execution_mode": "measurement_only",
+                    "evidence_type": "anatomical_measurement",
+                    "diagnosis_usable_level": "measurement_support",
+                    "segmentation_mode": "none",
+                    "measurement_dependencies": ["roi"],
+                }
+            ],
+        }
+        skill["quantitative_evidence_protocol"] = {
+            "schema_version": "quantitative_evidence_protocol.v1",
+            "protocol_sections": ["image_feature_quantification", "measurement_evidence"],
+            "diagnosis_boundary": "Exploratory features cannot confirm diagnosis.",
+            "quality_gate_defaults": {"measurement_usable_default": False},
+            "image_feature_quantification": [
+                {
+                    "feature_name": "texture_score",
+                    "target": "target_region",
+                    "diagnosis_usable": True,
+                    "diagnosis_usable_level": "candidate_support",
+                }
+            ],
+            "measurement_evidence": [
+                {
+                    "measurement_name": "collapse_depth",
+                    "target": "target_region",
+                    "measurement_usable_default": True,
+                }
+            ],
+        }
+        skill["clinical_context_protocol"] = {
+            "risk_factors": ["risk_demo"],
+            "reasoning_rule": "clinical context cannot confirm diagnosis",
+        }
+        skill["integrated_reasoning_protocol"] = {
+            "required_sections": ["imaging_support", "clinical_context_source"],
+            "safety_rules": [],
+        }
+
+        result = VisualProtocolValidator().validate_evidence_protocol(skill)
+
+        self.assertFalse(result["valid"])
+        self.assertIn(
+            "quantitative_evidence_protocol.image_feature_quantification[0].validation_status is required",
+            result["errors"],
+        )
+        self.assertIn(
+            "quantitative_evidence_protocol.image_feature_quantification[0] must remain exploratory_only unless validated",
+            result["errors"],
+        )
+        self.assertIn(
+            "quantitative_evidence_protocol.measurement_evidence[0].requires must be a non-empty list",
+            result["errors"],
+        )
+        self.assertIn(
+            "quantitative_evidence_protocol.measurement_evidence[0] cannot default to measurement usable without quality requirements",
+            result["errors"],
+        )
+
     def test_evidence_protocol_requires_clinical_context_limits(self):
         skill = self._minimal_valid_skill()
         skill["imaging_evidence_protocol"] = {

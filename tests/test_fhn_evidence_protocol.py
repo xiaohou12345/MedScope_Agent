@@ -245,6 +245,59 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
         self.assertFalse(by_target["collapse"]["measurements"]["measurement_usable"])
         self.assertEqual(by_target["early_osteonecrosis"]["execution_mode"], "insufficient_input")
 
+    def test_evidence_bundle_applies_quantitative_protocol_to_generic_findings(self):
+        bundle = GaoDoctorAgent()._build_visual_evidence_bundle(
+            {
+                "image_path": "output/fake/uploads/fhn_ap.png",
+                "modality": "xray",
+                "body_part": "hip",
+                "image_outputs": {"original_image_path": "fhn_ap.png"},
+                "visual_evidence": {
+                    "disease_target": "femoral_head_necrosis",
+                    "findings": [
+                        {
+                            "target": "trabecular_blurring",
+                            "display_name": "骨小梁模糊",
+                            "status": "candidate_present",
+                            "measurements": {"trabecular_irregularity_score": 0.8},
+                        },
+                        {
+                            "target": "collapse",
+                            "display_name": "股骨头塌陷",
+                            "status": "candidate_present",
+                            "measurements": {"collapse_depth_mm": 1.6},
+                        },
+                    ],
+                },
+            },
+            self.skill,
+        )
+
+        by_target = {item["target"]: item for item in bundle["evidence_items"]}
+        trabecular = by_target["trabecular_blurring"]
+        collapse = by_target["collapse"]
+
+        self.assertEqual(trabecular["evidence_type"], "image_feature_quantification")
+        self.assertEqual(trabecular["diagnosis_usable_level"], "exploratory_only")
+        self.assertFalse(trabecular["diagnosis_usable"])
+        self.assertEqual(
+            trabecular["quantitative_protocol"]["feature_names"],
+            ["texture_disorder_score", "trabecular_irregularity_score"],
+        )
+        self.assertEqual(
+            trabecular["quality"]["validation_status"],
+            "requires_validation",
+        )
+
+        self.assertEqual(collapse["evidence_type"], "anatomical_measurement")
+        self.assertEqual(collapse["diagnosis_usable_level"], "measurement_support")
+        self.assertFalse(collapse["measurements"]["measurement_usable"])
+        self.assertIn("femoral_head_roi", collapse["measurements"]["measurement_dependencies"])
+        self.assertEqual(
+            collapse["quantitative_protocol"]["measurement_names"],
+            ["femoral_head_collapse_depth"],
+        )
+
     def test_gaodoctor_persists_fhn_protocol_evidence_items_to_memory(self):
         with TemporaryDirectory() as tmpdir:
             memory = MemoryManager(base_dir=Path(tmpdir))

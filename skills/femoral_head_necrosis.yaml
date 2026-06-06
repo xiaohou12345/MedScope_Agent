@@ -314,6 +314,14 @@
     ]
   },
   "quantitative_evidence_protocol": {
+    "schema_version": "quantitative_evidence_protocol.v1",
+    "protocol_sections": ["image_feature_quantification", "measurement_evidence"],
+    "quality_gate_defaults": {
+      "measurement_usable_default": false,
+      "requires_quality_requirements_for_usable_measurement": true,
+      "exploratory_feature_validation_required": true
+    },
+    "diagnosis_boundary": "Exploratory image-feature quantification cannot confirm diagnosis; geometric measurement support requires usable ROI, contour, landmark, and quality gates.",
     "image_feature_quantification": [
       {
         "feature_name": "texture_disorder_score",
@@ -345,18 +353,21 @@
         "measurement_name": "femoral_head_collapse_depth",
         "target": "collapse",
         "requires": ["femoral_head_roi", "articular_surface_contour", "landmark_quality"],
+        "quality_requirements": ["roi_quality", "contour_quality", "landmark_quality"],
         "measurement_usable_default": false
       },
       {
         "measurement_name": "suspected_necrotic_area_ratio",
         "target": "sclerotic_band_or_cystic_change",
         "requires": ["femoral_head_roi", "candidate_mask_qc"],
+        "quality_requirements": ["candidate_mask_qc", "anatomical_roi_alignment"],
         "measurement_usable_default": false
       },
       {
         "measurement_name": "left_right_asymmetry",
         "target": "bilateral_femoral_heads",
         "requires": ["bilateral_roi_alignment"],
+        "quality_requirements": ["bilateral_roi_alignment", "view_comparability"],
         "measurement_usable_default": false
       }
     ]

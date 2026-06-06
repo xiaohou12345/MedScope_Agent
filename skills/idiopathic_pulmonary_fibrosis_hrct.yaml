@@ -102,6 +102,57 @@
       "reticulation_area_ratio"
     ]
   },
+  "quantitative_evidence_protocol": {
+    "schema_version": "quantitative_evidence_protocol.v1",
+    "protocol_sections": ["image_feature_quantification", "measurement_evidence"],
+    "quality_gate_defaults": {
+      "measurement_usable_default": false,
+      "requires_quality_requirements_for_usable_measurement": true,
+      "exploratory_feature_validation_required": true
+    },
+    "diagnosis_boundary": "HRCT quantification can support UIP/IPF pattern assessment, but IPF diagnosis requires appropriate clinical setting and multidisciplinary review; quantitative findings alone cannot confirm IPF.",
+    "image_feature_quantification": [
+      {
+        "feature_name": "basal_subpleural_score",
+        "target": "basal_subpleural_distribution",
+        "status": "exploratory",
+        "validation_status": "requires_validation",
+        "diagnosis_usable": false,
+        "diagnosis_usable_level": "exploratory_only"
+      },
+      {
+        "feature_name": "lower_lung_zone_ratio",
+        "target": "basal_subpleural_distribution",
+        "status": "exploratory",
+        "validation_status": "requires_validation",
+        "diagnosis_usable": false,
+        "diagnosis_usable_level": "exploratory_only"
+      }
+    ],
+    "measurement_evidence": [
+      {
+        "measurement_name": "fibrosis_area_ratio",
+        "target": "fibrosis_candidate",
+        "requires": ["bilateral_lung_roi", "fibrosis_candidate_mask", "thin_section_hrct_quality"],
+        "quality_requirements": ["lung_roi_quality", "candidate_mask_qc", "hrct_slice_thickness"],
+        "measurement_usable_default": false
+      },
+      {
+        "measurement_name": "honeycombing_area_ratio",
+        "target": "honeycombing_candidate",
+        "requires": ["bilateral_lung_roi", "honeycombing_candidate_mask", "subpleural_zone_mapping"],
+        "quality_requirements": ["lung_roi_quality", "candidate_mask_qc", "distribution_mapping_quality"],
+        "measurement_usable_default": false
+      },
+      {
+        "measurement_name": "reticulation_area_ratio",
+        "target": "reticulation_candidate",
+        "requires": ["bilateral_lung_roi", "reticulation_candidate_mask", "thin_section_hrct_quality"],
+        "quality_requirements": ["lung_roi_quality", "candidate_mask_qc", "hrct_slice_thickness"],
+        "measurement_usable_default": false
+      }
+    ]
+  },
   "report_requirements": {
     "include": [
       "HRCT pattern category",

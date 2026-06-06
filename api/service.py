@@ -328,22 +328,30 @@ class MedScopeService:
     def _skill_protocol_readiness(self, skill: dict[str, Any]) -> tuple[bool, str]:
         if not isinstance(skill, dict):
             return False, "local skill is not a valid object"
-        evidence_validation = VisualProtocolValidator().validate_evidence_protocol(skill)
-        if skill.get("imaging_evidence_protocol") or any(
+        validator = VisualProtocolValidator()
+        has_full_evidence_protocol = bool(skill.get("imaging_evidence_protocol")) or any(
             bool(skill.get(field))
             for field in (
-                "quantitative_evidence_protocol",
                 "differential_diagnosis_protocol",
                 "clinical_context_protocol",
                 "integrated_reasoning_protocol",
             )
-        ):
+        )
+        if has_full_evidence_protocol:
+            evidence_validation = validator.validate_evidence_protocol(skill)
             if not evidence_validation.get("valid"):
                 errors = "; ".join(str(error) for error in evidence_validation.get("errors", []))
                 return False, f"local skill has invalid evidence_protocol: {errors}"
             return True, "local skill has valid evidence_protocol"
+        if skill.get("quantitative_evidence_protocol"):
+            quantitative_validation = validator.validate_quantitative_evidence_protocol(
+                skill.get("quantitative_evidence_protocol")
+            )
+            if not quantitative_validation.get("valid"):
+                errors = "; ".join(str(error) for error in quantitative_validation.get("errors", []))
+                return False, f"local skill has invalid quantitative_evidence_protocol: {errors}"
         if skill.get("visual_protocol"):
-            validation = VisualProtocolValidator().validate_skill(skill)
+            validation = validator.validate_skill(skill)
             if not validation.get("valid"):
                 errors = "; ".join(str(error) for error in validation.get("errors", []))
                 return False, f"local skill has invalid visual_protocol: {errors}"

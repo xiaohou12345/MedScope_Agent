@@ -6,6 +6,19 @@ from typing import Any
 class VisualProtocolValidator:
     """Validates the visual protocol contract used by image-skill alignment."""
 
+    QUANTITATIVE_SCHEMA_VERSION = "quantitative_evidence_protocol.v1"
+    QUANTITATIVE_PROTOCOL_SECTIONS = {
+        "image_feature_quantification",
+        "measurement_evidence",
+    }
+    QUANTITATIVE_DIAGNOSIS_LEVELS = {
+        "exploratory_only",
+        "measurement_support",
+        "candidate_support",
+        "supporting_observation",
+        "not_usable",
+    }
+
     def validate_skill(self, skill: dict[str, Any]) -> dict[str, Any]:
         if skill.get("skill_type") != "guideline_based":
             return {
@@ -43,6 +56,16 @@ class VisualProtocolValidator:
             "status": "valid" if not errors else "invalid",
             "errors": errors,
             "warnings": warnings,
+        }
+
+    def validate_quantitative_evidence_protocol(self, quantitative_protocol: Any) -> dict[str, Any]:
+        errors: list[str] = []
+        self._validate_quantitative_evidence_protocol(quantitative_protocol, errors)
+        return {
+            "valid": not errors,
+            "status": "valid" if not errors else "invalid",
+            "errors": errors,
+            "warnings": [],
         }
 
     def validate(self, visual_protocol: Any) -> dict[str, Any]:
@@ -184,9 +207,80 @@ class VisualProtocolValidator:
         if not isinstance(value, dict) or not value:
             errors.append("quantitative_evidence_protocol is required")
             return
+        schema_version = str(value.get("schema_version") or "")
+        if schema_version != self.QUANTITATIVE_SCHEMA_VERSION:
+            errors.append(
+                "quantitative_evidence_protocol.schema_version must be quantitative_evidence_protocol.v1"
+            )
+        protocol_sections = value.get("protocol_sections")
+        if not isinstance(protocol_sections, list) or not self.QUANTITATIVE_PROTOCOL_SECTIONS.issubset(
+            {str(section) for section in protocol_sections}
+        ):
+            errors.append(
+                "quantitative_evidence_protocol.protocol_sections must include image_feature_quantification and measurement_evidence"
+            )
+        if not str(value.get("diagnosis_boundary") or "").strip():
+            errors.append("quantitative_evidence_protocol.diagnosis_boundary is required")
+        if not isinstance(value.get("quality_gate_defaults"), dict):
+            errors.append("quantitative_evidence_protocol.quality_gate_defaults must be an object")
         for key in ("image_feature_quantification", "measurement_evidence"):
             if not isinstance(value.get(key), list):
                 errors.append(f"quantitative_evidence_protocol.{key} must be a list")
+        for index, item in enumerate(value.get("image_feature_quantification") or []):
+            self._validate_image_feature_quantification_item(item, index, errors)
+        for index, item in enumerate(value.get("measurement_evidence") or []):
+            self._validate_measurement_evidence_item(item, index, errors)
+
+    def _validate_image_feature_quantification_item(
+        self,
+        item: Any,
+        index: int,
+        errors: list[str],
+    ) -> None:
+        field = f"quantitative_evidence_protocol.image_feature_quantification[{index}]"
+        if not isinstance(item, dict):
+            errors.append(f"{field} must be an object")
+            return
+        for key in ("feature_name", "target", "status", "diagnosis_usable_level"):
+            self._require_text(item, key=key, field=f"{field}.{key}", errors=errors)
+        if not str(item.get("validation_status") or "").strip():
+            errors.append(f"{field}.validation_status is required")
+        level = str(item.get("diagnosis_usable_level") or "")
+        if level and level not in self.QUANTITATIVE_DIAGNOSIS_LEVELS:
+            errors.append(f"{field}.diagnosis_usable_level is unsupported")
+        validation_status = str(item.get("validation_status") or "")
+        if item.get("diagnosis_usable") is True and validation_status not in {
+            "validated",
+            "externally_validated",
+        }:
+            errors.append(f"{field} must remain exploratory_only unless validated")
+        if validation_status not in {"validated", "externally_validated"} and level != "exploratory_only":
+            errors.append(f"{field} must remain exploratory_only unless validated")
+
+    def _validate_measurement_evidence_item(
+        self,
+        item: Any,
+        index: int,
+        errors: list[str],
+    ) -> None:
+        field = f"quantitative_evidence_protocol.measurement_evidence[{index}]"
+        if not isinstance(item, dict):
+            errors.append(f"{field} must be an object")
+            return
+        for key in ("measurement_name", "target"):
+            self._require_text(item, key=key, field=f"{field}.{key}", errors=errors)
+        requires = item.get("requires")
+        if not self._non_empty_list(requires):
+            errors.append(f"{field}.requires must be a non-empty list")
+        if not isinstance(item.get("measurement_usable_default"), bool):
+            errors.append(f"{field}.measurement_usable_default must be a boolean")
+        quality_requirements = item.get("quality_requirements")
+        if item.get("measurement_usable_default") is True and not self._non_empty_list(
+            quality_requirements
+        ):
+            errors.append(
+                f"{field} cannot default to measurement usable without quality requirements"
+            )
 
     def _validate_clinical_context_protocol(self, value: Any, errors: list[str]) -> None:
         if not isinstance(value, dict) or not value:

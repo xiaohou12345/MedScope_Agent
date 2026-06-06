@@ -280,6 +280,14 @@
     ]
   },
   "quantitative_evidence_protocol": {
+    "schema_version": "quantitative_evidence_protocol.v1",
+    "protocol_sections": ["image_feature_quantification", "measurement_evidence"],
+    "quality_gate_defaults": {
+      "measurement_usable_default": false,
+      "requires_quality_requirements_for_usable_measurement": true,
+      "exploratory_feature_validation_required": true
+    },
+    "diagnosis_boundary": "Exploratory opacity texture or pattern quantification cannot confirm pneumonia; measurement support requires lung-field ROI, candidate mask QC, and clinical correlation.",
     "image_feature_quantification": [
       {
         "feature_name": "opacity_texture_score",
@@ -303,18 +311,21 @@
         "measurement_name": "opacity_area_ratio",
         "target": "lung_opacity",
         "requires": ["lung_fields_roi", "candidate_mask_qc"],
+        "quality_requirements": ["lung_fields_roi", "candidate_mask_qc", "projection_quality"],
         "measurement_usable_default": false
       },
       {
         "measurement_name": "laterality_and_zone",
         "target": "lung_opacity",
         "requires": ["lung_fields_roi", "candidate_mask_qc"],
+        "quality_requirements": ["lung_fields_roi", "candidate_mask_qc", "view_quality"],
         "measurement_usable_default": false
       },
       {
         "measurement_name": "pleural_effusion_present",
         "target": "pleural_effusion",
         "requires": ["pleural_space_roi", "image_quality"],
+        "quality_requirements": ["pleural_space_roi", "image_quality"],
         "measurement_usable_default": false
       }
     ]
