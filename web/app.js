@@ -960,17 +960,36 @@ async function loadSkillProtocolComparison() {
 function renderSkillProtocolComparison(payload) {
   const versions = Array.isArray(payload.versions) ? payload.versions : [];
   const evaluation = payload.evaluation_summary || {};
+  const takeaway = payload.comparison_takeaway || {};
   elements.skillProtocolComparisonView.innerHTML = `
     <div class="skill-comparison-workspace">
       <section class="skill-comparison-summary">
         <h3>${escapeHtml(payload.title || "Skill 版本对比")}</h3>
         <p>${escapeHtml(payload.safety_note || "该对比只用于 protocol coverage 审阅。")}</p>
+        ${renderSkillComparisonTakeaway(takeaway)}
         ${renderSkillComparisonCoverage(evaluation)}
       </section>
       <div class="skill-version-grid">
         ${versions.map(renderSkillVersionCard).join("") || '<div class="trace-empty">暂无版本信息</div>'}
       </div>
     </div>
+  `;
+}
+
+function renderSkillComparisonTakeaway(takeaway) {
+  const advantages = Array.isArray(takeaway.advantages) ? takeaway.advantages : [];
+  return `
+    <article class="skill-takeaway-card">
+      <strong>${escapeHtml(takeaway.title || "新版强在哪")}</strong>
+      <p>${escapeHtml(takeaway.summary || "新版把 finding-list baseline 升级为 Evidence protocol：不仅列出征象，还说明如何获取证据、哪些需要量化、哪些不能直接诊断。")}</p>
+      <ul>
+        ${(advantages.length ? advantages : [
+          "将软骨下骨骨折作为独立证据项，而不是混在塌陷里。",
+          "明确哪些征象需要候选分割，哪些只能作为 VLM 观察。",
+          "把纹理紊乱、塌陷程度、坏死面积比例等量化入口折叠管理。",
+        ]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+      </ul>
+    </article>
   `;
 }
 
@@ -1006,6 +1025,7 @@ function renderSkillVersionCard(version) {
   const names = Array.isArray(version.finding_names) ? version.finding_names : [];
   const targets = Array.isArray(version.evidence_targets) ? version.evidence_targets : [];
   const quantitative = Array.isArray(version.quantitative_items) ? version.quantitative_items : [];
+  const quantificationGroups = Array.isArray(version.quantification_groups) ? version.quantification_groups : [];
   const limits = Array.isArray(version.human_readable_limits) ? version.human_readable_limits : [];
   const versionLabel = version.label || skillComparisonFallbackLabels[version.version_key] || "Skill 版本";
   return `
@@ -1028,17 +1048,14 @@ function renderSkillVersionCard(version) {
           ${targets.map((target) => `
             <div>
               <strong>${escapeHtml(target.name || target.target || "")}</strong>
-              <span>${escapeHtml(target.evidence_mode || "")}</span>
+              <span>${escapeHtml(target.evidence_mode || "")}${target.needs_quantification ? " · 需要量化" : ""}</span>
               <em>${escapeHtml(target.diagnosis_role || "")}</em>
             </div>
           `).join("")}
         </div>
       ` : ""}
       ${quantitative.length ? `
-        <div class="skill-readable-block">
-          <strong>量化入口</strong>
-          <p>${escapeHtml(quantitative.join("、"))}</p>
-        </div>
+        ${renderQuantificationNeedDetails(quantificationGroups, quantitative)}
       ` : ""}
       ${limits.length ? `
         <div class="skill-readable-block">
@@ -1047,6 +1064,43 @@ function renderSkillVersionCard(version) {
         </div>
       ` : ""}
     </article>
+  `;
+}
+
+function renderQuantificationNeedDetails(groups, quantitativeItems) {
+  const hasGroups = Array.isArray(groups) && groups.some((group) => Array.isArray(group.items) && group.items.length);
+  return `
+    <details class="skill-quantification-details">
+      <summary>哪些指标需要量化</summary>
+      ${hasGroups ? groups.map(renderQuantificationGroup).join("") : `
+        <div class="skill-readable-block">
+          <strong>量化入口</strong>
+          <p>${escapeHtml((quantitativeItems || []).join("、"))}</p>
+        </div>
+      `}
+    </details>
+  `;
+}
+
+function renderQuantificationGroup(group) {
+  const items = Array.isArray(group.items) ? group.items : [];
+  if (!items.length) {
+    return "";
+  }
+  return `
+    <section class="skill-quantification-group">
+      <strong>${escapeHtml(group.label || "量化指标")}</strong>
+      <p>${escapeHtml(group.summary || "")}</p>
+      <div>
+        ${items.map((item) => `
+          <article>
+            <span>${escapeHtml(item.name || "")}</span>
+            <b>${escapeHtml(item.human_target || item.target || "")}</b>
+            <em>${escapeHtml(item.reason || "")}</em>
+          </article>
+        `).join("")}
+      </div>
+    </section>
   `;
 }
 

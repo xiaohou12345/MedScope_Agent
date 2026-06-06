@@ -1504,6 +1504,35 @@ body.lightbox-open {
   gap: 10px;
 }
 
+.skill-takeaway-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #b8d5df;
+  border-radius: 8px;
+  background: #f5fbfd;
+  padding: 14px;
+}
+
+.skill-takeaway-card strong {
+  font-size: 14px;
+}
+
+.skill-takeaway-card p,
+.skill-takeaway-card li {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.skill-takeaway-card p,
+.skill-takeaway-card ul {
+  margin: 0;
+}
+
+.skill-takeaway-card ul {
+  padding-left: 18px;
+}
+
 .skill-comparison-summary h3 {
   margin: 0;
   font-size: 16px;
@@ -1602,6 +1631,65 @@ body.lightbox-open {
 .skill-readable-block {
   border-top: 1px solid var(--line);
   padding-top: 10px;
+}
+
+.skill-quantification-details {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.skill-quantification-details summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.skill-quantification-group {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.skill-quantification-group > strong {
+  font-size: 13px;
+}
+
+.skill-quantification-group p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.skill-quantification-group > div {
+  display: grid;
+  gap: 8px;
+}
+
+.skill-quantification-group article {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(100px, 0.55fr) minmax(180px, 1fr);
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.skill-quantification-group span,
+.skill-quantification-group b,
+.skill-quantification-group em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.skill-quantification-group em {
+  color: var(--muted);
+  font-style: normal;
 }
 
 .skill-readable-block ul {
@@ -1742,6 +1830,7 @@ body.lightbox-open {
 @media (max-width: 980px) {
   .skill-version-grid,
   .skill-target-table div,
+  .skill-quantification-group article,
   .skill-review-layout,
   .doctor-edit-grid {
     grid-template-columns: 1fr;

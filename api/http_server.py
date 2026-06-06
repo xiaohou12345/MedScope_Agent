@@ -404,6 +404,8 @@ def _skill_protocol_comparison(
 ) -> dict:
     baseline_skill = _load_finding_list_baseline(skill_key=skill_key, skills_dir=skills_dir)
     disease_name = current_skill.get("disease_name") or baseline_skill.get("disease_name") or skill_key
+    current_summary = _evidence_protocol_version_summary(current_skill)
+    evaluation_summary = _skill_comparison_evaluation_summary(output_root)
     return {
         "schema_version": "skill_protocol_comparison.v1",
         "skill_key": skill_key,
@@ -416,9 +418,10 @@ def _skill_protocol_comparison(
         },
         "versions": [
             _finding_list_version_summary(baseline_skill),
-            _evidence_protocol_version_summary(current_skill),
+            current_summary,
         ],
-        "evaluation_summary": _skill_comparison_evaluation_summary(output_root),
+        "comparison_takeaway": _skill_comparison_takeaway(current_summary, evaluation_summary),
+        "evaluation_summary": evaluation_summary,
         "safety_note": "该对比只说明 protocol coverage，不等同于诊断准确率；正式诊断仍需完整 evidence bundle 和医生审核。",
     }
 
@@ -470,12 +473,29 @@ def _finding_list_version_summary(skill: dict) -> dict:
 def _evidence_protocol_version_summary(skill: dict) -> dict:
     protocol = skill.get("visual_protocol") or {}
     quantitative = skill.get("quantitative_evidence_protocol") or {}
+    target_name_by_key = {
+        str(target.get("target")): str(target.get("display_name") or target.get("target"))
+        for target in protocol.get("finding_targets") or []
+        if isinstance(target, dict) and target.get("target")
+    }
+    quantitative_groups = _quantification_groups(quantitative, target_name_by_key)
+    quantified_targets = {
+        item["target"]
+        for group in quantitative_groups
+        for item in group["items"]
+        if item.get("target")
+    }
     findings = [
         {
             "name": str(target.get("display_name") or target.get("target") or ""),
             "target": target.get("target"),
             "evidence_mode": _execution_mode_label(target.get("execution_mode")),
             "diagnosis_role": _diagnosis_usable_label(target.get("diagnosis_usable_level")),
+            "needs_quantification": (
+                target.get("target") in quantified_targets
+                or target.get("execution_mode") == "measurement_only"
+            ),
+            "quantification_reason": _quantification_reason(target, target.get("target") in quantified_targets),
         }
         for target in protocol.get("finding_targets") or []
         if isinstance(target, dict)
@@ -499,10 +519,128 @@ def _evidence_protocol_version_summary(skill: dict) -> dict:
         "has_quantitative_protocol": bool(quantitative),
         "quantitative_items": measurement_names,
         "quantitative_item_count": len(measurement_names),
+        "quantification_groups": quantitative_groups,
+        "why_better_than_baseline": [
+            "把影像表现拆成可执行证据：VLM 观察、候选分割、几何/形态测量和证据不足边界。",
+            "把软骨下骨骨折单独建模为 X-ray 候选证据，不再混在股骨头塌陷里。",
+            "把纹理/骨小梁紊乱与塌陷深度、坏死面积比例等量化入口分开管理。",
+            "明确候选 mask 和探索性量化不能单独确诊，需要质量门和医生审核。",
+        ],
         "human_readable_limits": [
             "候选 mask 不能自动升级为确诊证据。",
             "量化测量需要 ROI、轮廓、landmark 或质量门通过后才可用于支持判断。",
         ],
+    }
+
+
+def _quantification_groups(quantitative: dict, target_name_by_key: dict[str, str]) -> list[dict]:
+    image_features = [
+        _quantification_item(
+            item=item,
+            name_key="feature_name",
+            target_name_by_key=target_name_by_key,
+            reason="用于发现纹理紊乱、骨小梁结构紊乱等肉眼不稳定征象；当前属于探索性，不直接确诊。",
+        )
+        for item in quantitative.get("image_feature_quantification") or []
+        if isinstance(item, dict)
+    ]
+    measurements = [
+        _quantification_item(
+            item=item,
+            name_key="measurement_name",
+            target_name_by_key=target_name_by_key,
+            reason="用于测量塌陷深度、坏死面积比例、软骨下骨折范围或左右不对称；需要 ROI/轮廓/质量门通过后才可作为支持证据。",
+        )
+        for item in quantitative.get("measurement_evidence") or []
+        if isinstance(item, dict)
+    ]
+    return [
+        {
+            "group_key": "image_feature_quantification",
+            "label": "影像特征量化",
+            "summary": "用于发现纹理紊乱、骨小梁结构紊乱、局部密度模式等不适合直接画成稳定 mask 的特征。",
+            "items": image_features,
+        },
+        {
+            "group_key": "geometric_or_morphologic_measurement",
+            "label": "几何 / 形态测量",
+            "summary": "用于判断塌陷程度、坏死面积比例、软骨下骨折范围、股骨头形态和左右对称性等需要量化支持的证据。",
+            "items": measurements,
+        },
+    ]
+
+
+def _quantification_item(
+    *,
+    item: dict,
+    name_key: str,
+    target_name_by_key: dict[str, str],
+    reason: str,
+) -> dict:
+    name = str(item.get(name_key) or "")
+    target = str(item.get("target") or _infer_target_from_quantification_name(name))
+    return {
+        "name": name,
+        "target": target,
+        "human_target": target_name_by_key.get(target, _humanize_target(target)),
+        "reason": reason,
+        "quality_gate": "、".join(str(value) for value in item.get("quality_requirements") or []),
+        "diagnosis_boundary": "量化结果只能作为 evidence bundle 的支持项，不能替代影像证据和医生审核。",
+    }
+
+
+def _infer_target_from_quantification_name(name: str) -> str:
+    if "subchondral_fracture" in name:
+        return "subchondral_fracture"
+    if "collapse" in name:
+        return "collapse"
+    if "trabecular" in name or "texture" in name:
+        return "trabecular_blurring"
+    if "sclerotic" in name or "sclerosis" in name:
+        return "sclerotic_band"
+    if "cystic" in name:
+        return "cystic_change"
+    if "asymmetry" in name:
+        return "bilateral_femoral_heads"
+    return ""
+
+
+def _humanize_target(target: str) -> str:
+    labels = {
+        "collapse": "股骨头塌陷",
+        "subchondral_fracture": "软骨下骨骨折",
+        "trabecular_blurring": "骨小梁模糊或纹理紊乱",
+        "sclerotic_band": "硬化带",
+        "cystic_change": "囊性变",
+        "sclerotic_band_or_cystic_change": "硬化带或囊性变",
+        "bilateral_femoral_heads": "双侧股骨头",
+    }
+    return labels.get(target, target or "未标注 target")
+
+
+def _quantification_reason(target: dict, has_quantitative_target: bool) -> str:
+    if target.get("execution_mode") == "measurement_only":
+        return "该征象主要依赖轮廓、ROI 或 landmark 测量，不能只靠候选框判断。"
+    if has_quantitative_target:
+        return "该征象有对应量化入口，用于评估范围、比例或纹理强度。"
+    return "当前主要作为候选观察或候选分割证据。"
+
+
+def _skill_comparison_takeaway(current_summary: dict, evaluation_summary: dict) -> dict:
+    missing = evaluation_summary.get("baseline_missing_labels") or []
+    coverage_text = ""
+    if evaluation_summary.get("status") == "available":
+        coverage_text = (
+            f"真实 X-ray 标注中，新版覆盖 {evaluation_summary.get('current_coverage')}，"
+            f"旧版覆盖 {evaluation_summary.get('baseline_coverage')}。"
+        )
+    advantages = list(current_summary.get("why_better_than_baseline") or [])
+    if missing:
+        advantages.insert(0, f"真实 X-ray 对比中，旧版漏掉 {'、'.join(missing)}；新版把它作为独立 evidence target。")
+    return {
+        "title": "新版强在哪",
+        "summary": coverage_text or "新版强在把 finding list 升级为可执行 evidence protocol。",
+        "advantages": advantages,
     }
 
 
