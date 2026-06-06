@@ -250,6 +250,11 @@ def build_research_evidence_review_package(
         proposal=proposal,
         review_artifact=review_artifact,
     )
+    controlled_skill_extension_draft = _build_controlled_skill_extension_draft(
+        proposal=proposal,
+        review_artifact=review_artifact,
+        promotion_dry_run=promotion_dry_run,
+    )
     package = {
         "schema_version": "research_evidence_review_package.v1",
         "disease_key": disease_key,
@@ -262,6 +267,7 @@ def build_research_evidence_review_package(
         "gateway_review_artifact": review_artifact,
         "human_review_checklist": human_review_checklist,
         "promotion_dry_run": promotion_dry_run,
+        "controlled_skill_extension_draft": controlled_skill_extension_draft,
         "runtime_safety": {
             "candidate_artifacts_only": True,
             "formal_skill_updated": False,
@@ -1168,6 +1174,152 @@ def _build_research_promotion_dry_run(
     }
 
 
+def _build_controlled_skill_extension_draft(
+    *,
+    proposal: dict[str, Any],
+    review_artifact: dict[str, Any],
+    promotion_dry_run: dict[str, Any],
+) -> dict[str, Any]:
+    candidate_by_item_id = {
+        str(candidate.get("item_id")): candidate
+        for candidate in proposal.get("candidate_extensions") or []
+    }
+    proposed_updates = [
+        _build_controlled_section_update(
+            review_item=item,
+            candidate=candidate_by_item_id.get(str(item.get("item_id")), {}),
+        )
+        for item in review_artifact.get("review_items") or []
+    ]
+    blocked_count = sum(
+        1 for item in proposed_updates if item["quality_gate_decision"] == "blocked"
+    )
+    conflict_count = sum(
+        1
+        for item in proposed_updates
+        if item["guideline_conflict_status"] == "human_review_required"
+    )
+    draft_status = "blocked_by_gateway" if blocked_count else "pending_human_review"
+    return {
+        "schema_version": "controlled_skill_extension_draft.v1",
+        "draft_status": draft_status,
+        "source_proposal_schema_version": proposal.get("schema_version"),
+        "source_proposal_status": proposal.get("proposal_status"),
+        "target_skill_id": proposal.get("target_skill_id"),
+        "disease_key": proposal.get("disease_key"),
+        "proposed_section_updates": proposed_updates,
+        "guideline_conflict_summary": {
+            "blocked_count": blocked_count,
+            "guideline_conflict_count": conflict_count,
+            "human_review_required_count": sum(
+                1 for item in proposed_updates if item["human_review_required"]
+            ),
+        },
+        "promotion_dry_run_diff": {
+            "source_promotion_status": promotion_dry_run.get("promotion_status"),
+            "proposed_section_updates": [
+                {
+                    "item_id": item.get("item_id"),
+                    "target_protocol_section": item.get("target_protocol_section"),
+                    "suggested_section_action": item.get("suggested_section_action"),
+                    "evidence_use_label": item.get("evidence_use_label"),
+                }
+                for item in proposed_updates
+            ],
+            "formal_skill_file_changed": False,
+            "diagnosis_flow_changed": False,
+        },
+        "human_review_required": True,
+        "runtime_safety": {
+            "controlled_draft_only": True,
+            "research_mode_only": True,
+            "formal_skill_updated": False,
+            "formal_guideline_updated": False,
+            "diagnosis_report_updated": False,
+            "formal_update_allowed": False,
+            "diagnosis_allowed": False,
+        },
+    }
+
+
+def _build_controlled_section_update(
+    *,
+    review_item: dict[str, Any],
+    candidate: dict[str, Any],
+) -> dict[str, Any]:
+    quality_gate_decision = str(review_item.get("quality_gate_decision") or "")
+    conflict_status = str(review_item.get("guideline_conflict_status") or "")
+    conflict_reasons = list(review_item.get("conflict_reasons") or [])
+    evidence_level = str(candidate.get("evidence_level") or "unknown")
+    evidence_use_label = _controlled_evidence_use_label(
+        quality_gate_decision=quality_gate_decision,
+        conflict_status=conflict_status,
+        evidence_level=evidence_level,
+    )
+    promotion_allowed_after_review = (
+        quality_gate_decision != "blocked"
+        and conflict_status != "human_review_required"
+    )
+    return {
+        "item_id": review_item.get("item_id"),
+        "candidate_type": review_item.get("candidate_type"),
+        "source_id": review_item.get("source_id"),
+        "target_protocol_section": review_item.get("target_protocol_section"),
+        "suggested_section_action": _controlled_suggested_section_action(
+            candidate_type=str(review_item.get("candidate_type") or ""),
+            evidence_use_label=evidence_use_label,
+            promotion_allowed_after_review=promotion_allowed_after_review,
+        ),
+        "evidence_level": evidence_level,
+        "evidence_use_label": evidence_use_label,
+        "quality_gate_decision": quality_gate_decision,
+        "guideline_conflict_status": conflict_status,
+        "conflict_reasons": conflict_reasons,
+        "human_review_required": True,
+        "research_mode_only": True,
+        "exploratory_only": bool(review_item.get("exploratory_only")),
+        "promotion_allowed_after_review": promotion_allowed_after_review,
+        "formal_update_allowed": False,
+        "diagnosis_allowed": False,
+    }
+
+
+def _controlled_evidence_use_label(
+    *,
+    quality_gate_decision: str,
+    conflict_status: str,
+    evidence_level: str,
+) -> str:
+    if quality_gate_decision == "blocked":
+        return "research_only"
+    if conflict_status == "human_review_required":
+        return "exploratory"
+    if evidence_level in {"moderate", "high", "consensus"}:
+        return "supplemental"
+    return "exploratory"
+
+
+def _controlled_suggested_section_action(
+    *,
+    candidate_type: str,
+    evidence_use_label: str,
+    promotion_allowed_after_review: bool,
+) -> str:
+    if not promotion_allowed_after_review:
+        if evidence_use_label == "research_only":
+            return "do_not_promote_blocked_item"
+        return "keep_as_exploratory_research_extension"
+    if candidate_type == "candidate_measurement_protocol":
+        return "add_research_mode_supplemental_measurement"
+    if candidate_type == "differential_diagnosis_clue":
+        return "add_research_mode_differential_clue"
+    if candidate_type == "clinical_risk_context_clue":
+        return "add_research_mode_clinical_context_clue"
+    if candidate_type == "candidate_quality_gate_rule":
+        return "add_research_mode_quality_gate_note"
+    return "add_research_mode_supplemental_skill_extension"
+
+
 def _dedupe_strings(values: list[Any]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
@@ -1264,6 +1416,8 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     checklist_path = output / "human_review_checklist.json"
     checklist_md_path = output / "human_review_checklist.md"
     dry_run_path = output / "research_promotion_dry_run.json"
+    draft_path = output / "controlled_skill_extension_draft.json"
+    draft_md_path = output / "controlled_skill_extension_draft.md"
     package_path = output / "research_evidence_review_package.json"
     package["output_paths"] = {
         "review_package_json_path": str(package_path),
@@ -1274,6 +1428,8 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
         "human_review_checklist_json_path": str(checklist_path),
         "human_review_checklist_md_path": str(checklist_md_path),
         "promotion_dry_run_json_path": str(dry_run_path),
+        "controlled_skill_extension_draft_json_path": str(draft_path),
+        "controlled_skill_extension_draft_md_path": str(draft_md_path),
     }
     review_path.write_text(
         json.dumps(package["gateway_review_artifact"], ensure_ascii=False, indent=2),
@@ -1293,6 +1449,20 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     )
     dry_run_path.write_text(
         json.dumps(package["promotion_dry_run"], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    draft_path.write_text(
+        json.dumps(
+            package["controlled_skill_extension_draft"],
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    draft_md_path.write_text(
+        _render_controlled_skill_extension_draft_markdown(
+            package["controlled_skill_extension_draft"]
+        ),
         encoding="utf-8",
     )
     package_path.write_text(
@@ -1327,6 +1497,35 @@ def _render_human_review_checklist_markdown(checklist: dict[str, Any]) -> str:
         lines.append(
             "| {item_id} | {candidate_type} | {quality_gate_decision} | "
             "{guideline_conflict_status} | {review_status} |".format(**item)
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _render_controlled_skill_extension_draft_markdown(draft: dict[str, Any]) -> str:
+    safety = draft.get("runtime_safety") or {}
+    lines = [
+        "# Controlled Skill Extension Draft",
+        "",
+        "This is a proposal-only draft for human review.",
+        "",
+        f"- `draft_status`: `{draft.get('draft_status')}`",
+        f"- `target_skill_id`: `{draft.get('target_skill_id')}`",
+        "- `formal_update_allowed=false`",
+        f"- `diagnosis_allowed={str(safety.get('diagnosis_allowed')).lower()}`",
+        "- `formal_skill_updated=false`",
+        "- `diagnosis_report_updated=false`",
+        "",
+        "## Proposed Section Updates",
+        "",
+        "| item_id | type | source | section | evidence | use | conflict | action |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in draft.get("proposed_section_updates") or []:
+        lines.append(
+            "| {item_id} | {candidate_type} | {source_id} | {target_protocol_section} | "
+            "{evidence_level} | {evidence_use_label} | {guideline_conflict_status} | "
+            "{suggested_section_action} |".format(**item)
         )
     lines.append("")
     return "\n".join(lines)

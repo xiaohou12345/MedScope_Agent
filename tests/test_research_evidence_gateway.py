@@ -369,6 +369,83 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertTrue((root / "review" / "research_promotion_dry_run.json").exists())
             self.assertTrue((root / "review" / "research_gateway_review_artifact.json").exists())
 
+    def test_review_package_generates_controlled_skill_extension_draft(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            package = build_research_evidence_review_package(
+                disease_key="femoral_head_necrosis",
+                target_skill_id="femoral_head_necrosis_v0.1",
+                modality="MRI",
+                research_question="MRI necrotic area ratio as supplemental measurement",
+                supplied_metadata=[
+                    {
+                        "source_id": "study_necrotic_ratio",
+                        "title": "MRI necrotic area ratio for ONFH staging",
+                        "source_type": "journal article",
+                        "publication_year": 2025,
+                        "study_design": "multi center retrospective",
+                        "sample_size": 420,
+                        "modality": "MRI",
+                        "population": "adult hip pain cohort",
+                        "evidence_level": "moderate",
+                        "candidate_claim_type": "candidate_measurement_protocol",
+                        "target_protocol_section": (
+                            "quantitative_evidence_protocol.measurement_evidence"
+                        ),
+                    }
+                ],
+                guideline_skill={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "supported_modalities": ["MRI"],
+                    "evidence_protocol_sections": [
+                        "quantitative_evidence_protocol.measurement_evidence"
+                    ],
+                },
+                output_dir=root / "review",
+            )
+
+            draft = package["controlled_skill_extension_draft"]
+            self.assertEqual(draft["schema_version"], "controlled_skill_extension_draft.v1")
+            self.assertEqual(draft["draft_status"], "pending_human_review")
+            self.assertEqual(
+                draft["source_proposal_schema_version"],
+                package["proposal"]["schema_version"],
+            )
+            self.assertEqual(draft["target_skill_id"], "femoral_head_necrosis_v0.1")
+            self.assertTrue(draft["human_review_required"])
+            self.assertFalse(draft["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(draft["runtime_safety"]["formal_guideline_updated"])
+            self.assertFalse(draft["runtime_safety"]["diagnosis_report_updated"])
+            self.assertFalse(draft["runtime_safety"]["formal_update_allowed"])
+            self.assertFalse(draft["runtime_safety"]["diagnosis_allowed"])
+
+            update = draft["proposed_section_updates"][0]
+            self.assertEqual(update["source_id"], "study_necrotic_ratio")
+            self.assertEqual(update["candidate_type"], "candidate_measurement_protocol")
+            self.assertEqual(
+                update["target_protocol_section"],
+                "quantitative_evidence_protocol.measurement_evidence",
+            )
+            self.assertEqual(update["evidence_level"], "moderate")
+            self.assertEqual(update["evidence_use_label"], "supplemental")
+            self.assertEqual(update["guideline_conflict_status"], "no_direct_conflict_detected")
+            self.assertEqual(update["conflict_reasons"], [])
+            self.assertEqual(
+                update["suggested_section_action"],
+                "add_research_mode_supplemental_measurement",
+            )
+            self.assertTrue(update["human_review_required"])
+            self.assertTrue(update["research_mode_only"])
+            self.assertFalse(update["formal_update_allowed"])
+            self.assertFalse(update["diagnosis_allowed"])
+            self.assertIn("proposed_section_updates", draft["promotion_dry_run_diff"])
+            self.assertTrue(
+                (root / "review" / "controlled_skill_extension_draft.json").exists()
+            )
+            self.assertTrue(
+                (root / "review" / "controlled_skill_extension_draft.md").exists()
+            )
+
     def test_review_package_blocks_weak_claim_and_keeps_promotion_dry_run_read_only(self) -> None:
         package = build_research_evidence_review_package(
             disease_key="community_acquired_pneumonia",
@@ -402,6 +479,52 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         self.assertFalse(package["promotion_dry_run"]["formal_update_allowed"])
         self.assertFalse(package["promotion_dry_run"]["diagnosis_allowed"])
         self.assertTrue(package["gateway_review_artifact"]["review_items"][0]["diagnosis_report_forbidden"])
+
+    def test_controlled_skill_extension_draft_blocks_conflicted_or_weak_items(self) -> None:
+        package = build_research_evidence_review_package(
+            disease_key="community_acquired_pneumonia",
+            target_skill_id="pneumonia_chest_xray_v0.1",
+            modality="Chest X-ray",
+            research_question="AI opacity score for pneumonia",
+            supplied_metadata=[
+                {
+                    "source_id": "weak_preprint",
+                    "title": "Small preprint model for opacity detection",
+                    "source_type": "preprint",
+                    "year": 2017,
+                    "study_design": "single center retrospective",
+                    "sample_size": 18,
+                    "modality": "Chest CT",
+                    "population": "pediatric ICU cohort",
+                    "evidence_level": "low",
+                    "candidate_claim_type": "candidate_skill_extension",
+                }
+            ],
+            guideline_skill={
+                "skill_id": "pneumonia_chest_xray_v0.1",
+                "supported_modalities": ["Chest X-ray"],
+                "evidence_protocol_sections": ["integrated_reasoning_protocol"],
+            },
+        )
+
+        draft = package["controlled_skill_extension_draft"]
+        self.assertEqual(draft["schema_version"], "controlled_skill_extension_draft.v1")
+        self.assertEqual(draft["draft_status"], "blocked_by_gateway")
+        self.assertEqual(draft["guideline_conflict_summary"]["blocked_count"], 1)
+        self.assertFalse(draft["runtime_safety"]["formal_update_allowed"])
+        self.assertFalse(draft["runtime_safety"]["diagnosis_allowed"])
+
+        update = draft["proposed_section_updates"][0]
+        self.assertEqual(update["source_id"], "weak_preprint")
+        self.assertEqual(update["evidence_use_label"], "research_only")
+        self.assertEqual(update["suggested_section_action"], "do_not_promote_blocked_item")
+        self.assertEqual(update["guideline_conflict_status"], "human_review_required")
+        self.assertIn("modality_not_in_guideline_skill", update["conflict_reasons"])
+        self.assertTrue(update["research_mode_only"])
+        self.assertTrue(update["exploratory_only"])
+        self.assertFalse(update["promotion_allowed_after_review"])
+        self.assertFalse(update["formal_update_allowed"])
+        self.assertFalse(update["diagnosis_allowed"])
 
     def test_cli_builds_full_review_package_from_request_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
