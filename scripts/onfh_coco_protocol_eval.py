@@ -76,6 +76,8 @@ def run_onfh_coco_protocol_evaluation(
     output_dir: Path | str = DEFAULT_OUTPUT_DIR,
     baseline_skill_path: Path | str = DEFAULT_BASELINE_SKILL,
     current_skill_path: Path | str = DEFAULT_CURRENT_SKILL,
+    primary_modality: str = "Xray",
+    include_auxiliary_modalities: bool = False,
 ) -> dict[str, Any]:
     package = Path(package_dir)
     output = Path(output_dir)
@@ -108,9 +110,13 @@ def run_onfh_coco_protocol_evaluation(
     current_covered_count = 0
     baseline_covered_count = 0
     total_mask_area_px = 0.0
+    evaluated_annotation_count = 0
+    auxiliary_excluded_annotation_count = 0
     annotations_by_label: Counter[str] = Counter()
     images_by_label: dict[str, set[int]] = defaultdict(set)
     modalities_by_label: dict[str, Counter[str]] = defaultdict(Counter)
+    auxiliary_excluded_by_label: Counter[str] = Counter()
+    evaluated_image_ids: set[int] = set()
 
     for annotation in coco.get("annotations") or []:
         if not isinstance(annotation, dict):
@@ -119,11 +125,20 @@ def run_onfh_coco_protocol_evaluation(
         image_id = int(annotation.get("image_id") or 0)
         image = images_by_id.get(image_id, {})
         manifest = manifest_by_image_id.get(image_id, {})
+        modality = str(manifest.get("modality") or _infer_modality(category, image.get("file_name")))
+        if not include_auxiliary_modalities and _normalize_modality(modality) != _normalize_modality(
+            primary_modality
+        ):
+            auxiliary_excluded_annotation_count += 1
+            auxiliary_excluded_by_label[category] += 1
+            continue
+
         area = float(annotation.get("area") or 0)
         total_mask_area_px += area
+        evaluated_annotation_count += 1
+        evaluated_image_ids.add(image_id)
         annotations_by_label[category] += 1
         images_by_label[category].add(image_id)
-        modality = str(manifest.get("modality") or _infer_modality(category, image.get("file_name")))
         modalities_by_label[category][modality] += 1
 
         mapping = _label_mapping(
@@ -162,22 +177,49 @@ def run_onfh_coco_protocol_evaluation(
             current_targets=current_targets,
             current_quantitative_targets=current_quantitative_targets,
         )
+        if not include_auxiliary_modalities and auxiliary_excluded_by_label[label]:
+            mapping = {
+                **mapping,
+                "current_protocol_status": "auxiliary_excluded",
+                "baseline_status": "auxiliary_excluded",
+                "quantitative_protocol_status": "auxiliary_excluded",
+            }
         label_stats[label] = {
             **mapping,
             "annotation_count": annotations_by_label[label],
             "image_count": len(images_by_label[label]),
             "modalities": dict(sorted(modalities_by_label[label].items())),
+            "auxiliary_excluded_annotation_count": auxiliary_excluded_by_label[label],
         }
 
     payload = {
         "schema_version": "onfh_coco_protocol_evaluation.v1",
+        "evaluation_scope": {
+            "primary_modality": primary_modality,
+            "include_auxiliary_modalities": include_auxiliary_modalities,
+            "auxiliary_modalities_role": (
+                "excluded_from_primary_protocol_evaluation; retained only for future feature discovery"
+                if not include_auxiliary_modalities
+                else "included_for_auxiliary_discovery_analysis"
+            ),
+        },
         "dataset": {
             "package_dir": str(package),
             "coco_annotation_path": str(coco_path),
             "image_root": str(package / "images"),
-            "image_count": len(coco.get("images") or []),
-            "annotation_count": len(coco.get("annotations") or []),
+            "source_image_count": len(coco.get("images") or []),
+            "source_annotation_count": len(coco.get("annotations") or []),
+            "evaluated_image_count": len(evaluated_image_ids),
+            "evaluated_annotation_count": evaluated_annotation_count,
+            "auxiliary_excluded_annotation_count": auxiliary_excluded_annotation_count,
             "category_count": len(coco.get("categories") or []),
+        },
+        "auxiliary_modalities": {
+            "excluded_annotation_count": auxiliary_excluded_annotation_count,
+            "excluded_labels": sorted(
+                label for label, count in auxiliary_excluded_by_label.items() if count
+            ),
+            "excluded_label_counts": dict(sorted(auxiliary_excluded_by_label.items())),
         },
         "skill_comparison": {
             "baseline_skill_path": str(baseline_skill_path),
@@ -332,21 +374,27 @@ def _coverage_gaps(label_stats: dict[str, dict[str, Any]]) -> dict[str, list[str
             if stats.get("current_protocol_status") == "unmapped_label"
         ),
         "baseline_missing_labels": sorted(
-            label for label, stats in label_stats.items() if stats.get("baseline_status") == "gap"
+            label
+            for label, stats in label_stats.items()
+            if stats.get("baseline_status") == "gap" and stats.get("annotation_count", 0)
         ),
         "current_protocol_missing_labels": sorted(
-            label for label, stats in label_stats.items() if stats.get("current_protocol_status") == "gap"
+            label
+            for label, stats in label_stats.items()
+            if stats.get("current_protocol_status") == "gap" and stats.get("annotation_count", 0)
         ),
         "current_protocol_mri_specific_detail_needed": sorted(
             label
             for label, stats in label_stats.items()
             if stats.get("evidence_family") == "mri_specific_finding"
             and stats.get("protocol_gap_note")
+            and stats.get("annotation_count", 0)
         ),
         "quantitative_protocol_missing_targets": sorted(
             label
             for label, stats in label_stats.items()
             if stats.get("target") and stats.get("quantitative_protocol_status") == "gap"
+            and stats.get("annotation_count", 0)
         ),
     }
 
@@ -377,6 +425,15 @@ def _infer_modality(label: str, file_name: Any) -> str:
     return "unknown"
 
 
+def _normalize_modality(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"xray", "x-ray", "x ray", "xr"}:
+        return "xray"
+    if normalized == "mri":
+        return "mri"
+    return normalized
+
+
 def _render_markdown(payload: dict[str, Any]) -> str:
     aggregate = payload.get("aggregate") or {}
     gaps = payload.get("coverage_gaps") or {}
@@ -384,8 +441,12 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         "# ONFH COCO Protocol Evaluation",
         "",
         f"- `schema_version`: `{payload.get('schema_version')}`",
-        f"- `image_count`: `{payload.get('dataset', {}).get('image_count')}`",
-        f"- `annotation_count`: `{payload.get('dataset', {}).get('annotation_count')}`",
+        f"- `primary_modality`: `{payload.get('evaluation_scope', {}).get('primary_modality')}`",
+        f"- `include_auxiliary_modalities`: `{payload.get('evaluation_scope', {}).get('include_auxiliary_modalities')}`",
+        f"- `source_image_count`: `{payload.get('dataset', {}).get('source_image_count')}`",
+        f"- `source_annotation_count`: `{payload.get('dataset', {}).get('source_annotation_count')}`",
+        f"- `evaluated_annotation_count`: `{payload.get('dataset', {}).get('evaluated_annotation_count')}`",
+        f"- `auxiliary_excluded_annotation_count`: `{payload.get('dataset', {}).get('auxiliary_excluded_annotation_count')}`",
         f"- `mapped_annotation_count`: `{aggregate.get('mapped_annotation_count')}`",
         f"- `unmapped_annotation_count`: `{aggregate.get('unmapped_annotation_count')}`",
         f"- `current_protocol_covered_annotation_count`: `{aggregate.get('current_protocol_covered_annotation_count')}`",
@@ -436,12 +497,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--baseline-skill", default=str(DEFAULT_BASELINE_SKILL))
     parser.add_argument("--current-skill", default=str(DEFAULT_CURRENT_SKILL))
+    parser.add_argument("--primary-modality", default="Xray")
+    parser.add_argument("--include-auxiliary-modalities", action="store_true")
     args = parser.parse_args(argv)
     payload = run_onfh_coco_protocol_evaluation(
         package_dir=Path(args.package_dir),
         output_dir=Path(args.output_dir),
         baseline_skill_path=Path(args.baseline_skill),
         current_skill_path=Path(args.current_skill),
+        primary_modality=args.primary_modality,
+        include_auxiliary_modalities=args.include_auxiliary_modalities,
     )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
