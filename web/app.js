@@ -801,9 +801,10 @@ async function checkHealth() {
     const apiReady = body.api_route?.real_call_ready === true;
     const medsamReady = body.medsam2?.real_call_ready === true;
     const route = body.api_route?.active_route || "-";
-    const model = body.api_route?.model || "-";
+    const textModel = body.api_route?.model || "-";
+    const visionModel = body.api_route?.vision_model || "-";
     const message = body.status === "ok"
-      ? `API 已连接 · route=${route} · model=${model} · 模型${apiReady ? "已配置" : "未配置"} · MedSAM2${medsamReady ? "已配置" : "未配置"}`
+      ? `API 已连接 · route=${route} · text=${textModel} · vision=${visionModel} · 模型${apiReady ? "已配置" : "未配置"} · MedSAM2${medsamReady ? "已配置" : "未配置"}`
       : "API 状态异常";
     setStatus(message, body.status === "ok" ? (apiReady ? "ok" : "warn") : "warn");
   } catch (error) {

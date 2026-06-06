@@ -414,6 +414,9 @@ class HttpEntrypointTest(unittest.TestCase):
         ]
         self.assertIn("/v1/readiness", health_slice)
         self.assertIn("real_call_ready", health_slice)
+        self.assertIn("vision_model", health_slice)
+        self.assertIn("text=", health_slice)
+        self.assertIn("vision=", health_slice)
         self.assertIn("MedSAM2", health_slice)
         self.assertNotIn('fetch("/health")', health_slice)
 
