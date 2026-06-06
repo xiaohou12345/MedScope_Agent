@@ -6,13 +6,282 @@ import unittest
 from pathlib import Path
 
 from scripts.research_evidence_builder import (
+    ResearchClaimBuilder,
     ResearchEvidenceRetriever,
     build_research_evidence_proposal,
     build_research_evidence_proposal_from_request,
+    build_research_evidence_review_package,
 )
 
 
 class ResearchEvidenceGatewayTest(unittest.TestCase):
+    def test_claim_builder_generates_supported_candidate_claim_types_from_normalized_evidence(self) -> None:
+        normalized_evidence = [
+            {
+                "source_id": "study_texture",
+                "title": "MRI texture feature protocol for ONFH",
+                "year": 2025,
+                "publication_year": 2025,
+                "source_type": "peer_reviewed_journal",
+                "sample_size": 420,
+                "population": "adult hip pain cohort",
+                "modality": "MRI",
+                "study_design": "multi_center_retrospective",
+                "evidence_level": "moderate",
+                "research_question": "texture measurement protocol",
+                "candidate_claim_type": "candidate_measurement_protocol",
+                "target_protocol_section": "quantitative_evidence_protocol.image_feature_quantification",
+                "limitations": ["retrospective study"],
+                "requires_external_validation": True,
+            },
+            {
+                "source_id": "study_differential",
+                "title": "MRI signs distinguishing ONFH from degenerative hip disease",
+                "year": 2024,
+                "publication_year": 2024,
+                "source_type": "peer_reviewed_journal",
+                "sample_size": 160,
+                "population": "adult hip pain cohort",
+                "modality": "MRI",
+                "study_design": "prospective_validation",
+                "evidence_level": "moderate",
+                "research_question": "differential diagnosis clue",
+                "candidate_claim_type": "differential_diagnosis_clue",
+            },
+            {
+                "source_id": "study_steroid_risk",
+                "title": "Steroid exposure risk context for osteonecrosis",
+                "year": 2023,
+                "publication_year": 2023,
+                "source_type": "peer_reviewed_journal",
+                "sample_size": 520,
+                "population": "adult hip pain cohort",
+                "modality": "clinical_context",
+                "study_design": "multi_center_retrospective",
+                "evidence_level": "moderate",
+                "candidate_claim_type": "clinical_risk_context_clue",
+            },
+            {
+                "source_id": "study_gate",
+                "title": "Minimum external validation rule for radiomics features",
+                "year": 2025,
+                "publication_year": 2025,
+                "source_type": "consensus_statement",
+                "sample_size": 0,
+                "population": "adult hip pain cohort",
+                "modality": "MRI",
+                "study_design": "consensus",
+                "evidence_level": "consensus",
+                "candidate_claim_type": "candidate_quality_gate_rule",
+            },
+            {
+                "source_id": "study_extension",
+                "title": "MRI marrow edema as candidate skill extension",
+                "year": 2024,
+                "publication_year": 2024,
+                "source_type": "peer_reviewed_journal",
+                "sample_size": 240,
+                "population": "adult hip pain cohort",
+                "modality": "MRI",
+                "study_design": "multi_center_retrospective",
+                "evidence_level": "moderate",
+                "candidate_claim_type": "candidate_skill_extension",
+            },
+        ]
+
+        claims = ResearchClaimBuilder().build_claims(
+            disease_key="femoral_head_necrosis",
+            normalized_research_evidence=normalized_evidence,
+        )
+
+        self.assertEqual(
+            [claim["claim_type"] for claim in claims],
+            [
+                "candidate_measurement_protocol",
+                "differential_diagnosis_clue",
+                "clinical_risk_context_clue",
+                "candidate_quality_gate_rule",
+                "candidate_skill_extension",
+            ],
+        )
+        for claim in claims:
+            self.assertIn("claim_id", claim)
+            self.assertIn("summary", claim)
+            self.assertIn("source_id", claim)
+            self.assertIn("target_protocol_section", claim)
+            self.assertIn("modality", claim)
+            self.assertIn("applicability", claim)
+            self.assertIn("population", claim["applicability"])
+            self.assertIn("limitations", claim)
+            self.assertIn("evidence_level", claim)
+            self.assertTrue(claim["requires_external_validation"])
+            self.assertFalse(claim["formal_update_allowed"])
+            self.assertFalse(claim["diagnosis_allowed"])
+
+    def test_review_package_marks_guideline_conflict_and_generates_review_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            package = build_research_evidence_review_package(
+                disease_key="femoral_head_necrosis",
+                target_skill_id="femoral_head_necrosis_v0.1",
+                modality="MRI",
+                research_question="MRI texture protocol conflicts with current X-ray skill scope",
+                supplied_metadata=[
+                    {
+                        "source_id": "study_conflict_texture",
+                        "title": "MRI texture feature protocol for ONFH",
+                        "source_type": "journal article",
+                        "publication_year": 2025,
+                        "study_design": "multi center retrospective",
+                        "sample_size": 420,
+                        "modality": "MRI",
+                        "population": "adult hip pain cohort",
+                        "evidence_level": "moderate",
+                        "candidate_claim_type": "candidate_measurement_protocol",
+                        "target_protocol_section": "quantitative_evidence_protocol.image_feature_quantification",
+                    }
+                ],
+                guideline_skill={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "supported_modalities": ["X-ray"],
+                    "evidence_protocol_sections": ["imaging_evidence_protocol"],
+                },
+                output_dir=root / "review",
+            )
+
+            self.assertEqual(package["schema_version"], "research_evidence_review_package.v1")
+            self.assertEqual(package["proposal"]["schema_version"], "research_evidence_proposal.v1")
+            self.assertEqual(package["claim_builder"]["schema_version"], "research_claim_builder.v1")
+            review = package["gateway_review_artifact"]
+            self.assertEqual(review["schema_version"], "research_gateway_review_artifact.v1")
+            self.assertEqual(review["review_items"][0]["guideline_conflict_status"], "human_review_required")
+            self.assertTrue(review["review_items"][0]["exploratory_only"])
+            self.assertTrue(review["review_items"][0]["research_mode_only"])
+            self.assertTrue(review["review_items"][0]["diagnosis_report_forbidden"])
+            self.assertIn("modality_not_in_guideline_skill", review["review_items"][0]["conflict_reasons"])
+            self.assertFalse(review["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(review["runtime_safety"]["diagnosis_report_updated"])
+
+            checklist = package["human_review_checklist"]
+            self.assertEqual(checklist["schema_version"], "research_human_review_checklist.v1")
+            self.assertEqual(checklist["review_status"], "pending_human_review")
+            self.assertIn("guideline_conflict_review", checklist["required_review_steps"])
+            self.assertFalse(checklist["formal_update_allowed"])
+            self.assertFalse(checklist["diagnosis_allowed"])
+
+            dry_run = package["promotion_dry_run"]
+            self.assertEqual(dry_run["schema_version"], "research_promotion_dry_run.v1")
+            self.assertEqual(dry_run["promotion_status"], "proposal_only_pending_human_approval")
+            self.assertEqual(
+                dry_run["suggested_section_updates"][0]["target_protocol_section"],
+                "quantitative_evidence_protocol.image_feature_quantification",
+            )
+            self.assertFalse(dry_run["formal_skill_updated"])
+            self.assertFalse(dry_run["diagnosis_report_updated"])
+            self.assertTrue((root / "review" / "human_review_checklist.json").exists())
+            self.assertTrue((root / "review" / "human_review_checklist.md").exists())
+            self.assertTrue((root / "review" / "research_promotion_dry_run.json").exists())
+            self.assertTrue((root / "review" / "research_gateway_review_artifact.json").exists())
+
+    def test_review_package_blocks_weak_claim_and_keeps_promotion_dry_run_read_only(self) -> None:
+        package = build_research_evidence_review_package(
+            disease_key="community_acquired_pneumonia",
+            target_skill_id="pneumonia_chest_xray_v0.1",
+            modality="Chest X-ray",
+            research_question="AI opacity score for pneumonia",
+            supplied_metadata=[
+                {
+                    "source_id": "weak_preprint",
+                    "title": "Small preprint model for opacity detection",
+                    "source_type": "preprint",
+                    "year": 2017,
+                    "study_design": "single center retrospective",
+                    "sample_size": 18,
+                    "modality": "Chest CT",
+                    "population": "pediatric ICU cohort",
+                    "evidence_level": "low",
+                    "candidate_claim_type": "candidate_skill_extension",
+                }
+            ],
+            guideline_skill={
+                "skill_id": "pneumonia_chest_xray_v0.1",
+                "supported_modalities": ["Chest X-ray"],
+                "evidence_protocol_sections": ["integrated_reasoning_protocol"],
+            },
+        )
+
+        validation = package["proposal"]["quality_gate"]["claim_validations"][0]
+        self.assertEqual(validation["decision"], "blocked")
+        self.assertEqual(package["promotion_dry_run"]["promotion_status"], "blocked_by_quality_gate")
+        self.assertFalse(package["promotion_dry_run"]["formal_update_allowed"])
+        self.assertFalse(package["promotion_dry_run"]["diagnosis_allowed"])
+        self.assertTrue(package["gateway_review_artifact"]["review_items"][0]["diagnosis_report_forbidden"])
+
+    def test_cli_builds_full_review_package_from_request_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            request_path = root / "request.json"
+            output_dir = root / "review"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "disease_key": "femoral_head_necrosis",
+                        "target_skill_id": "femoral_head_necrosis_v0.1",
+                        "modality": "MRI",
+                        "research_question": "MRI texture protocol",
+                        "build_review_package": True,
+                        "guideline_skill": {
+                            "skill_id": "femoral_head_necrosis_v0.1",
+                            "supported_modalities": ["X-ray"],
+                            "evidence_protocol_sections": ["imaging_evidence_protocol"],
+                        },
+                        "supplied_metadata": [
+                            {
+                                "source_id": "study_cli_texture",
+                                "title": "MRI texture feature protocol for ONFH",
+                                "source_type": "journal article",
+                                "publication_year": 2025,
+                                "study_design": "multi center retrospective",
+                                "sample_size": 420,
+                                "modality": "MRI",
+                                "population": "adult hip pain cohort",
+                                "evidence_level": "moderate",
+                                "candidate_claim_type": "candidate_measurement_protocol",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "scripts.research_evidence_builder",
+                    "--input-json",
+                    str(request_path),
+                    "--output-dir",
+                    str(output_dir),
+                ],
+                cwd=Path.cwd(),
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["schema_version"], "research_evidence_review_package.v1")
+            self.assertEqual(payload["proposal"]["proposal_status"], "proposal_only")
+            self.assertFalse(payload["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(payload["runtime_safety"]["diagnosis_report_updated"])
+            self.assertTrue((output_dir / "research_evidence_proposal.json").exists())
+            self.assertTrue((output_dir / "research_gateway_review_artifact.json").exists())
+            self.assertTrue((output_dir / "human_review_checklist.json").exists())
+            self.assertTrue((output_dir / "human_review_checklist.md").exists())
+            self.assertTrue((output_dir / "research_promotion_dry_run.json").exists())
+
     def test_retriever_normalizes_supplied_metadata_without_pubmed_retrieval(self) -> None:
         class FailingPubMedClient:
             called = False

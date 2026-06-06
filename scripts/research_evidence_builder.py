@@ -21,6 +21,8 @@ ALLOWED_CANDIDATE_TYPES = {
     "candidate_skill_extension",
     "candidate_measurement_protocol",
     "candidate_quality_gate_rule",
+    "differential_diagnosis_clue",
+    "clinical_risk_context_clue",
 }
 TRUSTED_SOURCE_TYPES = {
     "peer_reviewed_journal",
@@ -106,6 +108,124 @@ class ResearchEvidenceRetriever:
                 "diagnosis_allowed": False,
             },
         }
+
+
+class ResearchClaimBuilder:
+    def build_claims(
+        self,
+        *,
+        disease_key: str,
+        normalized_research_evidence: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        claims: list[dict[str, Any]] = []
+        for index, evidence in enumerate(normalized_research_evidence, start=1):
+            claim_type = _normalize_claim_type(evidence.get("candidate_claim_type"))
+            claim = {
+                "claim_id": _build_claim_id(disease_key, evidence, index),
+                "claim_type": claim_type,
+                "summary": _build_claim_summary(evidence, claim_type),
+                "source_id": evidence.get("source_id"),
+                "target_protocol_section": _target_section_for_claim(evidence, claim_type),
+                "modality": evidence.get("modality") or "unknown",
+                "applicability": {
+                    "population": evidence.get("population") or "unknown",
+                    "requires_external_validation": True,
+                },
+                "limitations": _claim_limitations(evidence),
+                "evidence_level": evidence.get("evidence_level") or "unknown",
+                "requires_external_validation": bool(
+                    evidence.get("requires_external_validation", True)
+                ),
+                "formal_update_allowed": False,
+                "diagnosis_allowed": False,
+            }
+            claims.append(claim)
+        return claims
+
+
+def build_research_evidence_review_package(
+    *,
+    disease_key: str,
+    target_skill_id: str,
+    modality: str,
+    research_question: str,
+    supplied_metadata: list[dict[str, Any]] | None = None,
+    guideline_skill: dict[str, Any] | None = None,
+    pubmed_enabled: bool = False,
+    pubmed_limit: int = 10,
+    pubmed_client: PubMedMetadataClient | None = None,
+    output_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    retrieval = ResearchEvidenceRetriever(pubmed_client=pubmed_client).retrieve(
+        disease_key=disease_key,
+        modality=modality,
+        research_question=research_question,
+        supplied_metadata=supplied_metadata,
+        pubmed_enabled=pubmed_enabled,
+        pubmed_limit=pubmed_limit,
+    )
+    claims = ResearchClaimBuilder().build_claims(
+        disease_key=disease_key,
+        normalized_research_evidence=list(retrieval["normalized_research_evidence"]),
+    )
+    proposal = build_research_evidence_proposal(
+        disease_key=disease_key,
+        target_skill_id=target_skill_id,
+        sources=list(retrieval["normalized_research_evidence"]),
+        extracted_claims=claims,
+        output_dir=None,
+    )
+    proposal["research_evidence_retrieval"] = retrieval
+    proposal["normalized_research_evidence"] = list(
+        retrieval["normalized_research_evidence"]
+    )
+    proposal["claim_builder"] = _claim_builder_artifact(claims)
+    proposal["runtime_safety"].update(
+        {
+            "input_mode": "research_evidence_review_package",
+            "paper_search_performed": retrieval["runtime_safety"]["paper_search_performed"],
+            "research_metadata_normalized": True,
+            "candidate_claims_generated": True,
+            "candidate_artifacts_only": True,
+            "formal_skill_updated": False,
+            "formal_guideline_updated": False,
+            "diagnosis_report_updated": False,
+            "formal_update_allowed": False,
+            "diagnosis_allowed": False,
+        }
+    )
+    review_artifact = _build_gateway_review_artifact(
+        proposal=proposal,
+        guideline_skill=guideline_skill or {},
+    )
+    human_review_checklist = _build_human_review_checklist(review_artifact)
+    promotion_dry_run = _build_research_promotion_dry_run(
+        proposal=proposal,
+        review_artifact=review_artifact,
+    )
+    package = {
+        "schema_version": "research_evidence_review_package.v1",
+        "disease_key": disease_key,
+        "target_skill_id": target_skill_id,
+        "proposal_status": "proposal_only",
+        "research_evidence_retrieval": retrieval,
+        "claim_builder": _claim_builder_artifact(claims),
+        "proposal": proposal,
+        "gateway_review_artifact": review_artifact,
+        "human_review_checklist": human_review_checklist,
+        "promotion_dry_run": promotion_dry_run,
+        "runtime_safety": {
+            "candidate_artifacts_only": True,
+            "formal_skill_updated": False,
+            "formal_guideline_updated": False,
+            "diagnosis_report_updated": False,
+            "formal_update_allowed": False,
+            "diagnosis_allowed": False,
+        },
+    }
+    if output_dir is not None:
+        _write_review_package_outputs(package, Path(output_dir))
+    return package
 
 
 def build_research_evidence_proposal_from_request(
@@ -210,6 +330,14 @@ def normalize_research_metadata(
         "research_question": research_question,
         "source_origin": source_origin,
     }
+    for optional_key in (
+        "candidate_claim_type",
+        "target_protocol_section",
+        "requires_external_validation",
+        "limitations",
+    ):
+        if optional_key in metadata:
+            normalized[optional_key] = metadata[optional_key]
     if pmid:
         normalized["pmid"] = str(pmid).strip()
     if metadata.get("url"):
@@ -313,6 +441,10 @@ def _build_candidate_extension(
         "modality": claim.get("modality"),
         "applicability": dict(claim.get("applicability") or {}),
         "limitations": list(claim.get("limitations") or []),
+        "evidence_level": claim.get("evidence_level"),
+        "requires_external_validation": bool(
+            claim.get("requires_external_validation", True)
+        ),
         "allowed_action": "proposal_only_no_formal_update",
         "formal_update_allowed": False,
         "diagnosis_allowed": False,
@@ -578,6 +710,242 @@ def _normalize_evidence_level(
     return "unknown"
 
 
+def _normalize_claim_type(value: Any) -> str:
+    raw = str(value or "").strip()
+    if raw in ALLOWED_CANDIDATE_TYPES and raw != "research_evidence_proposal":
+        return raw
+    return "candidate_skill_extension"
+
+
+def _build_claim_id(disease_key: str, evidence: dict[str, Any], index: int) -> str:
+    source_id = str(evidence.get("source_id") or f"source_{index:03d}")
+    safe_source = re.sub(r"[^a-zA-Z0-9]+", "_", source_id).strip("_").lower()
+    return f"{disease_key}_{safe_source}_claim_{index:03d}"
+
+
+def _build_claim_summary(evidence: dict[str, Any], claim_type: str) -> str:
+    title = str(evidence.get("title") or "Untitled research evidence").strip()
+    evidence_level = evidence.get("evidence_level") or "unknown"
+    modality = evidence.get("modality") or "unknown modality"
+    return (
+        f"{title} is proposed as {claim_type} for {modality}; "
+        f"evidence_level={evidence_level}. This is candidate-only research evidence."
+    )
+
+
+def _target_section_for_claim(evidence: dict[str, Any], claim_type: str) -> str:
+    explicit = evidence.get("target_protocol_section")
+    if explicit:
+        return str(explicit)
+    defaults = {
+        "candidate_measurement_protocol": (
+            "quantitative_evidence_protocol.measurement_evidence"
+        ),
+        "candidate_quality_gate_rule": "quality_gate_protocol.research_evidence_gate",
+        "differential_diagnosis_clue": "differential_diagnosis_protocol",
+        "clinical_risk_context_clue": "clinical_context_bundle.risk_factors",
+        "candidate_skill_extension": "integrated_reasoning_protocol",
+    }
+    return defaults.get(claim_type, "integrated_reasoning_protocol")
+
+
+def _claim_limitations(evidence: dict[str, Any]) -> list[str]:
+    limitations = list(evidence.get("limitations") or [])
+    if evidence.get("source_type") != "medical_guideline":
+        limitations.append("not a formal guideline recommendation")
+    if evidence.get("requires_external_validation", True):
+        limitations.append("requires external validation before promotion")
+    return _dedupe_strings(limitations)
+
+
+def _claim_builder_artifact(claims: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "schema_version": "research_claim_builder.v1",
+        "claim_count": len(claims),
+        "supported_claim_types": [
+            "candidate_skill_extension",
+            "candidate_measurement_protocol",
+            "candidate_quality_gate_rule",
+            "differential_diagnosis_clue",
+            "clinical_risk_context_clue",
+        ],
+        "candidate_claims": claims,
+        "runtime_safety": {
+            "proposal_only": True,
+            "formal_update_allowed": False,
+            "diagnosis_allowed": False,
+        },
+    }
+
+
+def _build_gateway_review_artifact(
+    *,
+    proposal: dict[str, Any],
+    guideline_skill: dict[str, Any],
+) -> dict[str, Any]:
+    review_items = [
+        _build_review_item(candidate, guideline_skill)
+        for candidate in proposal.get("candidate_extensions") or []
+    ]
+    return {
+        "schema_version": "research_gateway_review_artifact.v1",
+        "review_status": "pending_human_review",
+        "review_items": review_items,
+        "summary": {
+            "claim_count": len(review_items),
+            "guideline_conflict_count": sum(
+                1
+                for item in review_items
+                if item["guideline_conflict_status"] == "human_review_required"
+            ),
+            "blocked_count": sum(
+                1 for item in review_items if item["quality_gate_decision"] == "blocked"
+            ),
+        },
+        "runtime_safety": {
+            "research_mode_only": True,
+            "proposal_only": True,
+            "formal_skill_updated": False,
+            "formal_guideline_updated": False,
+            "diagnosis_report_updated": False,
+            "formal_update_allowed": False,
+            "diagnosis_allowed": False,
+        },
+    }
+
+
+def _build_review_item(
+    candidate: dict[str, Any],
+    guideline_skill: dict[str, Any],
+) -> dict[str, Any]:
+    conflict_reasons = _guideline_conflict_reasons(candidate, guideline_skill)
+    quality_gate = candidate.get("quality_gate") or {}
+    exploratory_only = bool(
+        conflict_reasons
+        or candidate.get("evidence_level") in {"low", "unknown"}
+        or candidate.get("requires_external_validation", True)
+        or quality_gate.get("decision") == "blocked"
+    )
+    return {
+        "item_id": candidate.get("item_id"),
+        "candidate_type": candidate.get("candidate_type"),
+        "source_id": candidate.get("source_id"),
+        "target_protocol_section": candidate.get("target_protocol_section"),
+        "quality_gate_decision": quality_gate.get("decision"),
+        "guideline_conflict_status": (
+            "human_review_required" if conflict_reasons else "no_direct_conflict_detected"
+        ),
+        "conflict_reasons": conflict_reasons,
+        "applicability_review_required": True,
+        "exploratory_only": exploratory_only,
+        "human_review_required": True,
+        "research_mode_only": True,
+        "diagnosis_report_forbidden": True,
+        "formal_update_allowed": False,
+        "diagnosis_allowed": False,
+    }
+
+
+def _guideline_conflict_reasons(
+    candidate: dict[str, Any],
+    guideline_skill: dict[str, Any],
+) -> list[str]:
+    reasons: list[str] = []
+    supported_modalities = guideline_skill.get("supported_modalities") or []
+    if supported_modalities and not _casefold_contains(
+        supported_modalities,
+        candidate.get("modality"),
+    ):
+        reasons.append("modality_not_in_guideline_skill")
+    sections = guideline_skill.get("evidence_protocol_sections") or []
+    if sections and not _casefold_contains(
+        sections,
+        candidate.get("target_protocol_section"),
+    ):
+        reasons.append("target_protocol_section_not_in_guideline_skill")
+    return reasons
+
+
+def _casefold_contains(values: list[Any], needle: Any) -> bool:
+    normalized_values = {str(value or "").strip().lower() for value in values}
+    return str(needle or "").strip().lower() in normalized_values
+
+
+def _build_human_review_checklist(
+    review_artifact: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": "research_human_review_checklist.v1",
+        "review_status": "pending_human_review",
+        "required_review_steps": [
+            "source_quality_review",
+            "guideline_conflict_review",
+            "applicability_review",
+            "external_validation_review",
+            "diagnosis_boundary_review",
+        ],
+        "items": [
+            {
+                "item_id": item.get("item_id"),
+                "candidate_type": item.get("candidate_type"),
+                "quality_gate_decision": item.get("quality_gate_decision"),
+                "guideline_conflict_status": item.get("guideline_conflict_status"),
+                "review_status": "pending_human_review",
+                "research_mode_only": True,
+                "diagnosis_report_forbidden": True,
+            }
+            for item in review_artifact.get("review_items") or []
+        ],
+        "formal_update_allowed": False,
+        "diagnosis_allowed": False,
+    }
+
+
+def _build_research_promotion_dry_run(
+    *,
+    proposal: dict[str, Any],
+    review_artifact: dict[str, Any],
+) -> dict[str, Any]:
+    promotion_status = (
+        "blocked_by_quality_gate"
+        if proposal.get("quality_gate", {}).get("promotion_decision", {}).get("status")
+        == "blocked"
+        else "proposal_only_pending_human_approval"
+    )
+    return {
+        "schema_version": "research_promotion_dry_run.v1",
+        "promotion_status": promotion_status,
+        "suggested_section_updates": [
+            {
+                "item_id": item.get("item_id"),
+                "candidate_type": item.get("candidate_type"),
+                "target_protocol_section": item.get("target_protocol_section"),
+                "suggested_action_if_human_approved": (
+                    "draft_limited_research_mode_skill_extension"
+                ),
+                "guideline_conflict_status": item.get("guideline_conflict_status"),
+            }
+            for item in review_artifact.get("review_items") or []
+        ],
+        "formal_skill_updated": False,
+        "formal_guideline_updated": False,
+        "diagnosis_report_updated": False,
+        "formal_update_allowed": False,
+        "diagnosis_allowed": False,
+    }
+
+
+def _dedupe_strings(values: list[Any]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value).strip()
+        if text and text not in seen:
+            result.append(text)
+            seen.add(text)
+    return result
+
+
 def _build_pubmed_query(disease_key: str, modality: str, research_question: str) -> str:
     parts = [
         disease_key,
@@ -654,6 +1022,77 @@ def _write_outputs(payload: dict[str, Any], output: Path) -> None:
     markdown_path.write_text(_render_markdown(payload), encoding="utf-8")
 
 
+def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    proposal = package["proposal"]
+    _write_outputs(proposal, output)
+    review_path = output / "research_gateway_review_artifact.json"
+    checklist_path = output / "human_review_checklist.json"
+    checklist_md_path = output / "human_review_checklist.md"
+    dry_run_path = output / "research_promotion_dry_run.json"
+    package_path = output / "research_evidence_review_package.json"
+    package["output_paths"] = {
+        "review_package_json_path": str(package_path),
+        "proposal_json_path": str(output / "research_evidence_proposal.json"),
+        "quality_gate_json_path": str(output / "research_evidence_quality_gate.json"),
+        "gateway_review_json_path": str(review_path),
+        "human_review_checklist_json_path": str(checklist_path),
+        "human_review_checklist_md_path": str(checklist_md_path),
+        "promotion_dry_run_json_path": str(dry_run_path),
+    }
+    review_path.write_text(
+        json.dumps(package["gateway_review_artifact"], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    checklist_path.write_text(
+        json.dumps(package["human_review_checklist"], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    checklist_md_path.write_text(
+        _render_human_review_checklist_markdown(package["human_review_checklist"]),
+        encoding="utf-8",
+    )
+    dry_run_path.write_text(
+        json.dumps(package["promotion_dry_run"], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    package_path.write_text(
+        json.dumps(package, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _render_human_review_checklist_markdown(checklist: dict[str, Any]) -> str:
+    lines = [
+        "# Research Evidence Human Review Checklist",
+        "",
+        f"- `review_status`: `{checklist.get('review_status')}`",
+        "- `formal_update_allowed=false`",
+        "- `diagnosis_allowed=false`",
+        "",
+        "## Required Review Steps",
+        "",
+    ]
+    for step in checklist.get("required_review_steps") or []:
+        lines.append(f"- [ ] `{step}`")
+    lines.extend(
+        [
+            "",
+            "## Candidate Items",
+            "",
+            "| item_id | type | quality_gate | guideline_conflict | review_status |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
+    for item in checklist.get("items") or []:
+        lines.append(
+            "| {item_id} | {candidate_type} | {quality_gate_decision} | "
+            "{guideline_conflict_status} | {review_status} |".format(**item)
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _render_markdown(payload: dict[str, Any]) -> str:
     gate = payload.get("quality_gate") or {}
     decision = gate.get("promotion_decision") or {}
@@ -700,7 +1139,23 @@ def main() -> None:
     parser.add_argument("--pubmed-limit", type=int, default=10)
     args = parser.parse_args()
     request = json.loads(args.input_json.read_text(encoding="utf-8"))
-    if (
+    if request.get("build_review_package"):
+        payload = build_research_evidence_review_package(
+            disease_key=request["disease_key"],
+            target_skill_id=request["target_skill_id"],
+            modality=request.get("modality") or _infer_request_modality(request),
+            research_question=request.get("research_question") or "",
+            supplied_metadata=list(
+                request.get("supplied_metadata")
+                or request.get("sources")
+                or []
+            ),
+            guideline_skill=dict(request.get("guideline_skill") or {}),
+            pubmed_enabled=args.enable_pubmed,
+            pubmed_limit=args.pubmed_limit,
+            output_dir=args.output_dir,
+        )
+    elif (
         request.get("modality")
         or request.get("research_question")
         or request.get("supplied_metadata")
