@@ -145,7 +145,7 @@ class MultiFindingVisionAgent:
                 ],
                 "segmentation_results": [],
                 "visual_tool_plan": [
-                    {"step": "vision_model_localization", "tool_name": "gemini-3.5-flash"},
+                    {"step": "vision_model_localization", "tool_name": "gpt-5.5"},
                     {"step": "segmentation", "tool_name": "medsam2"},
                 ],
             },
@@ -316,7 +316,7 @@ class FakeNoMaskSkillPipeline:
                 ],
                 "segmentation_results": [],
                 "visual_tool_plan": [
-                    {"step": "vision_model_localization", "tool_name": "gemini-3.5-flash"},
+                    {"step": "vision_model_localization", "tool_name": "gpt-5.5"},
                     {"step": "segmentation", "tool_name": "medsam2"},
                 ],
             },

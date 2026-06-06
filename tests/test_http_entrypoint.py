@@ -1419,7 +1419,7 @@ class HttpEntrypointTest(unittest.TestCase):
                 encoding="utf-8",
             )
             (diagnosis_dir / "llm_raw_content.json").write_text(
-                json.dumps({"route": "dmx", "model": "gemini-3.5-flash"}),
+                json.dumps({"route": "dmx", "model": "gpt-5.5"}),
                 encoding="utf-8",
             )
             (segmentation_dir / "summary.json").write_text(
@@ -1491,7 +1491,7 @@ class HttpEntrypointTest(unittest.TestCase):
             self.assertEqual(bundle_status, 200)
             self.assertEqual(bundle["visual_evidence"]["measurements"]["whole_tumor_volume_ml"], 137.914)
             self.assertEqual(raw_status, 200)
-            self.assertEqual(raw["model"], "gemini-3.5-flash")
+            self.assertEqual(raw["model"], "gpt-5.5")
             self.assertEqual(segmentation_status, 200)
             self.assertEqual(segmentation["prompt_source"], "vision_model_bbox")
             self.assertEqual(vlm_status, 200)
@@ -1661,7 +1661,7 @@ class HttpEntrypointTest(unittest.TestCase):
                         "status": "ok",
                         "case_id": "brats2021_00030",
                         "prompt_source": "vision_model_bbox",
-                        "model": "gemini-3.5-flash",
+                        "model": "gpt-5.5",
                         "llm_attempted": True,
                         "diagnostic_tendency": "成人弥漫性胶质瘤可能",
                     },
@@ -1723,7 +1723,7 @@ class HttpEntrypointTest(unittest.TestCase):
                 encoding="utf-8",
             )
             (diagnosis_dir / "llm_raw_content.json").write_text(
-                json.dumps({"route": "dmx", "model": "gemini-3.5-flash"}),
+                json.dumps({"route": "dmx", "model": "gpt-5.5"}),
                 encoding="utf-8",
             )
             (segmentation_dir / "summary.json").write_text(

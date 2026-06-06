@@ -3,7 +3,7 @@
 本文件记录 MedScope Agent 当前默认模型 API 路由。Agent 代码不得直接判断 DMX/KY；只能通过 `llm.model_client.ApiRouteLog` 读取本文件，再由统一 `ModelClient` 调用。
 
 active_route: dmx
-dmx_model: gemini-3.5-flash
+dmx_model: gpt-5.5
 dmx_vision_model: gpt-5.5
 ky_model: ky-self-hosted-medical
 ky_vision_model: ky-self-hosted-medical
@@ -61,7 +61,7 @@ python -m scripts.api_smoke_test --real
 
 ```text
 active_route: dmx
-model: gemini-3.5-flash
+model: gpt-5.5
 vision_model: gpt-5.5
 api_key_env: DMX_API_KEY
 api_key_present: true
@@ -76,7 +76,7 @@ real_vlm_validation:
 
 离线检查结论：当前 `dmx_base_url`、`dmx_model` 和 `dmx_vision_model` 已更新为可用路由配置。API key 不写入可提交代码文件；本机运行时从 `.env.local` 或环境变量读取。
 
-真实 smoke 结论：使用用户提供的 DMX key 临时注入后，旧路由 `gemini-3.5-flash` 已通过 `https://anyaigc.com/v1/chat/completions` 完成图像输入 smoke，模型能读取 PNG 图像并返回 JSON 描述。当前 Vision Agent lesion prompt generator 已切到 `dmx_vision_model: gpt-5.5`；该模型仍不直接替代像素级分割模型。
+真实 smoke 结论：使用用户提供的 DMX key 临时注入后，历史路由曾通过 `https://anyaigc.com/v1/chat/completions` 完成图像输入 smoke，模型能读取 PNG 图像并返回 JSON 描述。当前 text model 和 Vision Agent lesion prompt generator 均切到 `gpt-5.5`；该模型仍不直接替代像素级分割模型。
 
 ## 修改规则
 

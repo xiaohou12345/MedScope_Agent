@@ -10,6 +10,12 @@ from scripts.api_smoke_test import run_smoke_check
 
 
 class ApiConnectivityTest(unittest.TestCase):
+    def test_default_route_log_uses_gpt55_for_text_and_vision_models(self):
+        route_log = ApiRouteLog.from_file("docs/API_ROUTE_LOG.md")
+
+        self.assertEqual(route_log.model_for_active_route(), "gpt-5.5")
+        self.assertEqual(route_log.vision_model_for_active_route(), "gpt-5.5")
+
     def test_inspection_reports_missing_default_external_script(self):
         checker = ApiConnectivityChecker(
             route_log=ApiRouteLog(active_route="dmx"),
