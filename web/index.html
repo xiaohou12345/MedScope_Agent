@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MedScope Agent</title>
-    <link rel="stylesheet" href="/static/app.css?v=frontend-demo-20260605" />
+    <link rel="stylesheet" href="/static/app.css?v=agent-safe-routing-20260606" />
   </head>
   <body>
     <main class="app-shell">
@@ -43,16 +43,10 @@
               </div>
             </div>
 
-            <label class="mode-control">
-              证据获取模式
-              <select id="visionModeSelect" name="vision_mode">
-                <option value="" selected>自动安全模式</option>
-                <option value="no_mask_skill">FHN no-mask 候选证据</option>
-                <option value="real_vlm_validation">真实 VLM 候选验证</option>
-                <option value="medsam2">MedSAM2 分割模式</option>
-              </select>
-              <span>真实 VLM 候选验证仅用于候选视觉证据验证，不作为测量级分割或确诊依据。</span>
-            </label>
+            <div class="mode-control">
+              <strong>安全证据流程</strong>
+              <span>Agent 会按 Skill evidence protocol 自动选择安全视觉链路：先获取候选视觉证据，再按需要调用分割或测量工具；弱证据不会被升级为确诊依据。</span>
+            </div>
 
             <input id="imagePath" name="image_path" type="hidden" value="" />
             <label>
@@ -149,6 +143,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=frontend-demo-20260605"></script>
+    <script src="/static/app.js?v=agent-safe-routing-20260606"></script>
   </body>
 </html>

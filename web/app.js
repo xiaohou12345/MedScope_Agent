@@ -39,7 +39,6 @@ const elements = {
   fileInput: document.getElementById("fileInput"),
   uploadStatus: document.getElementById("uploadStatus"),
   patientMessage: document.getElementById("patientMessage"),
-  visionModeSelect: document.getElementById("visionModeSelect"),
   imagePath: document.getElementById("imagePath"),
   symptoms: document.getElementById("symptoms"),
   qaInput: document.getElementById("qaInput"),
@@ -143,7 +142,7 @@ function buildCasePayload() {
   if (state.sampleDiseaseKey) {
     payload.disease_key = state.sampleDiseaseKey;
   }
-  const selectedVisionMode = state.sampleVisionMode || elements.visionModeSelect.value;
+  const selectedVisionMode = state.sampleVisionMode;
   if (selectedVisionMode) {
     payload.vision_mode = selectedVisionMode;
   }
@@ -770,7 +769,6 @@ async function uploadFiles(fileList) {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
-  elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -4404,7 +4402,6 @@ function loadRealVlmMedSAM2Sample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "diffuse_glioma_brats";
   state.sampleVisionMode = "medsam2";
-  elements.visionModeSelect.value = "medsam2";
   state.demoCaseSlug = "";
   state.realDemoMode = true;
   state.publicSafeDemoMode = false;
@@ -4420,7 +4417,6 @@ function loadXrayInsufficientSample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
-  elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -4436,7 +4432,6 @@ function loadFhnNoMaskSample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "femoral_head_necrosis";
   state.sampleVisionMode = "no_mask_skill";
-  elements.visionModeSelect.value = "no_mask_skill";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -4452,7 +4447,6 @@ function loadPublicSafeDemoInputs() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
-  elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -4599,13 +4593,6 @@ elements.fileInput.addEventListener("change", async () => {
     setStatus(error.message, "error");
   }
 });
-elements.visionModeSelect.addEventListener("change", () => {
-  state.sampleVisionMode = "";
-  if (elements.visionModeSelect.value === "real_vlm_validation") {
-    setStatus("已选择真实 VLM 候选验证；输出只作为候选视觉证据", "warn");
-  }
-});
-
 ["dragenter", "dragover"].forEach((name) => {
   elements.dropZone.addEventListener(name, (event) => {
     event.preventDefault();
@@ -4738,7 +4725,6 @@ elements.resetButton.addEventListener("click", () => {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
-  elements.visionModeSelect.value = "";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
