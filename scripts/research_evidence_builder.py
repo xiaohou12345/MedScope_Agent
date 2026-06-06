@@ -200,6 +200,7 @@ def normalize_research_metadata(
         "publication_year": year,
         "source_type": source_type,
         "doi": str(doi).strip() if doi else None,
+        "DOI": str(doi).strip() if doi else None,
         "sample_size": sample_size,
         "population": population,
         "modality": modality,

@@ -54,6 +54,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         self.assertEqual(evidence["publication_year"], 2025)
         self.assertEqual(evidence["source_type"], "peer_reviewed_journal")
         self.assertEqual(evidence["doi"], "10.1000/onfh-texture")
+        self.assertEqual(evidence["DOI"], "10.1000/onfh-texture")
         self.assertEqual(evidence["sample_size"], 420)
         self.assertEqual(evidence["population"], "adult hip pain cohort")
         self.assertEqual(evidence["modality"], "MRI")
@@ -100,6 +101,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         self.assertEqual(evidence["year"], 2024)
         self.assertEqual(evidence["source_type"], "peer_reviewed_journal")
         self.assertEqual(evidence["doi"], "10.1000/pubmed-onfh")
+        self.assertEqual(evidence["DOI"], "10.1000/pubmed-onfh")
         self.assertEqual(evidence["evidence_level"], "moderate")
 
     def test_request_builder_connects_normalized_metadata_to_gateway_proposal_only(self) -> None:
