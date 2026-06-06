@@ -16,6 +16,8 @@ data/cases/
 data/images/
 data/overlays/
 data/masks/
+data/ONFH_MRI_Xray_COCO_clean_20260605_package/
+data/ONFH_MRI_Xray_COCO_clean_20260605_package.zip
 
 # Medical images and model weights
 *.nii
