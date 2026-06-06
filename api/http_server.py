@@ -292,6 +292,13 @@ def dispatch_skill_request(
             "draft": _latest_skill_review_draft(skill_key=skill_key, output_root=output),
             "raw_skill_available": True,
         }
+    if method == "GET" and len(parts) == 2 and parts[1] == "comparison":
+        return 200, _skill_protocol_comparison(
+            skill_key=skill_key,
+            current_skill=skill,
+            skills_dir=skills_root,
+            output_root=output,
+        )
     if method == "POST" and len(parts) == 2 and parts[1] == "review-draft":
         try:
             payload = json.loads(body.decode("utf-8")) if body else {}
@@ -386,6 +393,172 @@ def _doctor_skill_view(skill: dict) -> dict:
             if isinstance(document, dict)
         ],
     }
+
+
+def _skill_protocol_comparison(
+    *,
+    skill_key: str,
+    current_skill: dict,
+    skills_dir: Path,
+    output_root: Path,
+) -> dict:
+    baseline_skill = _load_finding_list_baseline(skill_key=skill_key, skills_dir=skills_dir)
+    disease_name = current_skill.get("disease_name") or baseline_skill.get("disease_name") or skill_key
+    return {
+        "schema_version": "skill_protocol_comparison.v1",
+        "skill_key": skill_key,
+        "title": f"{disease_name} Skill 版本对比",
+        "display_policy": {
+            "collapsed_by_default": True,
+            "audience": "doctor_or_research_review",
+            "raw_yaml_hidden": True,
+            "diagnosis_accuracy_claim_allowed": False,
+        },
+        "versions": [
+            _finding_list_version_summary(baseline_skill),
+            _evidence_protocol_version_summary(current_skill),
+        ],
+        "evaluation_summary": _skill_comparison_evaluation_summary(output_root),
+        "safety_note": "该对比只说明 protocol coverage，不等同于诊断准确率；正式诊断仍需完整 evidence bundle 和医生审核。",
+    }
+
+
+def _load_finding_list_baseline(*, skill_key: str, skills_dir: Path) -> dict:
+    baseline_dir = skills_dir / "baselines"
+    candidates = [
+        baseline_dir / f"{skill_key}_finding_list_baseline_20260604.yaml",
+        baseline_dir / "femoral_head_necrosis_finding_list_baseline_20260604.yaml",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return json.loads(candidate.read_text(encoding="utf-8"))
+    if baseline_dir.exists():
+        for candidate in sorted(baseline_dir.glob("*finding_list_baseline*.yaml")):
+            return json.loads(candidate.read_text(encoding="utf-8"))
+    return {}
+
+
+def _finding_list_version_summary(skill: dict) -> dict:
+    visual_targets = skill.get("visual_targets") or {}
+    finding_names = [
+        str(item)
+        for item in visual_targets.get("lesion_features") or []
+        if item
+    ]
+    if not finding_names:
+        finding_names = [
+            str(target.get("display_name") or target.get("target"))
+            for target in (skill.get("visual_protocol") or {}).get("finding_targets") or []
+            if isinstance(target, dict)
+        ]
+    return {
+        "version_key": "finding_list_baseline",
+        "label": "版本 1：历史 finding-list baseline",
+        "summary": "以影像表现清单为主，适合保留历史判断口径；但没有完整区分候选观察、候选分割、量化测量和证据不足边界。",
+        "skill_id": skill.get("skill_id") or "finding_list_baseline",
+        "finding_names": finding_names,
+        "finding_count": len(finding_names),
+        "has_evidence_protocol": False,
+        "has_quantitative_protocol": False,
+        "human_readable_limits": [
+            "只能说明列出了哪些典型表现。",
+            "不能清楚表达哪些证据可分割、哪些只能观察、哪些需要质量门。",
+        ],
+    }
+
+
+def _evidence_protocol_version_summary(skill: dict) -> dict:
+    protocol = skill.get("visual_protocol") or {}
+    quantitative = skill.get("quantitative_evidence_protocol") or {}
+    findings = [
+        {
+            "name": str(target.get("display_name") or target.get("target") or ""),
+            "target": target.get("target"),
+            "evidence_mode": _execution_mode_label(target.get("execution_mode")),
+            "diagnosis_role": _diagnosis_usable_label(target.get("diagnosis_usable_level")),
+        }
+        for target in protocol.get("finding_targets") or []
+        if isinstance(target, dict)
+    ]
+    finding_names = [item["name"] for item in findings if item["name"]]
+    measurement_names = [
+        str(item.get("measurement_name") or item.get("feature_name"))
+        for section_name in ("image_feature_quantification", "measurement_evidence")
+        for item in quantitative.get(section_name) or []
+        if isinstance(item, dict) and (item.get("measurement_name") or item.get("feature_name"))
+    ]
+    return {
+        "version_key": "evidence_protocol_v1",
+        "label": "版本 2：Evidence protocol + quantitative protocol",
+        "summary": "在 finding list 基础上补充证据获取协议：哪些征象可作为候选分割、哪些仅能 VLM 观察、哪些需要几何或形态测量，以及证据不足时不能下诊断结论。",
+        "skill_id": skill.get("skill_id") or "evidence_protocol_v1",
+        "finding_names": finding_names,
+        "finding_count": len(finding_names),
+        "evidence_targets": findings,
+        "has_evidence_protocol": bool(findings),
+        "has_quantitative_protocol": bool(quantitative),
+        "quantitative_items": measurement_names,
+        "quantitative_item_count": len(measurement_names),
+        "human_readable_limits": [
+            "候选 mask 不能自动升级为确诊证据。",
+            "量化测量需要 ROI、轮廓、landmark 或质量门通过后才可用于支持判断。",
+        ],
+    }
+
+
+def _diagnosis_usable_label(value: str | None) -> str:
+    labels = {
+        "candidate_support": "候选支持，不能单独确诊",
+        "measurement_support": "测量支持，需质量门通过",
+        "observation_only": "观察提示",
+        "not_usable": "证据不足",
+        "exploratory_only": "探索性，不用于诊断",
+    }
+    return labels.get(value or "", value or "未标注")
+
+
+def _skill_comparison_evaluation_summary(output_root: Path) -> dict:
+    evaluation_path = (
+        output_root
+        / "real"
+        / "onfh_coco_protocol_evaluation"
+        / "onfh_coco_protocol_evaluation.json"
+    )
+    if not evaluation_path.exists():
+        return {
+            "status": "missing",
+            "title": "真实 X-ray protocol coverage",
+            "interpretation": "尚未发现真实 X-ray protocol evaluation artifact；可先运行 ONFH COCO protocol evaluation。",
+        }
+    payload = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    total = int((payload.get("dataset") or {}).get("evaluated_annotation_count") or 0)
+    aggregate = payload.get("aggregate") or {}
+    current = int(aggregate.get("current_protocol_covered_annotation_count") or 0)
+    baseline = int(aggregate.get("baseline_covered_annotation_count") or 0)
+    missing = list((payload.get("coverage_gaps") or {}).get("baseline_missing_labels") or [])
+    primary_modality = (payload.get("evaluation_scope") or {}).get("primary_modality") or "Xray"
+    return {
+        "status": "available",
+        "title": "真实 X-ray protocol coverage",
+        "primary_modality": primary_modality,
+        "evaluated_annotation_count": total,
+        "current_coverage": f"{current}/{total}" if total else "0/0",
+        "baseline_coverage": f"{baseline}/{total}" if total else "0/0",
+        "current_coverage_percent": _percent(current, total),
+        "baseline_coverage_percent": _percent(baseline, total),
+        "baseline_missing_labels": missing,
+        "interpretation": (
+            f"新版 evidence protocol 覆盖更完整：当前版本覆盖 {current}/{total} 个 X-ray 标注，"
+            f"历史 finding-list baseline 覆盖 {baseline}/{total} 个；主要缺口为"
+            f"{'、'.join(missing) if missing else '无明确缺口'}。"
+        ),
+    }
+
+
+def _percent(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(numerator * 100 / denominator, 1)
 
 
 def _doctor_visual_findings(protocol: dict) -> list[dict]:

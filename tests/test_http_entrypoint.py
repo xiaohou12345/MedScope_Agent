@@ -149,11 +149,11 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(content_type, "text/html; charset=utf-8")
         text = body.decode("utf-8")
-        self.assertIn('/static/app.css?v=agent-safe-routing-20260606', text)
-        self.assertIn('/static/app.js?v=agent-safe-routing-20260606', text)
+        self.assertIn('/static/app.css?v=skill-comparison-20260606', text)
+        self.assertIn('/static/app.js?v=skill-comparison-20260606', text)
         self.assertNotIn("skill-review-20260528", text)
-        css_status, _, css_type = dispatch_static_request("/static/app.css?v=agent-safe-routing-20260606")
-        js_status, _, js_type = dispatch_static_request("/static/app.js?v=agent-safe-routing-20260606")
+        css_status, _, css_type = dispatch_static_request("/static/app.css?v=skill-comparison-20260606")
+        js_status, _, js_type = dispatch_static_request("/static/app.js?v=skill-comparison-20260606")
         self.assertEqual(css_status, 200)
         self.assertEqual(css_type, "text/css; charset=utf-8")
         self.assertEqual(js_status, 200)
@@ -179,6 +179,30 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertNotIn("state.sampleVisionMode || elements.visionModeSelect.value", js)
         self.assertIn('state.sampleVisionMode = "no_mask_skill"', js)
         self.assertIn("候选视觉证据", js)
+
+    def test_frontend_exposes_collapsible_fhn_skill_protocol_comparison(self):
+        status, body, content_type = dispatch_static_request("/")
+        js_status, js_body, js_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/html; charset=utf-8")
+        self.assertEqual(js_status, 200)
+        self.assertEqual(js_type, "application/javascript; charset=utf-8")
+        html = body.decode("utf-8")
+        js = js_body.decode("utf-8")
+        self.assertIn("Skill 版本对比", html)
+        self.assertIn("skillProtocolComparisonView", html)
+        self.assertIn("/v1/skills/femoral_head_necrosis/comparison", js)
+        self.assertIn("renderSkillProtocolComparison", js)
+        self.assertIn("finding-list baseline", js)
+        self.assertIn("Evidence protocol", js)
+        self.assertIn("真实 X-ray protocol coverage", js)
+        comparison_section = html[
+            html.index("skill-comparison-details"):
+            html.index("skill-debug-details")
+        ]
+        self.assertNotIn("raw YAML", comparison_section)
+        self.assertNotIn("annotation_id", js)
 
     def test_root_keeps_evidence_gateway_snapshot_inside_debug_section(self):
         status, body, content_type = dispatch_static_request("/")
@@ -918,6 +942,96 @@ class HttpEntrypointTest(unittest.TestCase):
             self.assertEqual(payload["doctor_view"]["safety_notes"][0]["reason"], "X 光不能排除早期病变")
             self.assertEqual(payload["doctor_view"]["source_documents"][0]["title"], "ONFH guideline")
             self.assertFalse(payload["draft"]["exists"])
+
+    def test_fhn_skill_comparison_returns_readable_version_and_xray_coverage_summary(self):
+        with TemporaryDirectory() as tmpdir:
+            skills_dir = Path(tmpdir) / "skills"
+            baseline_dir = skills_dir / "baselines"
+            output_root = Path(tmpdir) / "output"
+            eval_dir = output_root / "real" / "onfh_coco_protocol_evaluation"
+            baseline_dir.mkdir(parents=True)
+            eval_dir.mkdir(parents=True)
+            (skills_dir / "fhn.yaml").write_text(
+                json.dumps(
+                    {
+                        "disease_name": "股骨头坏死",
+                        "skill_id": "fhn_protocol_v1",
+                        "visual_protocol": {
+                            "finding_targets": [
+                                {
+                                    "target": "sclerotic_band",
+                                    "display_name": "硬化带",
+                                    "execution_mode": "vlm_plus_segmenter",
+                                    "diagnosis_usable_level": "candidate_support",
+                                },
+                                {
+                                    "target": "subchondral_fracture",
+                                    "display_name": "软骨下骨骨折",
+                                    "execution_mode": "vlm_plus_segmenter",
+                                    "diagnosis_usable_level": "candidate_support",
+                                },
+                            ]
+                        },
+                        "quantitative_evidence_protocol": {
+                            "image_feature_quantification": [{"feature_name": "texture_disorder_score"}],
+                            "measurement_evidence": [{"measurement_name": "subchondral_fracture_extent"}],
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (baseline_dir / "fhn_finding_list_baseline_20260604.yaml").write_text(
+                json.dumps(
+                    {
+                        "disease_name": "股骨头坏死",
+                        "skill_id": "fhn_finding_list_baseline",
+                        "visual_targets": {
+                            "lesion_features": ["硬化带", "囊性变", "股骨头塌陷"],
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (eval_dir / "onfh_coco_protocol_evaluation.json").write_text(
+                json.dumps(
+                    {
+                        "evaluation_scope": {"primary_modality": "Xray"},
+                        "dataset": {"evaluated_annotation_count": 86},
+                        "aggregate": {
+                            "current_protocol_covered_annotation_count": 86,
+                            "baseline_covered_annotation_count": 70,
+                        },
+                        "coverage_gaps": {"baseline_missing_labels": ["软骨下骨骨折"]},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            status, payload = dispatch_skill_request(
+                method="GET",
+                path="/v1/skills/fhn/comparison",
+                skills_dir=skills_dir,
+                output_root=output_root,
+            )
+
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["skill_key"], "fhn")
+            self.assertEqual(payload["title"], "股骨头坏死 Skill 版本对比")
+            self.assertEqual(payload["versions"][0]["label"], "版本 1：历史 finding-list baseline")
+            self.assertFalse(payload["versions"][0]["has_quantitative_protocol"])
+            self.assertEqual(payload["versions"][1]["label"], "版本 2：Evidence protocol + quantitative protocol")
+            self.assertTrue(payload["versions"][1]["has_quantitative_protocol"])
+            self.assertIn("软骨下骨骨折", payload["versions"][1]["finding_names"])
+            self.assertEqual(payload["evaluation_summary"]["primary_modality"], "Xray")
+            self.assertEqual(payload["evaluation_summary"]["current_coverage"], "86/86")
+            self.assertEqual(payload["evaluation_summary"]["baseline_coverage"], "70/86")
+            self.assertEqual(payload["evaluation_summary"]["baseline_missing_labels"], ["软骨下骨骨折"])
+            self.assertIn("覆盖更完整", payload["evaluation_summary"]["interpretation"])
+            self.assertNotIn("skill_path", payload)
+            self.assertNotIn("annotation_id", json.dumps(payload, ensure_ascii=False))
 
     def test_skill_review_draft_is_saved_under_output_fake_without_overwriting_formal_skill(self):
         with TemporaryDirectory() as tmpdir:

@@ -57,6 +57,12 @@ const elements = {
   skillListView: document.getElementById("skillListView"),
   skillDetailView: document.getElementById("skillDetailView"),
   skillReviewStatus: document.getElementById("skillReviewStatus"),
+  skillProtocolComparisonView: document.getElementById("skillProtocolComparisonView"),
+};
+
+const skillComparisonFallbackLabels = {
+  finding_list_baseline: "版本 1：历史 finding-list baseline",
+  evidence_protocol_v1: "版本 2：Evidence protocol + quantitative protocol",
 };
 
 function setStatus(text, kind = "") {
@@ -232,6 +238,15 @@ async function fetchSkillList() {
 
 async function fetchSkillDetail(skillKey) {
   const response = await fetch(`/v1/skills/${encodeURIComponent(skillKey)}`);
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  return body;
+}
+
+async function fetchSkillProtocolComparison() {
+  const response = await fetch("/v1/skills/femoral_head_necrosis/comparison");
   const body = await response.json();
   if (!response.ok) {
     throw new Error(formatApiError(body, response.status));
@@ -927,6 +942,112 @@ function renderSkillList(payload) {
   elements.skillListView.querySelectorAll("[data-skill-key]").forEach((button) => {
     button.addEventListener("click", () => loadSkillDetail(button.dataset.skillKey));
   });
+}
+
+async function loadSkillProtocolComparison() {
+  if (!elements.skillProtocolComparisonView) {
+    return;
+  }
+  elements.skillProtocolComparisonView.innerHTML = '<div class="trace-empty">Skill 版本对比加载中...</div>';
+  try {
+    const payload = await fetchSkillProtocolComparison();
+    renderSkillProtocolComparison(payload);
+  } catch (error) {
+    elements.skillProtocolComparisonView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderSkillProtocolComparison(payload) {
+  const versions = Array.isArray(payload.versions) ? payload.versions : [];
+  const evaluation = payload.evaluation_summary || {};
+  elements.skillProtocolComparisonView.innerHTML = `
+    <div class="skill-comparison-workspace">
+      <section class="skill-comparison-summary">
+        <h3>${escapeHtml(payload.title || "Skill 版本对比")}</h3>
+        <p>${escapeHtml(payload.safety_note || "该对比只用于 protocol coverage 审阅。")}</p>
+        ${renderSkillComparisonCoverage(evaluation)}
+      </section>
+      <div class="skill-version-grid">
+        ${versions.map(renderSkillVersionCard).join("") || '<div class="trace-empty">暂无版本信息</div>'}
+      </div>
+    </div>
+  `;
+}
+
+function renderSkillComparisonCoverage(evaluation) {
+  if (!evaluation || evaluation.status === "missing") {
+    return `
+      <article class="skill-coverage-card">
+        <strong>真实 X-ray protocol coverage</strong>
+        <p>${escapeHtml(evaluation?.interpretation || "暂无真实 X-ray protocol coverage 结果。")}</p>
+      </article>
+    `;
+  }
+  const missingLabels = Array.isArray(evaluation.baseline_missing_labels)
+    ? evaluation.baseline_missing_labels
+    : [];
+  return `
+    <article class="skill-coverage-card">
+      <div>
+        <strong>真实 X-ray protocol coverage</strong>
+        <span>${escapeHtml(evaluation.primary_modality || "Xray")}</span>
+      </div>
+      ${renderMetricGrid({
+        "新版覆盖": `${evaluation.current_coverage || "-"} (${formatValue(evaluation.current_coverage_percent)}%)`,
+        "旧版覆盖": `${evaluation.baseline_coverage || "-"} (${formatValue(evaluation.baseline_coverage_percent)}%)`,
+        "旧版缺口": missingLabels.length ? missingLabels.join("、") : "无",
+      })}
+      <p>${escapeHtml(evaluation.interpretation || "")}</p>
+    </article>
+  `;
+}
+
+function renderSkillVersionCard(version) {
+  const names = Array.isArray(version.finding_names) ? version.finding_names : [];
+  const targets = Array.isArray(version.evidence_targets) ? version.evidence_targets : [];
+  const quantitative = Array.isArray(version.quantitative_items) ? version.quantitative_items : [];
+  const limits = Array.isArray(version.human_readable_limits) ? version.human_readable_limits : [];
+  const versionLabel = version.label || skillComparisonFallbackLabels[version.version_key] || "Skill 版本";
+  return `
+    <article class="skill-version-card">
+      <div class="skill-version-heading">
+        <strong>${escapeHtml(versionLabel)}</strong>
+        <span>${escapeHtml(version.version_key || "")}</span>
+      </div>
+      <p>${escapeHtml(version.summary || "")}</p>
+      ${renderMetricGrid({
+        "影像证据项": version.finding_count,
+        "Evidence protocol": version.has_evidence_protocol ? "有" : "无",
+        "Quantitative protocol": version.has_quantitative_protocol ? "有" : "无",
+      })}
+      <div class="skill-pill-list">
+        ${names.map((name) => `<span>${escapeHtml(name)}</span>`).join("")}
+      </div>
+      ${targets.length ? `
+        <div class="skill-target-table">
+          ${targets.map((target) => `
+            <div>
+              <strong>${escapeHtml(target.name || target.target || "")}</strong>
+              <span>${escapeHtml(target.evidence_mode || "")}</span>
+              <em>${escapeHtml(target.diagnosis_role || "")}</em>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
+      ${quantitative.length ? `
+        <div class="skill-readable-block">
+          <strong>量化入口</strong>
+          <p>${escapeHtml(quantitative.join("、"))}</p>
+        </div>
+      ` : ""}
+      ${limits.length ? `
+        <div class="skill-readable-block">
+          <strong>边界</strong>
+          <ul>${limits.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </div>
+      ` : ""}
+    </article>
+  `;
 }
 
 async function loadSkillList() {
@@ -4738,4 +4859,5 @@ elements.resetButton.addEventListener("click", () => {
 
 updateQaControls();
 checkHealth();
+loadSkillProtocolComparison();
 loadSkillList();

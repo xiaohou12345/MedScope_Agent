@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MedScope Agent</title>
-    <link rel="stylesheet" href="/static/app.css?v=agent-safe-routing-20260606" />
+    <link rel="stylesheet" href="/static/app.css?v=skill-comparison-20260606" />
   </head>
   <body>
     <main class="app-shell">
@@ -119,6 +119,17 @@
           <div id="qaLog" class="qa-log"></div>
         </section>
 
+        <details class="debug-details skill-comparison-details">
+          <summary>Skill 版本对比</summary>
+          <section class="panel skill-comparison-panel">
+            <div class="panel-title">
+              <h2>股骨头坏死 Skill 对比</h2>
+              <span>finding-list baseline vs Evidence protocol</span>
+            </div>
+            <div id="skillProtocolComparisonView" class="trace-empty">等待加载 Skill 版本对比</div>
+          </section>
+        </details>
+
         <details class="debug-details skill-debug-details">
           <summary>Skill 管理</summary>
           <section id="skillReviewPanel" class="panel skill-review-panel">
@@ -143,6 +154,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=agent-safe-routing-20260606"></script>
+    <script src="/static/app.js?v=skill-comparison-20260606"></script>
   </body>
 </html>
