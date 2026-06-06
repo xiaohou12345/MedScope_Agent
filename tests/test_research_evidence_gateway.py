@@ -154,8 +154,10 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                         "build_review_package": True,
                         "guideline_skill": {
                             "skill_id": "femoral_head_necrosis_v0.1",
-                            "supported_modalities": ["X-ray"],
-                            "evidence_protocol_sections": ["imaging_evidence_protocol"],
+                            "supported_modalities": ["MRI"],
+                            "evidence_protocol_sections": [
+                                "quantitative_evidence_protocol.measurement_evidence"
+                            ],
                         },
                         "supplied_texts": [
                             {
@@ -446,6 +448,102 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 (root / "review" / "controlled_skill_extension_draft.md").exists()
             )
 
+    def test_human_review_approval_builds_controlled_promotion_package_without_applying_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            package = build_research_evidence_review_package(
+                disease_key="femoral_head_necrosis",
+                target_skill_id="femoral_head_necrosis_v0.1",
+                modality="MRI",
+                research_question="MRI necrotic area ratio as supplemental measurement",
+                supplied_metadata=[
+                    {
+                        "source_id": "study_necrotic_ratio",
+                        "title": "MRI necrotic area ratio for ONFH staging",
+                        "source_type": "journal article",
+                        "publication_year": 2025,
+                        "study_design": "multi center retrospective",
+                        "sample_size": 420,
+                        "modality": "MRI",
+                        "population": "adult hip pain cohort",
+                        "evidence_level": "moderate",
+                        "candidate_claim_type": "candidate_measurement_protocol",
+                        "target_protocol_section": (
+                            "quantitative_evidence_protocol.measurement_evidence"
+                        ),
+                    }
+                ],
+                guideline_skill={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "supported_modalities": ["MRI"],
+                    "evidence_protocol_sections": [
+                        "quantitative_evidence_protocol.measurement_evidence"
+                    ],
+                },
+                human_review_decisions=[
+                    {
+                        "item_id": "femoral_head_necrosis_study_necrotic_ratio_claim_001",
+                        "decision": "approved",
+                        "reviewer_id": "reviewer_rad_001",
+                        "reviewed_at": "2026-06-06T12:00:00Z",
+                        "notes": "Use only as research-mode supplemental measurement.",
+                    }
+                ],
+                output_dir=root / "review",
+            )
+
+            decision = package["human_review_decision"]
+            self.assertEqual(decision["schema_version"], "research_human_review_decision.v1")
+            self.assertEqual(decision["decision_status"], "approved")
+            decision_item = decision["items"][0]
+            self.assertEqual(decision_item["review_decision"], "approved")
+            self.assertEqual(decision_item["reviewer_id"], "reviewer_rad_001")
+            self.assertFalse(decision_item["formal_update_allowed"])
+            self.assertFalse(decision_item["diagnosis_allowed"])
+
+            promotion = package["controlled_promotion_package"]
+            self.assertEqual(promotion["schema_version"], "controlled_promotion_package.v1")
+            self.assertEqual(
+                promotion["package_status"],
+                "ready_for_controlled_promotion_review",
+            )
+            self.assertFalse(promotion["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(promotion["runtime_safety"]["formal_guideline_updated"])
+            self.assertFalse(promotion["runtime_safety"]["diagnosis_report_updated"])
+            self.assertFalse(promotion["runtime_safety"]["formal_update_allowed"])
+            self.assertFalse(promotion["runtime_safety"]["diagnosis_allowed"])
+
+            approved = promotion["approved_updates"][0]
+            self.assertEqual(approved["source_id"], "study_necrotic_ratio")
+            self.assertEqual(
+                approved["target_protocol_section"],
+                "quantitative_evidence_protocol.measurement_evidence",
+            )
+            self.assertEqual(approved["evidence_use_label"], "supplemental")
+            self.assertEqual(approved["review_decision"], "approved")
+            self.assertFalse(approved["formal_patch_applied"])
+            self.assertFalse(approved["diagnosis_flow_changed"])
+
+            patch_preview = promotion["formal_skill_patch_preview"]
+            self.assertEqual(patch_preview["patch_status"], "preview_only_not_applied")
+            self.assertFalse(patch_preview["formal_skill_file_changed"])
+            self.assertIn(
+                "quantitative_evidence_protocol.measurement_evidence",
+                patch_preview["preview_sections"][0]["target_protocol_section"],
+            )
+            self.assertIn("rollback_notes", promotion)
+            self.assertIn("audit_log", promotion)
+            self.assertTrue(promotion["audit_log"][0]["event"].startswith("human_review"))
+            self.assertTrue(
+                (root / "review" / "research_human_review_decision.json").exists()
+            )
+            self.assertTrue(
+                (root / "review" / "controlled_promotion_package.json").exists()
+            )
+            self.assertTrue(
+                (root / "review" / "controlled_promotion_package.md").exists()
+            )
+
     def test_review_package_blocks_weak_claim_and_keeps_promotion_dry_run_read_only(self) -> None:
         package = build_research_evidence_review_package(
             disease_key="community_acquired_pneumonia",
@@ -526,6 +624,92 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         self.assertFalse(update["formal_update_allowed"])
         self.assertFalse(update["diagnosis_allowed"])
 
+    def test_rejected_or_needs_revision_items_do_not_enter_promotion_package(self) -> None:
+        package = build_research_evidence_review_package(
+            disease_key="femoral_head_necrosis",
+            target_skill_id="femoral_head_necrosis_v0.1",
+            modality="MRI",
+            research_question="MRI research-only additions needing review",
+            supplied_metadata=[
+                {
+                    "source_id": "study_measurement",
+                    "title": "MRI necrotic area ratio for ONFH staging",
+                    "source_type": "journal article",
+                    "publication_year": 2025,
+                    "study_design": "multi center retrospective",
+                    "sample_size": 420,
+                    "modality": "MRI",
+                    "population": "adult hip pain cohort",
+                    "evidence_level": "moderate",
+                    "candidate_claim_type": "candidate_measurement_protocol",
+                    "target_protocol_section": (
+                        "quantitative_evidence_protocol.measurement_evidence"
+                    ),
+                },
+                {
+                    "source_id": "study_differential",
+                    "title": "MRI differential clue for hip pain",
+                    "source_type": "journal article",
+                    "publication_year": 2024,
+                    "study_design": "prospective validation",
+                    "sample_size": 160,
+                    "modality": "MRI",
+                    "population": "adult hip pain cohort",
+                    "evidence_level": "moderate",
+                    "candidate_claim_type": "differential_diagnosis_clue",
+                    "target_protocol_section": "differential_diagnosis_protocol",
+                },
+            ],
+            guideline_skill={
+                "skill_id": "femoral_head_necrosis_v0.1",
+                "supported_modalities": ["MRI"],
+                "evidence_protocol_sections": [
+                    "quantitative_evidence_protocol.measurement_evidence",
+                    "differential_diagnosis_protocol",
+                ],
+            },
+            human_review_decisions=[
+                {
+                    "item_id": "femoral_head_necrosis_study_measurement_claim_001",
+                    "decision": "rejected",
+                    "reviewer_id": "reviewer_rad_001",
+                    "notes": "Measurement is not reproducible enough.",
+                },
+                {
+                    "item_id": "femoral_head_necrosis_study_differential_claim_002",
+                    "decision": "needs_revision",
+                    "reviewer_id": "reviewer_rad_001",
+                    "notes": "Needs clearer guideline conflict statement.",
+                },
+            ],
+        )
+
+        decision = package["human_review_decision"]
+        self.assertEqual(decision["decision_status"], "not_approved")
+        self.assertEqual(
+            [item["review_decision"] for item in decision["items"]],
+            ["rejected", "needs_revision"],
+        )
+
+        promotion = package["controlled_promotion_package"]
+        self.assertEqual(promotion["package_status"], "not_ready_for_promotion")
+        self.assertEqual(promotion["approved_updates"], [])
+        self.assertEqual(len(promotion["rejected_or_revision_items"]), 2)
+        self.assertEqual(
+            promotion["formal_skill_patch_preview"]["patch_status"],
+            "no_approved_updates",
+        )
+        self.assertEqual(promotion["formal_skill_patch_preview"]["preview_sections"], [])
+        self.assertFalse(promotion["formal_skill_patch_preview"]["formal_skill_file_changed"])
+        self.assertTrue(
+            any(
+                event["event"] == "human_review_item_not_approved"
+                for event in promotion["audit_log"]
+            )
+        )
+        self.assertFalse(promotion["runtime_safety"]["formal_update_allowed"])
+        self.assertFalse(promotion["runtime_safety"]["diagnosis_allowed"])
+
     def test_cli_builds_full_review_package_from_request_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -541,8 +725,10 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                         "build_review_package": True,
                         "guideline_skill": {
                             "skill_id": "femoral_head_necrosis_v0.1",
-                            "supported_modalities": ["X-ray"],
-                            "evidence_protocol_sections": ["imaging_evidence_protocol"],
+                            "supported_modalities": ["MRI"],
+                            "evidence_protocol_sections": [
+                                "quantitative_evidence_protocol.measurement_evidence"
+                            ],
                         },
                         "supplied_metadata": [
                             {
@@ -556,6 +742,13 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                                 "population": "adult hip pain cohort",
                                 "evidence_level": "moderate",
                                 "candidate_claim_type": "candidate_measurement_protocol",
+                            }
+                        ],
+                        "human_review_decisions": [
+                            {
+                                "item_id": "femoral_head_necrosis_study_cli_texture_claim_001",
+                                "decision": "approved",
+                                "reviewer_id": "reviewer_cli",
                             }
                         ],
                     },
@@ -590,6 +783,17 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertTrue((output_dir / "human_review_checklist.json").exists())
             self.assertTrue((output_dir / "human_review_checklist.md").exists())
             self.assertTrue((output_dir / "research_promotion_dry_run.json").exists())
+            self.assertEqual(
+                payload["human_review_decision"]["decision_status"],
+                "approved",
+            )
+            self.assertEqual(
+                payload["controlled_promotion_package"]["package_status"],
+                "ready_for_controlled_promotion_review",
+            )
+            self.assertTrue((output_dir / "research_human_review_decision.json").exists())
+            self.assertTrue((output_dir / "controlled_promotion_package.json").exists())
+            self.assertTrue((output_dir / "controlled_promotion_package.md").exists())
 
     def test_retriever_normalizes_supplied_metadata_without_pubmed_retrieval(self) -> None:
         class FailingPubMedClient:

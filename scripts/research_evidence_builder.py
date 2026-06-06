@@ -192,6 +192,7 @@ def build_research_evidence_review_package(
     pubmed_enabled: bool = False,
     pubmed_limit: int = 10,
     pubmed_client: PubMedMetadataClient | None = None,
+    human_review_decisions: list[dict[str, Any]] | None = None,
     output_dir: Path | str | None = None,
 ) -> dict[str, Any]:
     extraction = ResearchEvidenceExtractor().extract(
@@ -255,6 +256,15 @@ def build_research_evidence_review_package(
         review_artifact=review_artifact,
         promotion_dry_run=promotion_dry_run,
     )
+    human_review_decision = _build_human_review_decision(
+        review_artifact=review_artifact,
+        controlled_skill_extension_draft=controlled_skill_extension_draft,
+        human_review_decisions=list(human_review_decisions or []),
+    )
+    controlled_promotion_package = _build_controlled_promotion_package(
+        controlled_skill_extension_draft=controlled_skill_extension_draft,
+        human_review_decision=human_review_decision,
+    )
     package = {
         "schema_version": "research_evidence_review_package.v1",
         "disease_key": disease_key,
@@ -268,6 +278,8 @@ def build_research_evidence_review_package(
         "human_review_checklist": human_review_checklist,
         "promotion_dry_run": promotion_dry_run,
         "controlled_skill_extension_draft": controlled_skill_extension_draft,
+        "human_review_decision": human_review_decision,
+        "controlled_promotion_package": controlled_promotion_package,
         "runtime_safety": {
             "candidate_artifacts_only": True,
             "formal_skill_updated": False,
@@ -1242,6 +1254,314 @@ def _build_controlled_skill_extension_draft(
     }
 
 
+def _build_human_review_decision(
+    *,
+    review_artifact: dict[str, Any],
+    controlled_skill_extension_draft: dict[str, Any],
+    human_review_decisions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    supplied_by_item_id = {
+        str(item.get("item_id") or ""): item
+        for item in human_review_decisions
+        if item.get("item_id")
+    }
+    review_by_item_id = {
+        str(item.get("item_id") or ""): item
+        for item in review_artifact.get("review_items") or []
+    }
+    items = [
+        _build_human_review_decision_item(
+            update=update,
+            review_item=review_by_item_id.get(str(update.get("item_id")), {}),
+            supplied_decision=supplied_by_item_id.get(str(update.get("item_id")), {}),
+        )
+        for update in controlled_skill_extension_draft.get("proposed_section_updates") or []
+    ]
+    decisions = {item["review_decision"] for item in items}
+    approved_count = sum(1 for item in items if item["review_decision"] == "approved")
+    pending_count = sum(
+        1 for item in items if item["review_decision"] == "pending_human_review"
+    )
+    if pending_count:
+        decision_status = "pending_human_review"
+    elif approved_count and decisions <= {"approved"}:
+        decision_status = "approved"
+    elif approved_count:
+        decision_status = "partially_approved"
+    else:
+        decision_status = "not_approved"
+    return {
+        "schema_version": "research_human_review_decision.v1",
+        "decision_status": decision_status,
+        "source_draft_schema_version": controlled_skill_extension_draft.get(
+            "schema_version"
+        ),
+        "target_skill_id": controlled_skill_extension_draft.get("target_skill_id"),
+        "review_item_count": len(items),
+        "items": items,
+        "runtime_safety": {
+            "human_decision_only": True,
+            "formal_skill_updated": False,
+            "formal_guideline_updated": False,
+            "diagnosis_report_updated": False,
+            "formal_update_allowed": False,
+            "diagnosis_allowed": False,
+        },
+    }
+
+
+def _build_human_review_decision_item(
+    *,
+    update: dict[str, Any],
+    review_item: dict[str, Any],
+    supplied_decision: dict[str, Any],
+) -> dict[str, Any]:
+    review_decision = _normalize_human_review_decision(
+        supplied_decision.get("decision")
+        or supplied_decision.get("review_decision")
+    )
+    promotion_allowed = bool(update.get("promotion_allowed_after_review"))
+    if review_decision == "approved" and not promotion_allowed:
+        review_decision = "needs_revision"
+    return {
+        "item_id": update.get("item_id"),
+        "candidate_type": update.get("candidate_type"),
+        "source_id": update.get("source_id"),
+        "target_protocol_section": update.get("target_protocol_section"),
+        "quality_gate_decision": update.get("quality_gate_decision"),
+        "guideline_conflict_status": update.get("guideline_conflict_status"),
+        "conflict_reasons": list(update.get("conflict_reasons") or []),
+        "evidence_level": update.get("evidence_level"),
+        "evidence_use_label": update.get("evidence_use_label"),
+        "review_decision": review_decision,
+        "reviewer_id": supplied_decision.get("reviewer_id"),
+        "reviewed_at": supplied_decision.get("reviewed_at"),
+        "review_notes": supplied_decision.get("notes")
+        or supplied_decision.get("review_notes"),
+        "promotion_allowed_after_review": promotion_allowed,
+        "diagnosis_report_forbidden": bool(
+            review_item.get("diagnosis_report_forbidden", True)
+        ),
+        "formal_update_allowed": False,
+        "diagnosis_allowed": False,
+    }
+
+
+def _normalize_human_review_decision(value: Any) -> str:
+    raw = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if raw in {"approved", "rejected", "needs_revision"}:
+        return raw
+    return "pending_human_review"
+
+
+def _build_controlled_promotion_package(
+    *,
+    controlled_skill_extension_draft: dict[str, Any],
+    human_review_decision: dict[str, Any],
+) -> dict[str, Any]:
+    update_by_item_id = {
+        str(update.get("item_id") or ""): update
+        for update in controlled_skill_extension_draft.get("proposed_section_updates")
+        or []
+    }
+    approved_updates = []
+    rejected_or_revision_items = []
+    for decision_item in human_review_decision.get("items") or []:
+        update = update_by_item_id.get(str(decision_item.get("item_id")), {})
+        if (
+            decision_item.get("review_decision") == "approved"
+            and decision_item.get("promotion_allowed_after_review") is True
+        ):
+            approved_updates.append(
+                _build_approved_controlled_update(
+                    update=update,
+                    decision_item=decision_item,
+                )
+            )
+        elif decision_item.get("review_decision") != "pending_human_review":
+            rejected_or_revision_items.append(
+                _build_rejected_or_revision_item(decision_item)
+            )
+    patch_preview = _build_formal_skill_patch_preview(
+        target_skill_id=controlled_skill_extension_draft.get("target_skill_id"),
+        approved_updates=approved_updates,
+    )
+    return {
+        "schema_version": "controlled_promotion_package.v1",
+        "package_status": (
+            "ready_for_controlled_promotion_review"
+            if approved_updates
+            else "not_ready_for_promotion"
+        ),
+        "source_draft_schema_version": controlled_skill_extension_draft.get(
+            "schema_version"
+        ),
+        "source_review_decision_schema_version": human_review_decision.get(
+            "schema_version"
+        ),
+        "target_skill_id": controlled_skill_extension_draft.get("target_skill_id"),
+        "approved_updates": approved_updates,
+        "rejected_or_revision_items": rejected_or_revision_items,
+        "formal_skill_patch_preview": patch_preview,
+        "rollback_notes": _build_controlled_promotion_rollback_notes(
+            target_skill_id=controlled_skill_extension_draft.get("target_skill_id"),
+            approved_updates=approved_updates,
+        ),
+        "audit_log": _build_controlled_promotion_audit_log(
+            human_review_decision=human_review_decision,
+            approved_updates=approved_updates,
+            rejected_or_revision_items=rejected_or_revision_items,
+        ),
+        "runtime_safety": {
+            "controlled_package_only": True,
+            "formal_patch_preview_only": True,
+            "formal_skill_updated": False,
+            "formal_guideline_updated": False,
+            "diagnosis_report_updated": False,
+            "formal_update_allowed": False,
+            "diagnosis_allowed": False,
+        },
+    }
+
+
+def _build_approved_controlled_update(
+    *,
+    update: dict[str, Any],
+    decision_item: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "item_id": update.get("item_id"),
+        "candidate_type": update.get("candidate_type"),
+        "source_id": update.get("source_id"),
+        "target_protocol_section": update.get("target_protocol_section"),
+        "suggested_section_action": update.get("suggested_section_action"),
+        "evidence_level": update.get("evidence_level"),
+        "evidence_use_label": update.get("evidence_use_label"),
+        "review_decision": decision_item.get("review_decision"),
+        "reviewer_id": decision_item.get("reviewer_id"),
+        "review_notes": decision_item.get("review_notes"),
+        "formal_patch_applied": False,
+        "diagnosis_flow_changed": False,
+        "formal_update_allowed": False,
+        "diagnosis_allowed": False,
+    }
+
+
+def _build_rejected_or_revision_item(decision_item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "item_id": decision_item.get("item_id"),
+        "candidate_type": decision_item.get("candidate_type"),
+        "source_id": decision_item.get("source_id"),
+        "target_protocol_section": decision_item.get("target_protocol_section"),
+        "review_decision": decision_item.get("review_decision"),
+        "reviewer_id": decision_item.get("reviewer_id"),
+        "review_notes": decision_item.get("review_notes"),
+        "reason": "human_review_did_not_approve_promotion",
+        "formal_update_allowed": False,
+        "diagnosis_allowed": False,
+    }
+
+
+def _build_formal_skill_patch_preview(
+    *,
+    target_skill_id: Any,
+    approved_updates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not approved_updates:
+        return {
+            "patch_status": "no_approved_updates",
+            "target_skill_id": target_skill_id,
+            "preview_sections": [],
+            "patch_preview_text": "",
+            "formal_skill_file_changed": False,
+            "patch_applied": False,
+        }
+    preview_sections = [
+        {
+            "item_id": update.get("item_id"),
+            "target_protocol_section": update.get("target_protocol_section"),
+            "candidate_type": update.get("candidate_type"),
+            "evidence_use_label": update.get("evidence_use_label"),
+            "source_id": update.get("source_id"),
+            "proposed_addition": (
+                f"Add {update.get('evidence_use_label')} research-mode "
+                f"{update.get('candidate_type')} from {update.get('source_id')} "
+                f"to {update.get('target_protocol_section')}."
+            ),
+        }
+        for update in approved_updates
+    ]
+    return {
+        "patch_status": "preview_only_not_applied",
+        "target_skill_id": target_skill_id,
+        "preview_sections": preview_sections,
+        "patch_preview_text": "\n".join(
+            f"+ [{section['evidence_use_label']}] {section['proposed_addition']}"
+            for section in preview_sections
+        ),
+        "formal_skill_file_changed": False,
+        "patch_applied": False,
+    }
+
+
+def _build_controlled_promotion_rollback_notes(
+    *,
+    target_skill_id: Any,
+    approved_updates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not approved_updates:
+        return [
+            {
+                "status": "no_approved_updates",
+                "note": "No rollback action is needed because no formal patch is previewed.",
+            }
+        ]
+    return [
+        {
+            "item_id": update.get("item_id"),
+            "target_skill_id": target_skill_id,
+            "rollback_action": "remove_previewed_research_mode_extension_if_promoted_later",
+            "formal_patch_applied": False,
+        }
+        for update in approved_updates
+    ]
+
+
+def _build_controlled_promotion_audit_log(
+    *,
+    human_review_decision: dict[str, Any],
+    approved_updates: list[dict[str, Any]],
+    rejected_or_revision_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = [
+        {
+            "event": f"human_review_decision_{human_review_decision.get('decision_status')}",
+            "schema_version": human_review_decision.get("schema_version"),
+            "formal_skill_updated": False,
+            "diagnosis_report_updated": False,
+        }
+    ]
+    for update in approved_updates:
+        events.append(
+            {
+                "event": "human_review_item_approved_for_controlled_package",
+                "item_id": update.get("item_id"),
+                "source_id": update.get("source_id"),
+                "formal_patch_applied": False,
+            }
+        )
+    for item in rejected_or_revision_items:
+        events.append(
+            {
+                "event": "human_review_item_not_approved",
+                "item_id": item.get("item_id"),
+                "review_decision": item.get("review_decision"),
+                "formal_patch_applied": False,
+            }
+        )
+    return events
+
+
 def _build_controlled_section_update(
     *,
     review_item: dict[str, Any],
@@ -1418,6 +1738,9 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     dry_run_path = output / "research_promotion_dry_run.json"
     draft_path = output / "controlled_skill_extension_draft.json"
     draft_md_path = output / "controlled_skill_extension_draft.md"
+    review_decision_path = output / "research_human_review_decision.json"
+    promotion_package_path = output / "controlled_promotion_package.json"
+    promotion_package_md_path = output / "controlled_promotion_package.md"
     package_path = output / "research_evidence_review_package.json"
     package["output_paths"] = {
         "review_package_json_path": str(package_path),
@@ -1430,6 +1753,9 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
         "promotion_dry_run_json_path": str(dry_run_path),
         "controlled_skill_extension_draft_json_path": str(draft_path),
         "controlled_skill_extension_draft_md_path": str(draft_md_path),
+        "human_review_decision_json_path": str(review_decision_path),
+        "controlled_promotion_package_json_path": str(promotion_package_path),
+        "controlled_promotion_package_md_path": str(promotion_package_md_path),
     }
     review_path.write_text(
         json.dumps(package["gateway_review_artifact"], ensure_ascii=False, indent=2),
@@ -1462,6 +1788,24 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     draft_md_path.write_text(
         _render_controlled_skill_extension_draft_markdown(
             package["controlled_skill_extension_draft"]
+        ),
+        encoding="utf-8",
+    )
+    review_decision_path.write_text(
+        json.dumps(package["human_review_decision"], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    promotion_package_path.write_text(
+        json.dumps(
+            package["controlled_promotion_package"],
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    promotion_package_md_path.write_text(
+        _render_controlled_promotion_package_markdown(
+            package["controlled_promotion_package"]
         ),
         encoding="utf-8",
     )
@@ -1531,6 +1875,52 @@ def _render_controlled_skill_extension_draft_markdown(draft: dict[str, Any]) -> 
     return "\n".join(lines)
 
 
+def _render_controlled_promotion_package_markdown(package: dict[str, Any]) -> str:
+    safety = package.get("runtime_safety") or {}
+    patch_preview = package.get("formal_skill_patch_preview") or {}
+    lines = [
+        "# Controlled Promotion Package",
+        "",
+        "This package is a human-reviewed preview. It does not modify formal skills.",
+        "",
+        f"- `package_status`: `{package.get('package_status')}`",
+        f"- `target_skill_id`: `{package.get('target_skill_id')}`",
+        f"- `patch_status`: `{patch_preview.get('patch_status')}`",
+        "- `formal_update_allowed=false`",
+        f"- `diagnosis_allowed={str(safety.get('diagnosis_allowed')).lower()}`",
+        "- `formal_skill_updated=false`",
+        "- `diagnosis_report_updated=false`",
+        "",
+        "## Approved Updates",
+        "",
+        "| item_id | type | source | section | evidence_use | patch_applied |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in package.get("approved_updates") or []:
+        lines.append(
+            "| {item_id} | {candidate_type} | {source_id} | "
+            "{target_protocol_section} | {evidence_use_label} | "
+            "{formal_patch_applied} |".format(**item)
+        )
+    lines.extend(
+        [
+            "",
+            "## Rejected Or Revision Items",
+            "",
+            "| item_id | type | source | decision |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    for item in package.get("rejected_or_revision_items") or []:
+        lines.append(
+            "| {item_id} | {candidate_type} | {source_id} | {review_decision} |".format(
+                **item
+            )
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _render_markdown(payload: dict[str, Any]) -> str:
     gate = payload.get("quality_gate") or {}
     decision = gate.get("promotion_decision") or {}
@@ -1592,6 +1982,7 @@ def main() -> None:
             guideline_skill=dict(request.get("guideline_skill") or {}),
             pubmed_enabled=args.enable_pubmed,
             pubmed_limit=args.pubmed_limit,
+            human_review_decisions=list(request.get("human_review_decisions") or []),
             output_dir=args.output_dir,
         )
     elif (
