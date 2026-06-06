@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scripts.research_evidence_builder import (
     ResearchClaimBuilder,
+    ResearchEvidenceExtractor,
     ResearchEvidenceRetriever,
     build_research_evidence_proposal,
     build_research_evidence_proposal_from_request,
@@ -15,6 +16,191 @@ from scripts.research_evidence_builder import (
 
 
 class ResearchEvidenceGatewayTest(unittest.TestCase):
+    def test_extractor_builds_structured_evidence_from_abstract_text(self) -> None:
+        extraction = ResearchEvidenceExtractor().extract(
+            disease_key="femoral_head_necrosis",
+            modality="MRI",
+            research_question="MRI texture measurement protocol",
+            supplied_texts=[
+                {
+                    "source_id": "abstract_texture_2025",
+                    "title": "MRI texture features for early osteonecrosis",
+                    "source_type": "journal article",
+                    "year": 2025,
+                    "doi": "10.1000/texture",
+                    "text_kind": "abstract",
+                    "text": (
+                        "Multi-center retrospective study of 420 adult hip pain patients. "
+                        "MRI texture disorder score and necrotic area ratio were evaluated "
+                        "for early femoral head osteonecrosis. External validation is required. "
+                        "Limitations include retrospective design and no guideline recommendation."
+                    ),
+                }
+            ],
+        )
+
+        self.assertEqual(extraction["schema_version"], "research_evidence_extraction.v1")
+        self.assertFalse(extraction["runtime_safety"]["formal_skill_updated"])
+        self.assertFalse(extraction["runtime_safety"]["diagnosis_report_updated"])
+        evidence = extraction["extracted_research_evidence"][0]
+        self.assertEqual(evidence["source_id"], "abstract_texture_2025")
+        self.assertEqual(evidence["title"], "MRI texture features for early osteonecrosis")
+        self.assertEqual(evidence["publication_year"], 2025)
+        self.assertEqual(evidence["source_type"], "peer_reviewed_journal")
+        self.assertEqual(evidence["DOI"], "10.1000/texture")
+        self.assertEqual(evidence["sample_size"], 420)
+        self.assertEqual(evidence["population"], "adult hip pain patients")
+        self.assertEqual(evidence["modality"], "MRI")
+        self.assertEqual(evidence["study_design"], "multi_center_retrospective")
+        self.assertEqual(evidence["evidence_level"], "moderate")
+        self.assertEqual(evidence["candidate_claim_type"], "candidate_measurement_protocol")
+        self.assertEqual(
+            evidence["target_protocol_section"],
+            "quantitative_evidence_protocol.measurement_evidence",
+        )
+        self.assertIn("texture disorder score", evidence["proposed_features"])
+        self.assertIn("necrotic area ratio", evidence["proposed_features"])
+        self.assertIn("retrospective design", evidence["limitations"])
+        self.assertTrue(evidence["requires_external_validation"])
+        self.assertFalse(evidence["formal_update_allowed"])
+        self.assertFalse(evidence["diagnosis_allowed"])
+
+    def test_extractor_handles_pdf_text_and_differential_clue_without_pdf_parsing(self) -> None:
+        extraction = ResearchEvidenceExtractor().extract(
+            disease_key="femoral_head_necrosis",
+            modality="MRI",
+            research_question="differential diagnosis clues",
+            supplied_texts=[
+                {
+                    "source_id": "pdf_text_differential",
+                    "title": "Differential MRI signs for hip pain",
+                    "source_type": "journal article",
+                    "publication_year": 2024,
+                    "text_kind": "pdf_text",
+                    "text": (
+                        "Prospective validation study, n=160 adult hip pain cohort. "
+                        "MRI findings may distinguish osteonecrosis from degenerative hip disease. "
+                        "This differential diagnosis clue needs external validation."
+                    ),
+                }
+            ],
+        )
+
+        evidence = extraction["extracted_research_evidence"][0]
+        self.assertEqual(evidence["source_origin"], "supplied_pdf_text")
+        self.assertEqual(evidence["study_design"], "prospective_validation")
+        self.assertEqual(evidence["sample_size"], 160)
+        self.assertEqual(evidence["candidate_claim_type"], "differential_diagnosis_clue")
+        self.assertEqual(evidence["target_protocol_section"], "differential_diagnosis_protocol")
+        self.assertIn("differential diagnosis clue", evidence["extraction_notes"])
+        self.assertTrue(evidence["requires_external_validation"])
+
+    def test_review_package_uses_extracted_text_when_metadata_is_not_supplied(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            package = build_research_evidence_review_package(
+                disease_key="femoral_head_necrosis",
+                target_skill_id="femoral_head_necrosis_v0.1",
+                modality="MRI",
+                research_question="MRI texture protocol",
+                supplied_texts=[
+                    {
+                        "source_id": "text_texture",
+                        "title": "MRI texture feature protocol for ONFH",
+                        "source_type": "journal article",
+                        "publication_year": 2025,
+                        "text_kind": "abstract",
+                        "text": (
+                            "Multi-center retrospective study of 420 adult hip pain patients. "
+                            "MRI texture disorder score was evaluated as a measurement protocol. "
+                            "External validation is required."
+                        ),
+                    }
+                ],
+                guideline_skill={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "supported_modalities": ["X-ray"],
+                    "evidence_protocol_sections": ["imaging_evidence_protocol"],
+                },
+                output_dir=root / "review",
+            )
+
+            self.assertEqual(
+                package["research_evidence_extraction"]["schema_version"],
+                "research_evidence_extraction.v1",
+            )
+            self.assertEqual(len(package["research_evidence_retrieval"]["normalized_research_evidence"]), 1)
+            candidate = package["proposal"]["candidate_extensions"][0]
+            self.assertEqual(candidate["candidate_type"], "candidate_measurement_protocol")
+            self.assertEqual(candidate["source_id"], "text_texture")
+            self.assertEqual(package["gateway_review_artifact"]["review_items"][0]["guideline_conflict_status"], "human_review_required")
+            self.assertFalse(package["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(package["runtime_safety"]["diagnosis_report_updated"])
+            self.assertTrue((root / "review" / "research_evidence_extraction.json").exists())
+            self.assertTrue((root / "review" / "research_evidence_review_package.json").exists())
+
+    def test_cli_builds_review_package_from_supplied_texts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            request_path = root / "request.json"
+            output_dir = root / "review"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "disease_key": "femoral_head_necrosis",
+                        "target_skill_id": "femoral_head_necrosis_v0.1",
+                        "modality": "MRI",
+                        "research_question": "MRI texture protocol",
+                        "build_review_package": True,
+                        "guideline_skill": {
+                            "skill_id": "femoral_head_necrosis_v0.1",
+                            "supported_modalities": ["X-ray"],
+                            "evidence_protocol_sections": ["imaging_evidence_protocol"],
+                        },
+                        "supplied_texts": [
+                            {
+                                "source_id": "cli_text_texture",
+                                "title": "MRI texture feature protocol for ONFH",
+                                "source_type": "journal article",
+                                "publication_year": 2025,
+                                "text_kind": "abstract",
+                                "text": (
+                                    "Multi-center retrospective study of 420 adult hip pain patients. "
+                                    "MRI texture disorder score was evaluated as a measurement protocol. "
+                                    "External validation is required."
+                                ),
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "scripts.research_evidence_builder",
+                    "--input-json",
+                    str(request_path),
+                    "--output-dir",
+                    str(output_dir),
+                ],
+                cwd=Path.cwd(),
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["schema_version"], "research_evidence_review_package.v1")
+            self.assertEqual(payload["research_evidence_extraction"]["source_text_count"], 1)
+            self.assertEqual(payload["proposal"]["candidate_extensions"][0]["source_id"], "cli_text_texture")
+            self.assertFalse(payload["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(payload["runtime_safety"]["diagnosis_report_updated"])
+            self.assertTrue((output_dir / "research_evidence_extraction.json").exists())
+
     def test_claim_builder_generates_supported_candidate_claim_types_from_normalized_evidence(self) -> None:
         normalized_evidence = [
             {

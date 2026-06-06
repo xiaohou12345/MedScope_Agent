@@ -110,6 +110,43 @@ class ResearchEvidenceRetriever:
         }
 
 
+class ResearchEvidenceExtractor:
+    def extract(
+        self,
+        *,
+        disease_key: str,
+        modality: str,
+        research_question: str,
+        supplied_texts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        extracted: list[dict[str, Any]] = []
+        for index, text_source in enumerate(supplied_texts, start=1):
+            extracted.append(
+                _extract_research_evidence_from_text(
+                    disease_key=disease_key,
+                    requested_modality=modality,
+                    research_question=research_question,
+                    text_source=text_source,
+                    index=index,
+                )
+            )
+        return {
+            "schema_version": "research_evidence_extraction.v1",
+            "source_text_count": len(supplied_texts),
+            "extracted_research_evidence": extracted,
+            "runtime_safety": {
+                "input_mode": "supplied_text_only",
+                "pdf_binary_parsed": False,
+                "llm_extraction_used": False,
+                "formal_skill_updated": False,
+                "formal_guideline_updated": False,
+                "diagnosis_report_updated": False,
+                "formal_update_allowed": False,
+                "diagnosis_allowed": False,
+            },
+        }
+
+
 class ResearchClaimBuilder:
     def build_claims(
         self,
@@ -150,17 +187,27 @@ def build_research_evidence_review_package(
     modality: str,
     research_question: str,
     supplied_metadata: list[dict[str, Any]] | None = None,
+    supplied_texts: list[dict[str, Any]] | None = None,
     guideline_skill: dict[str, Any] | None = None,
     pubmed_enabled: bool = False,
     pubmed_limit: int = 10,
     pubmed_client: PubMedMetadataClient | None = None,
     output_dir: Path | str | None = None,
 ) -> dict[str, Any]:
+    extraction = ResearchEvidenceExtractor().extract(
+        disease_key=disease_key,
+        modality=modality,
+        research_question=research_question,
+        supplied_texts=list(supplied_texts or []),
+    )
+    merged_metadata = list(supplied_metadata or []) + list(
+        extraction["extracted_research_evidence"]
+    )
     retrieval = ResearchEvidenceRetriever(pubmed_client=pubmed_client).retrieve(
         disease_key=disease_key,
         modality=modality,
         research_question=research_question,
-        supplied_metadata=supplied_metadata,
+        supplied_metadata=merged_metadata,
         pubmed_enabled=pubmed_enabled,
         pubmed_limit=pubmed_limit,
     )
@@ -208,6 +255,7 @@ def build_research_evidence_review_package(
         "disease_key": disease_key,
         "target_skill_id": target_skill_id,
         "proposal_status": "proposal_only",
+        "research_evidence_extraction": extraction,
         "research_evidence_retrieval": retrieval,
         "claim_builder": _claim_builder_artifact(claims),
         "proposal": proposal,
@@ -710,6 +758,191 @@ def _normalize_evidence_level(
     return "unknown"
 
 
+def _extract_research_evidence_from_text(
+    *,
+    disease_key: str,
+    requested_modality: str,
+    research_question: str,
+    text_source: dict[str, Any],
+    index: int,
+) -> dict[str, Any]:
+    text = str(text_source.get("text") or "")
+    base_metadata = dict(text_source)
+    base_metadata.pop("text", None)
+    base_metadata.setdefault("source_id", f"text_source_{index:03d}")
+    base_metadata.setdefault("modality", _infer_modality_from_text(text, requested_modality))
+    base_metadata.setdefault("study_design", _infer_study_design_from_text(text))
+    base_metadata.setdefault("sample_size", _infer_sample_size_from_text(text))
+    base_metadata.setdefault("population", _infer_population_from_text(text))
+    base_metadata.setdefault(
+        "candidate_claim_type",
+        _infer_candidate_claim_type_from_text(text, research_question),
+    )
+    base_metadata.setdefault(
+        "target_protocol_section",
+        _target_section_for_claim({}, base_metadata["candidate_claim_type"]),
+    )
+    base_metadata.setdefault("limitations", _infer_limitations_from_text(text))
+    base_metadata.setdefault(
+        "requires_external_validation",
+        _infer_requires_external_validation(text),
+    )
+    normalized = normalize_research_metadata(
+        base_metadata,
+        disease_key=disease_key,
+        requested_modality=requested_modality,
+        research_question=research_question,
+        source_origin=_source_origin_for_text_kind(base_metadata.get("text_kind")),
+        index=index,
+    )
+    normalized["proposed_features"] = _extract_proposed_features(text)
+    normalized["extraction_notes"] = _extraction_notes_for_text(text, normalized)
+    normalized["text_kind"] = str(text_source.get("text_kind") or "supplied_text")
+    normalized["formal_update_allowed"] = False
+    normalized["diagnosis_allowed"] = False
+    return normalized
+
+
+def _infer_modality_from_text(text: str, requested_modality: str) -> str:
+    lower = text.lower()
+    if "mri" in lower or "magnetic resonance" in lower:
+        return "MRI"
+    if "chest x-ray" in lower or "chest xray" in lower:
+        return "Chest X-ray"
+    if "x-ray" in lower or "xray" in lower:
+        return "X-ray"
+    if "ct" in lower:
+        return "CT"
+    return requested_modality
+
+
+def _infer_study_design_from_text(text: str) -> str:
+    lower = text.lower()
+    if "meta-analysis" in lower or "systematic review" in lower:
+        return "systematic_review_or_meta_analysis"
+    if "multi-center" in lower or "multicenter" in lower or "multi center" in lower:
+        if "retrospective" in lower:
+            return "multi_center_retrospective"
+    if "single-center" in lower or "single center" in lower:
+        if "retrospective" in lower:
+            return "single_center_retrospective"
+    if "prospective" in lower:
+        return "prospective_validation"
+    if "retrospective" in lower:
+        return "retrospective"
+    if "randomized" in lower or "randomised" in lower:
+        return "randomized_trial"
+    return "unknown"
+
+
+def _infer_sample_size_from_text(text: str) -> int:
+    patterns = [
+        r"\bn\s*=\s*(\d[\d,]*)",
+        r"\bstudy of\s+(\d[\d,]*)\b",
+        r"\b(\d[\d,]*)\s+(?:adult\s+)?(?:patients|participants|subjects|cases)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return _coerce_sample_size(match.group(1))
+    return 0
+
+
+def _infer_population_from_text(text: str) -> str:
+    lower = text.lower()
+    patterns = [
+        r"(\badult [a-z -]+ (?:patients|cohort))",
+        r"(\bpediatric [a-z -]+ (?:patients|cohort))",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, lower)
+        if match:
+            return match.group(1).strip()
+    if "adult" in lower:
+        return "adult cohort"
+    if "pediatric" in lower or "paediatric" in lower:
+        return "pediatric cohort"
+    return "unknown"
+
+
+def _infer_candidate_claim_type_from_text(text: str, research_question: str) -> str:
+    lower = f"{text} {research_question}".lower()
+    if "differential" in lower or "distinguish" in lower:
+        return "differential_diagnosis_clue"
+    if "risk" in lower or "steroid" in lower or "alcohol" in lower:
+        return "clinical_risk_context_clue"
+    if "quality gate" in lower or "minimum external validation" in lower:
+        return "candidate_quality_gate_rule"
+    if (
+        "measurement" in lower
+        or "score" in lower
+        or "ratio" in lower
+        or "texture" in lower
+        or "radiomics" in lower
+    ):
+        return "candidate_measurement_protocol"
+    return "candidate_skill_extension"
+
+
+def _infer_limitations_from_text(text: str) -> list[str]:
+    lower = text.lower()
+    limitations: list[str] = []
+    if "retrospective" in lower:
+        limitations.append("retrospective design")
+    if "single-center" in lower or "single center" in lower:
+        limitations.append("single center study")
+    if "no guideline" in lower or "not a guideline" in lower:
+        limitations.append("not a guideline recommendation")
+    return limitations
+
+
+def _infer_requires_external_validation(text: str) -> bool:
+    lower = text.lower()
+    if "external validation is required" in lower:
+        return True
+    if "needs external validation" in lower:
+        return True
+    if "externally validated" in lower:
+        return False
+    return True
+
+
+def _extract_proposed_features(text: str) -> list[str]:
+    lower = text.lower()
+    features: list[str] = []
+    known_features = [
+        "texture disorder score",
+        "necrotic area ratio",
+        "marrow edema",
+        "radiomics feature",
+        "collapse measurement",
+    ]
+    for feature in known_features:
+        if feature in lower:
+            features.append(feature)
+    return features
+
+
+def _extraction_notes_for_text(text: str, evidence: dict[str, Any]) -> list[str]:
+    notes = [
+        f"text_kind={evidence.get('text_kind', 'supplied_text')}",
+        f"candidate_claim_type={evidence.get('candidate_claim_type')}",
+    ]
+    if evidence.get("candidate_claim_type") == "differential_diagnosis_clue":
+        notes.append("differential diagnosis clue")
+    if "abstract" in str(evidence.get("text_kind") or ""):
+        notes.append("abstract text extraction")
+    return notes
+
+
+def _source_origin_for_text_kind(text_kind: Any) -> str:
+    if str(text_kind or "").strip().lower() == "pdf_text":
+        return "supplied_pdf_text"
+    if str(text_kind or "").strip().lower() == "abstract":
+        return "supplied_abstract_text"
+    return "supplied_text"
+
+
 def _normalize_claim_type(value: Any) -> str:
     raw = str(value or "").strip()
     if raw in ALLOWED_CANDIDATE_TYPES and raw != "research_evidence_proposal":
@@ -1027,6 +1260,7 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     proposal = package["proposal"]
     _write_outputs(proposal, output)
     review_path = output / "research_gateway_review_artifact.json"
+    extraction_path = output / "research_evidence_extraction.json"
     checklist_path = output / "human_review_checklist.json"
     checklist_md_path = output / "human_review_checklist.md"
     dry_run_path = output / "research_promotion_dry_run.json"
@@ -1035,6 +1269,7 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
         "review_package_json_path": str(package_path),
         "proposal_json_path": str(output / "research_evidence_proposal.json"),
         "quality_gate_json_path": str(output / "research_evidence_quality_gate.json"),
+        "extraction_json_path": str(extraction_path),
         "gateway_review_json_path": str(review_path),
         "human_review_checklist_json_path": str(checklist_path),
         "human_review_checklist_md_path": str(checklist_md_path),
@@ -1042,6 +1277,10 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     }
     review_path.write_text(
         json.dumps(package["gateway_review_artifact"], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    extraction_path.write_text(
+        json.dumps(package["research_evidence_extraction"], ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     checklist_path.write_text(
@@ -1150,6 +1389,7 @@ def main() -> None:
                 or request.get("sources")
                 or []
             ),
+            supplied_texts=list(request.get("supplied_texts") or []),
             guideline_skill=dict(request.get("guideline_skill") or {}),
             pubmed_enabled=args.enable_pubmed,
             pubmed_limit=args.pubmed_limit,
