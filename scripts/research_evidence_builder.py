@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import urllib.parse
+import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 DEFAULT_OUTPUT_DIR = Path("output/fake/research_evidence_gateway")
@@ -27,6 +30,190 @@ TRUSTED_SOURCE_TYPES = {
 }
 MIN_SAMPLE_SIZE = 50
 FRESH_PUBLICATION_YEAR = 2020
+PubMedMetadataClient = Callable[[str, int], list[dict[str, Any]]]
+
+
+class ResearchEvidenceRetriever:
+    def __init__(self, pubmed_client: PubMedMetadataClient | None = None) -> None:
+        self.pubmed_client = pubmed_client or _default_pubmed_metadata_client
+
+    def retrieve(
+        self,
+        *,
+        disease_key: str,
+        modality: str,
+        research_question: str,
+        supplied_metadata: list[dict[str, Any]] | None = None,
+        pubmed_enabled: bool = False,
+        pubmed_limit: int = 10,
+    ) -> dict[str, Any]:
+        normalized_evidence: list[dict[str, Any]] = []
+        for index, metadata in enumerate(supplied_metadata or [], start=1):
+            normalized_evidence.append(
+                normalize_research_metadata(
+                    metadata,
+                    disease_key=disease_key,
+                    requested_modality=modality,
+                    research_question=research_question,
+                    source_origin="supplied_metadata",
+                    index=index,
+                )
+            )
+
+        pubmed_records: list[dict[str, Any]] = []
+        query = _build_pubmed_query(disease_key, modality, research_question)
+        if pubmed_enabled:
+            pubmed_records = self.pubmed_client(query, pubmed_limit)
+            offset = len(normalized_evidence)
+            for index, metadata in enumerate(pubmed_records, start=offset + 1):
+                normalized_evidence.append(
+                    normalize_research_metadata(
+                        metadata,
+                        disease_key=disease_key,
+                        requested_modality=modality,
+                        research_question=research_question,
+                        source_origin="pubmed",
+                        index=index,
+                    )
+                )
+
+        return {
+            "schema_version": "research_evidence_retrieval.v1",
+            "request": {
+                "disease_key": disease_key,
+                "modality": _normalize_modality(modality),
+                "research_question": research_question,
+            },
+            "retrieval": {
+                "supplied_metadata_count": len(supplied_metadata or []),
+                "pubmed_enabled": pubmed_enabled,
+                "pubmed_retrieval_attempted": pubmed_enabled,
+                "pubmed_result_count": len(pubmed_records),
+                "pubmed_query": query if pubmed_enabled else None,
+                "status": (
+                    "supplied_and_pubmed_metadata_normalized"
+                    if pubmed_enabled
+                    else "supplied_metadata_normalized"
+                ),
+            },
+            "normalized_research_evidence": normalized_evidence,
+            "runtime_safety": {
+                "paper_search_performed": pubmed_enabled,
+                "formal_skill_updated": False,
+                "formal_guideline_updated": False,
+                "diagnosis_report_updated": False,
+                "formal_update_allowed": False,
+                "diagnosis_allowed": False,
+            },
+        }
+
+
+def build_research_evidence_proposal_from_request(
+    *,
+    disease_key: str,
+    target_skill_id: str,
+    modality: str,
+    research_question: str,
+    extracted_claims: list[dict[str, Any]],
+    supplied_metadata: list[dict[str, Any]] | None = None,
+    pubmed_enabled: bool = False,
+    pubmed_limit: int = 10,
+    pubmed_client: PubMedMetadataClient | None = None,
+    output_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    retrieval = ResearchEvidenceRetriever(pubmed_client=pubmed_client).retrieve(
+        disease_key=disease_key,
+        modality=modality,
+        research_question=research_question,
+        supplied_metadata=supplied_metadata,
+        pubmed_enabled=pubmed_enabled,
+        pubmed_limit=pubmed_limit,
+    )
+    payload = build_research_evidence_proposal(
+        disease_key=disease_key,
+        target_skill_id=target_skill_id,
+        sources=list(retrieval["normalized_research_evidence"]),
+        extracted_claims=extracted_claims,
+        output_dir=None,
+    )
+    payload["research_evidence_retrieval"] = retrieval
+    payload["normalized_research_evidence"] = list(retrieval["normalized_research_evidence"])
+    payload["runtime_safety"].update(
+        {
+            "input_mode": "research_evidence_retrieval",
+            "paper_search_performed": retrieval["runtime_safety"]["paper_search_performed"],
+            "research_metadata_normalized": True,
+            "candidate_artifacts_only": True,
+            "formal_skill_updated": False,
+            "formal_guideline_updated": False,
+            "diagnosis_report_updated": False,
+            "formal_update_allowed": False,
+            "diagnosis_allowed": False,
+        }
+    )
+    if output_dir is not None:
+        _write_outputs(payload, Path(output_dir))
+    return payload
+
+
+def normalize_research_metadata(
+    metadata: dict[str, Any],
+    *,
+    disease_key: str,
+    requested_modality: str,
+    research_question: str,
+    source_origin: str,
+    index: int,
+) -> dict[str, Any]:
+    title = _first_present(metadata, "title", "article_title", "name") or "unknown"
+    year = _coerce_year(
+        _first_present(metadata, "year", "publication_year", "pub_date", "date")
+    )
+    source_type = _normalize_source_type(metadata, source_origin=source_origin)
+    study_design = _normalize_study_design(
+        _first_present(metadata, "study_design", "design", "publication_type", "publication_types")
+        or title
+    )
+    evidence_level = _normalize_evidence_level(
+        _first_present(metadata, "evidence_level", "level"),
+        source_type=source_type,
+        study_design=study_design,
+    )
+    sample_size = _coerce_sample_size(
+        _first_present(metadata, "sample_size", "n", "participants", "cohort_size")
+    )
+    doi = _first_present(metadata, "doi", "DOI")
+    pmid = _first_present(metadata, "pmid", "PMID", "uid")
+    source_id = _normalize_source_id(
+        metadata.get("source_id"),
+        pmid=pmid,
+        doi=doi,
+        index=index,
+        source_origin=source_origin,
+    )
+    population = str(_first_present(metadata, "population", "cohort") or "unknown").strip().lower()
+    modality = _normalize_modality(_first_present(metadata, "modality", "imaging_modality") or requested_modality)
+    normalized = {
+        "source_id": source_id,
+        "title": str(title).strip(),
+        "year": year,
+        "publication_year": year,
+        "source_type": source_type,
+        "doi": str(doi).strip() if doi else None,
+        "sample_size": sample_size,
+        "population": population,
+        "modality": modality,
+        "study_design": study_design,
+        "evidence_level": evidence_level,
+        "disease_key": disease_key,
+        "research_question": research_question,
+        "source_origin": source_origin,
+    }
+    if pmid:
+        normalized["pmid"] = str(pmid).strip()
+    if metadata.get("url"):
+        normalized["url"] = metadata["url"]
+    return normalized
 
 
 def build_research_evidence_proposal(
@@ -257,6 +444,197 @@ def _coerce_int(value: Any) -> int | None:
         return None
 
 
+def _coerce_year(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    match = re.search(r"(19|20)\d{2}", str(value))
+    if not match:
+        return None
+    return int(match.group(0))
+
+
+def _coerce_sample_size(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, int):
+        return value
+    match = re.search(r"\d+", str(value).replace(",", ""))
+    if not match:
+        return 0
+    return int(match.group(0))
+
+
+def _first_present(metadata: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = metadata.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _normalize_source_id(
+    source_id: Any,
+    *,
+    pmid: Any,
+    doi: Any,
+    index: int,
+    source_origin: str,
+) -> str:
+    if source_id:
+        return str(source_id).strip()
+    if pmid:
+        return f"pubmed_{str(pmid).strip()}"
+    if doi:
+        safe_doi = re.sub(r"[^a-zA-Z0-9]+", "_", str(doi).strip()).strip("_").lower()
+        return f"doi_{safe_doi}"
+    return f"{source_origin}_{index:03d}"
+
+
+def _normalize_source_type(metadata: dict[str, Any], *, source_origin: str) -> str:
+    raw = str(
+        _first_present(metadata, "source_type", "publication_type", "publication_types")
+        or ""
+    ).lower()
+    if "preprint" in raw:
+        return "preprint"
+    if "guideline" in raw:
+        return "medical_guideline"
+    if "consensus" in raw:
+        return "consensus_statement"
+    if "regulatory" in raw:
+        return "regulatory_document"
+    if source_origin == "pubmed" or "journal" in raw or "article" in raw:
+        return "peer_reviewed_journal"
+    return raw.replace(" ", "_") if raw else "unknown"
+
+
+def _normalize_modality(value: Any) -> str:
+    raw = str(value or "unknown").strip()
+    lookup = {
+        "mri": "MRI",
+        "magnetic resonance imaging": "MRI",
+        "ct": "CT",
+        "chest ct": "Chest CT",
+        "xray": "X-ray",
+        "x-ray": "X-ray",
+        "chest x-ray": "Chest X-ray",
+        "chest xray": "Chest X-ray",
+    }
+    return lookup.get(raw.lower(), raw)
+
+
+def _normalize_study_design(value: Any) -> str:
+    if isinstance(value, list):
+        raw = " ".join(str(item) for item in value)
+    else:
+        raw = str(value or "")
+    text = raw.lower().replace("-", " ").replace("_", " ")
+    if "meta" in text or "systematic review" in text:
+        return "systematic_review_or_meta_analysis"
+    if "multi" in text and "retrospective" in text:
+        return "multi_center_retrospective"
+    if "single" in text and "retrospective" in text:
+        return "single_center_retrospective"
+    if "prospective" in text:
+        return "prospective_validation"
+    if "random" in text:
+        return "randomized_trial"
+    if "case report" in text:
+        return "case_report"
+    if "retrospective" in text:
+        return "retrospective"
+    if "journal article" in text:
+        return "journal_article"
+    return re.sub(r"[^a-z0-9]+", "_", text).strip("_") or "unknown"
+
+
+def _normalize_evidence_level(
+    value: Any,
+    *,
+    source_type: str,
+    study_design: str,
+) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"low", "moderate", "high", "guideline", "consensus"}:
+        return raw
+    if source_type == "medical_guideline":
+        return "guideline"
+    if source_type == "consensus_statement":
+        return "consensus"
+    if source_type == "preprint" or study_design == "case_report":
+        return "low"
+    if study_design in {"systematic_review_or_meta_analysis", "randomized_trial"}:
+        return "high"
+    if study_design in {
+        "multi_center_retrospective",
+        "prospective_validation",
+        "retrospective",
+        "single_center_retrospective",
+    }:
+        return "moderate"
+    return "unknown"
+
+
+def _build_pubmed_query(disease_key: str, modality: str, research_question: str) -> str:
+    parts = [
+        disease_key,
+        disease_key.replace("_", " "),
+        modality,
+        research_question,
+    ]
+    return " ".join(part.strip() for part in parts if part and part.strip())
+
+
+def _default_pubmed_metadata_client(query: str, limit: int) -> list[dict[str, Any]]:
+    params = urllib.parse.urlencode(
+        {
+            "db": "pubmed",
+            "term": query,
+            "retmode": "json",
+            "retmax": str(limit),
+        }
+    )
+    search_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?{params}"
+    with urllib.request.urlopen(search_url, timeout=20) as response:
+        search_payload = json.loads(response.read().decode("utf-8"))
+    pmids = search_payload.get("esearchresult", {}).get("idlist", [])
+    if not pmids:
+        return []
+    summary_params = urllib.parse.urlencode(
+        {
+            "db": "pubmed",
+            "id": ",".join(pmids),
+            "retmode": "json",
+        }
+    )
+    summary_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?{summary_params}"
+    with urllib.request.urlopen(summary_url, timeout=20) as response:
+        summary_payload = json.loads(response.read().decode("utf-8"))
+    result = summary_payload.get("result", {})
+    records: list[dict[str, Any]] = []
+    for pmid in pmids:
+        item = result.get(str(pmid), {})
+        article_ids = item.get("articleids") or []
+        doi = None
+        for article_id in article_ids:
+            if article_id.get("idtype") == "doi":
+                doi = article_id.get("value")
+                break
+        records.append(
+            {
+                "pmid": pmid,
+                "article_title": item.get("title"),
+                "pub_date": item.get("pubdate"),
+                "source_type": "peer_reviewed_journal",
+                "doi": doi,
+                "publication_types": item.get("pubtype") or [],
+            }
+        )
+    return records
+
+
 def _write_outputs(payload: dict[str, Any], output: Path) -> None:
     output.mkdir(parents=True, exist_ok=True)
     proposal_path = output / "research_evidence_proposal.json"
@@ -317,16 +695,48 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-json", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--enable-pubmed", action="store_true")
+    parser.add_argument("--pubmed-limit", type=int, default=10)
     args = parser.parse_args()
     request = json.loads(args.input_json.read_text(encoding="utf-8"))
-    payload = build_research_evidence_proposal(
-        disease_key=request["disease_key"],
-        target_skill_id=request["target_skill_id"],
-        sources=list(request.get("sources") or []),
-        extracted_claims=list(request.get("extracted_claims") or []),
-        output_dir=args.output_dir,
-    )
+    if (
+        request.get("modality")
+        or request.get("research_question")
+        or request.get("supplied_metadata")
+        or args.enable_pubmed
+    ):
+        payload = build_research_evidence_proposal_from_request(
+            disease_key=request["disease_key"],
+            target_skill_id=request["target_skill_id"],
+            modality=request.get("modality") or _infer_request_modality(request),
+            research_question=request.get("research_question") or "",
+            supplied_metadata=list(
+                request.get("supplied_metadata")
+                or request.get("sources")
+                or []
+            ),
+            extracted_claims=list(request.get("extracted_claims") or []),
+            pubmed_enabled=args.enable_pubmed,
+            pubmed_limit=args.pubmed_limit,
+            output_dir=args.output_dir,
+        )
+    else:
+        payload = build_research_evidence_proposal(
+            disease_key=request["disease_key"],
+            target_skill_id=request["target_skill_id"],
+            sources=list(request.get("sources") or []),
+            extracted_claims=list(request.get("extracted_claims") or []),
+            output_dir=args.output_dir,
+        )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def _infer_request_modality(request: dict[str, Any]) -> str:
+    for collection_key in ("extracted_claims", "supplied_metadata", "sources"):
+        for item in request.get(collection_key) or []:
+            if item.get("modality"):
+                return str(item["modality"])
+    return "unknown"
 
 
 if __name__ == "__main__":
