@@ -544,6 +544,148 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 (root / "review" / "controlled_promotion_package.md").exists()
             )
 
+    def test_formal_skill_extension_patch_preview_is_generated_for_approved_supplemental_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            package = build_research_evidence_review_package(
+                disease_key="femoral_head_necrosis",
+                target_skill_id="femoral_head_necrosis_v0.1",
+                modality="MRI",
+                research_question="MRI necrotic area ratio as supplemental measurement",
+                supplied_metadata=[
+                    {
+                        "source_id": "study_necrotic_ratio",
+                        "title": "MRI necrotic area ratio for ONFH staging",
+                        "source_type": "journal article",
+                        "publication_year": 2025,
+                        "study_design": "multi center retrospective",
+                        "sample_size": 420,
+                        "modality": "MRI",
+                        "population": "adult hip pain cohort",
+                        "evidence_level": "moderate",
+                        "candidate_claim_type": "candidate_measurement_protocol",
+                        "target_protocol_section": (
+                            "quantitative_evidence_protocol.measurement_evidence"
+                        ),
+                    }
+                ],
+                guideline_skill={
+                    "skill_id": "femoral_head_necrosis_v0.1",
+                    "supported_modalities": ["MRI"],
+                    "evidence_protocol_sections": [
+                        "quantitative_evidence_protocol.measurement_evidence"
+                    ],
+                },
+                human_review_decisions=[
+                    {
+                        "item_id": "femoral_head_necrosis_study_necrotic_ratio_claim_001",
+                        "decision": "approved",
+                        "reviewer_id": "reviewer_rad_001",
+                        "reviewed_at": "2026-06-06T12:00:00Z",
+                    }
+                ],
+                output_dir=root / "review",
+            )
+
+            patch = package["formal_skill_extension_patch_preview"]
+            self.assertEqual(
+                patch["schema_version"],
+                "formal_skill_extension_patch_preview.v1",
+            )
+            self.assertEqual(patch["patch_status"], "ready_for_human_apply_review")
+            self.assertEqual(patch["target_skill_id"], "femoral_head_necrosis_v0.1")
+            self.assertIn("femoral_head_necrosis_v0.1", patch["target_skill_file_preview"])
+            self.assertEqual(
+                patch["target_sections"][0]["safe_extension_section"],
+                (
+                    "research_evidence_supplements."
+                    "quantitative_evidence_protocol.measurement_evidence"
+                ),
+            )
+            self.assertEqual(
+                patch["target_sections"][0]["original_target_protocol_section"],
+                "quantitative_evidence_protocol.measurement_evidence",
+            )
+            self.assertIn(
+                "+ research_evidence_supplements.",
+                patch["diff_preview"]["unified_diff"],
+            )
+            self.assertFalse(patch["diff_preview"]["patch_applied"])
+            self.assertIn("reviewer_sign_off", patch["sign_off_checklist"]["required_items"])
+            self.assertIn("diagnosis_boundary_sign_off", patch["sign_off_checklist"]["required_items"])
+            self.assertEqual(patch["rollback_plan"]["rollback_status"], "preview_only")
+            self.assertEqual(patch["pre_apply_audit"]["audit_status"], "passed")
+            self.assertTrue(patch["pre_apply_audit"]["allowed_research_mode_sections_only"])
+            self.assertFalse(patch["pre_apply_audit"]["guideline_core_modified"])
+            self.assertFalse(patch["pre_apply_audit"]["diagnosis_rules_modified"])
+            self.assertFalse(patch["pre_apply_audit"]["skill_registry_modified"])
+            self.assertFalse(patch["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(patch["runtime_safety"]["formal_guideline_updated"])
+            self.assertFalse(patch["runtime_safety"]["diagnosis_report_updated"])
+            self.assertFalse(patch["runtime_safety"]["skill_registry_updated"])
+            self.assertFalse(patch["runtime_safety"]["patch_applied"])
+            self.assertTrue(
+                (root / "review" / "formal_skill_extension_patch_preview.json").exists()
+            )
+            self.assertTrue(
+                (root / "review" / "formal_skill_extension_patch_preview.md").exists()
+            )
+
+    def test_formal_skill_extension_patch_preview_blocks_diagnosis_or_core_sections(self) -> None:
+        package = build_research_evidence_review_package(
+            disease_key="femoral_head_necrosis",
+            target_skill_id="femoral_head_necrosis_v0.1",
+            modality="MRI",
+            research_question="unsafe diagnosis rule change should be blocked",
+            supplied_metadata=[
+                {
+                    "source_id": "unsafe_diagnosis_rule",
+                    "title": "Unsafe diagnosis rule candidate",
+                    "source_type": "journal article",
+                    "publication_year": 2025,
+                    "study_design": "multi center retrospective",
+                    "sample_size": 420,
+                    "modality": "MRI",
+                    "population": "adult hip pain cohort",
+                    "evidence_level": "moderate",
+                    "candidate_claim_type": "candidate_skill_extension",
+                    "target_protocol_section": "diagnosis_rules.confirmatory_criteria",
+                }
+            ],
+            guideline_skill={
+                "skill_id": "femoral_head_necrosis_v0.1",
+                "supported_modalities": ["MRI"],
+                "evidence_protocol_sections": [
+                    "diagnosis_rules.confirmatory_criteria"
+                ],
+            },
+            human_review_decisions=[
+                {
+                    "item_id": "femoral_head_necrosis_unsafe_diagnosis_rule_claim_001",
+                    "decision": "approved",
+                    "reviewer_id": "reviewer_rad_001",
+                }
+            ],
+        )
+
+        patch = package["formal_skill_extension_patch_preview"]
+        self.assertEqual(patch["patch_status"], "blocked_by_pre_apply_audit")
+        self.assertEqual(patch["pre_apply_audit"]["audit_status"], "blocked")
+        self.assertIn(
+            "forbidden_target_section",
+            patch["pre_apply_audit"]["violations"],
+        )
+        self.assertFalse(patch["pre_apply_audit"]["allowed_research_mode_sections_only"])
+        self.assertFalse(patch["pre_apply_audit"]["guideline_core_modified"])
+        self.assertFalse(patch["pre_apply_audit"]["skill_registry_modified"])
+        self.assertTrue(patch["pre_apply_audit"]["diagnosis_rules_modified"])
+        self.assertEqual(patch["diff_preview"]["unified_diff"], "")
+        self.assertFalse(patch["diff_preview"]["patch_applied"])
+        self.assertFalse(patch["runtime_safety"]["formal_skill_updated"])
+        self.assertFalse(patch["runtime_safety"]["diagnosis_report_updated"])
+        self.assertFalse(patch["runtime_safety"]["skill_registry_updated"])
+        self.assertFalse(patch["runtime_safety"]["patch_applied"])
+
     def test_review_package_blocks_weak_claim_and_keeps_promotion_dry_run_read_only(self) -> None:
         package = build_research_evidence_review_package(
             disease_key="community_acquired_pneumonia",
@@ -794,6 +936,16 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertTrue((output_dir / "research_human_review_decision.json").exists())
             self.assertTrue((output_dir / "controlled_promotion_package.json").exists())
             self.assertTrue((output_dir / "controlled_promotion_package.md").exists())
+            self.assertEqual(
+                payload["formal_skill_extension_patch_preview"]["patch_status"],
+                "ready_for_human_apply_review",
+            )
+            self.assertTrue(
+                (output_dir / "formal_skill_extension_patch_preview.json").exists()
+            )
+            self.assertTrue(
+                (output_dir / "formal_skill_extension_patch_preview.md").exists()
+            )
 
     def test_retriever_normalizes_supplied_metadata_without_pubmed_retrieval(self) -> None:
         class FailingPubMedClient:

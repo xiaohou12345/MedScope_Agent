@@ -265,6 +265,11 @@ def build_research_evidence_review_package(
         controlled_skill_extension_draft=controlled_skill_extension_draft,
         human_review_decision=human_review_decision,
     )
+    formal_skill_extension_patch_preview = (
+        _build_formal_skill_extension_patch_preview(
+            controlled_promotion_package=controlled_promotion_package,
+        )
+    )
     package = {
         "schema_version": "research_evidence_review_package.v1",
         "disease_key": disease_key,
@@ -280,6 +285,7 @@ def build_research_evidence_review_package(
         "controlled_skill_extension_draft": controlled_skill_extension_draft,
         "human_review_decision": human_review_decision,
         "controlled_promotion_package": controlled_promotion_package,
+        "formal_skill_extension_patch_preview": formal_skill_extension_patch_preview,
         "runtime_safety": {
             "candidate_artifacts_only": True,
             "formal_skill_updated": False,
@@ -1562,6 +1568,199 @@ def _build_controlled_promotion_audit_log(
     return events
 
 
+def _build_formal_skill_extension_patch_preview(
+    *,
+    controlled_promotion_package: dict[str, Any],
+) -> dict[str, Any]:
+    target_skill_id = controlled_promotion_package.get("target_skill_id")
+    target_sections = [
+        _build_formal_patch_target_section(update)
+        for update in controlled_promotion_package.get("approved_updates") or []
+    ]
+    pre_apply_audit = _build_formal_patch_pre_apply_audit(target_sections)
+    audit_passed = pre_apply_audit["audit_status"] == "passed"
+    diff_preview = _build_formal_extension_diff_preview(
+        target_skill_id=target_skill_id,
+        target_sections=target_sections if audit_passed else [],
+        patch_allowed=audit_passed,
+    )
+    if not target_sections:
+        patch_status = "no_approved_updates"
+    elif audit_passed:
+        patch_status = "ready_for_human_apply_review"
+    else:
+        patch_status = "blocked_by_pre_apply_audit"
+    return {
+        "schema_version": "formal_skill_extension_patch_preview.v1",
+        "patch_status": patch_status,
+        "source_package_schema_version": controlled_promotion_package.get(
+            "schema_version"
+        ),
+        "target_skill_id": target_skill_id,
+        "target_skill_file_preview": _target_skill_file_preview(target_skill_id),
+        "target_sections": target_sections,
+        "diff_preview": diff_preview,
+        "sign_off_checklist": _build_formal_patch_sign_off_checklist(
+            patch_status=patch_status,
+            pre_apply_audit=pre_apply_audit,
+        ),
+        "rollback_plan": _build_formal_patch_rollback_plan(
+            target_skill_id=target_skill_id,
+            target_sections=target_sections,
+        ),
+        "pre_apply_audit": pre_apply_audit,
+        "runtime_safety": {
+            "preview_only": True,
+            "patch_applied": False,
+            "formal_skill_updated": False,
+            "formal_guideline_updated": False,
+            "diagnosis_report_updated": False,
+            "skill_registry_updated": False,
+            "formal_update_allowed": False,
+            "diagnosis_allowed": False,
+        },
+    }
+
+
+def _build_formal_patch_target_section(update: dict[str, Any]) -> dict[str, Any]:
+    original_section = str(update.get("target_protocol_section") or "unknown").strip()
+    safe_section = f"research_evidence_supplements.{original_section}"
+    return {
+        "item_id": update.get("item_id"),
+        "candidate_type": update.get("candidate_type"),
+        "source_id": update.get("source_id"),
+        "evidence_use_label": update.get("evidence_use_label"),
+        "original_target_protocol_section": original_section,
+        "safe_extension_section": safe_section,
+        "proposed_patch_scope": "research_mode_supplemental_only",
+        "formal_patch_applied": False,
+        "diagnosis_flow_changed": False,
+    }
+
+
+def _build_formal_patch_pre_apply_audit(
+    target_sections: list[dict[str, Any]],
+) -> dict[str, Any]:
+    violations: list[str] = []
+    diagnosis_rules_modified = False
+    guideline_core_modified = False
+    skill_registry_modified = False
+    for section in target_sections:
+        original = str(section.get("original_target_protocol_section") or "").lower()
+        safe = str(section.get("safe_extension_section") or "").lower()
+        if not safe.startswith("research_evidence_supplements."):
+            violations.append("non_research_mode_target_section")
+        if "diagnosis_rule" in original or "diagnosis_rules" in original:
+            diagnosis_rules_modified = True
+            violations.append("forbidden_target_section")
+        if "guideline_core" in original or "core_guideline" in original:
+            guideline_core_modified = True
+            violations.append("forbidden_target_section")
+        if "skill_registry" in original or original == "registry" or ".registry" in original:
+            skill_registry_modified = True
+            violations.append("forbidden_target_section")
+    violations = _dedupe_strings(violations)
+    return {
+        "schema_version": "formal_skill_extension_pre_apply_audit.v1",
+        "audit_status": "blocked" if violations else "passed",
+        "violations": violations,
+        "allowed_research_mode_sections_only": bool(target_sections) and not violations,
+        "guideline_core_modified": guideline_core_modified,
+        "diagnosis_rules_modified": diagnosis_rules_modified,
+        "skill_registry_modified": skill_registry_modified,
+        "formal_skill_file_changed": False,
+        "patch_applied": False,
+    }
+
+
+def _build_formal_extension_diff_preview(
+    *,
+    target_skill_id: Any,
+    target_sections: list[dict[str, Any]],
+    patch_allowed: bool,
+) -> dict[str, Any]:
+    if not patch_allowed or not target_sections:
+        return {
+            "diff_status": "blocked_or_empty",
+            "unified_diff": "",
+            "patch_applied": False,
+            "formal_skill_file_changed": False,
+        }
+    lines = [
+        f"--- formal_skill:{target_skill_id}",
+        f"+++ formal_skill:{target_skill_id}:research_evidence_supplements_preview",
+    ]
+    for section in target_sections:
+        safe_section = section.get("safe_extension_section")
+        lines.extend(
+            [
+                f"@@ {safe_section} @@",
+                f"+ research_evidence_supplements.{section.get('item_id')}:",
+                f"+   source_id: {section.get('source_id')}",
+                f"+   evidence_use_label: {section.get('evidence_use_label')}",
+                f"+   original_target_protocol_section: {section.get('original_target_protocol_section')}",
+                "+   mode: research_mode_supplemental_only",
+                "+   formal_patch_applied: false",
+            ]
+        )
+    return {
+        "diff_status": "preview_only_not_applied",
+        "unified_diff": "\n".join(lines),
+        "patch_applied": False,
+        "formal_skill_file_changed": False,
+    }
+
+
+def _build_formal_patch_sign_off_checklist(
+    *,
+    patch_status: str,
+    pre_apply_audit: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": "formal_skill_extension_sign_off_checklist.v1",
+        "sign_off_status": "pending_sign_off",
+        "patch_status": patch_status,
+        "pre_apply_audit_status": pre_apply_audit.get("audit_status"),
+        "required_items": [
+            "reviewer_sign_off",
+            "guideline_boundary_sign_off",
+            "research_mode_supplemental_scope_sign_off",
+            "diagnosis_boundary_sign_off",
+            "registry_boundary_sign_off",
+            "rollback_sign_off",
+        ],
+        "formal_update_allowed": False,
+        "diagnosis_allowed": False,
+    }
+
+
+def _build_formal_patch_rollback_plan(
+    *,
+    target_skill_id: Any,
+    target_sections: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "schema_version": "formal_skill_extension_rollback_plan.v1",
+        "rollback_status": "preview_only",
+        "target_skill_id": target_skill_id,
+        "rollback_steps": [
+            {
+                "item_id": section.get("item_id"),
+                "safe_extension_section": section.get("safe_extension_section"),
+                "rollback_action": "remove_research_evidence_supplement_if_applied_later",
+                "formal_patch_applied": False,
+            }
+            for section in target_sections
+        ],
+        "formal_skill_file_changed": False,
+    }
+
+
+def _target_skill_file_preview(target_skill_id: Any) -> str:
+    safe_skill_id = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(target_skill_id or "unknown"))
+    return f"skills/{safe_skill_id}.json"
+
+
 def _build_controlled_section_update(
     *,
     review_item: dict[str, Any],
@@ -1741,6 +1940,8 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     review_decision_path = output / "research_human_review_decision.json"
     promotion_package_path = output / "controlled_promotion_package.json"
     promotion_package_md_path = output / "controlled_promotion_package.md"
+    formal_patch_path = output / "formal_skill_extension_patch_preview.json"
+    formal_patch_md_path = output / "formal_skill_extension_patch_preview.md"
     package_path = output / "research_evidence_review_package.json"
     package["output_paths"] = {
         "review_package_json_path": str(package_path),
@@ -1756,6 +1957,8 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
         "human_review_decision_json_path": str(review_decision_path),
         "controlled_promotion_package_json_path": str(promotion_package_path),
         "controlled_promotion_package_md_path": str(promotion_package_md_path),
+        "formal_skill_extension_patch_preview_json_path": str(formal_patch_path),
+        "formal_skill_extension_patch_preview_md_path": str(formal_patch_md_path),
     }
     review_path.write_text(
         json.dumps(package["gateway_review_artifact"], ensure_ascii=False, indent=2),
@@ -1806,6 +2009,20 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     promotion_package_md_path.write_text(
         _render_controlled_promotion_package_markdown(
             package["controlled_promotion_package"]
+        ),
+        encoding="utf-8",
+    )
+    formal_patch_path.write_text(
+        json.dumps(
+            package["formal_skill_extension_patch_preview"],
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    formal_patch_md_path.write_text(
+        _render_formal_skill_extension_patch_preview_markdown(
+            package["formal_skill_extension_patch_preview"]
         ),
         encoding="utf-8",
     )
@@ -1918,6 +2135,60 @@ def _render_controlled_promotion_package_markdown(package: dict[str, Any]) -> st
             )
         )
     lines.append("")
+    return "\n".join(lines)
+
+
+def _render_formal_skill_extension_patch_preview_markdown(
+    patch: dict[str, Any],
+) -> str:
+    safety = patch.get("runtime_safety") or {}
+    audit = patch.get("pre_apply_audit") or {}
+    diff_preview = patch.get("diff_preview") or {}
+    lines = [
+        "# Formal Skill Extension Patch Preview",
+        "",
+        "This artifact is a pre-apply preview for human review only.",
+        "",
+        f"- `patch_status`: `{patch.get('patch_status')}`",
+        f"- `target_skill_id`: `{patch.get('target_skill_id')}`",
+        f"- `target_skill_file_preview`: `{patch.get('target_skill_file_preview')}`",
+        f"- `pre_apply_audit`: `{audit.get('audit_status')}`",
+        "- `formal_update_allowed=false`",
+        f"- `diagnosis_allowed={str(safety.get('diagnosis_allowed')).lower()}`",
+        "- `formal_skill_updated=false`",
+        "- `diagnosis_report_updated=false`",
+        "- `skill_registry_updated=false`",
+        "",
+        "## Target Sections",
+        "",
+        "| item_id | source | original_section | safe_section |",
+        "| --- | --- | --- | --- |",
+    ]
+    for item in patch.get("target_sections") or []:
+        lines.append(
+            "| {item_id} | {source_id} | {original_target_protocol_section} | "
+            "{safe_extension_section} |".format(**item)
+        )
+    lines.extend(
+        [
+            "",
+            "## Sign-Off Checklist",
+            "",
+        ]
+    )
+    for item in (patch.get("sign_off_checklist") or {}).get("required_items") or []:
+        lines.append(f"- [ ] `{item}`")
+    lines.extend(
+        [
+            "",
+            "## Diff Preview",
+            "",
+            "```diff",
+            str(diff_preview.get("unified_diff") or ""),
+            "```",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
