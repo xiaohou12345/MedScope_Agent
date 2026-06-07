@@ -150,10 +150,10 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(content_type, "text/html; charset=utf-8")
         text = body.decode("utf-8")
         self.assertIn('/static/app.css?v=skill-comparison-v2-20260606', text)
-        self.assertIn('/static/app.js?v=skill-comparison-v2-20260606', text)
+        self.assertIn('/static/app.js?v=auto-routing-risk-compare-20260607', text)
         self.assertNotIn("skill-review-20260528", text)
         css_status, _, css_type = dispatch_static_request("/static/app.css?v=skill-comparison-v2-20260606")
-        js_status, _, js_type = dispatch_static_request("/static/app.js?v=skill-comparison-v2-20260606")
+        js_status, _, js_type = dispatch_static_request("/static/app.js?v=auto-routing-risk-compare-20260607")
         self.assertEqual(css_status, 200)
         self.assertEqual(css_type, "text/css; charset=utf-8")
         self.assertEqual(js_status, 200)
@@ -179,6 +179,30 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertNotIn("state.sampleVisionMode || elements.visionModeSelect.value", js)
         self.assertIn('state.sampleVisionMode = "no_mask_skill"', js)
         self.assertIn("候选视觉证据", js)
+
+    def test_frontend_exposes_auto_routing_clinical_risk_comparison_sample(self):
+        status, body, content_type = dispatch_static_request("/")
+        js_status, js_body, js_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/html; charset=utf-8")
+        self.assertEqual(js_status, 200)
+        self.assertEqual(js_type, "application/javascript; charset=utf-8")
+        html = body.decode("utf-8")
+        js = js_body.decode("utf-8")
+        self.assertIn("载入自动路由+不良习惯对比样例", html)
+        self.assertIn("autoRoutingRiskCompareButton", html)
+        self.assertIn("loadAutoRoutingRiskCompareSample", js)
+        sample_start = js.index("function loadAutoRoutingRiskCompareSample")
+        sample_end = js.index("function loadPublicSafeDemoInputs")
+        sample_slice = js[sample_start:sample_end]
+        self.assertIn("右髋疼痛三个月", sample_slice)
+        self.assertIn("长期激素治疗", sample_slice)
+        self.assertIn("偶尔饮酒", sample_slice)
+        self.assertIn("无明显外伤史", sample_slice)
+        self.assertIn('state.sampleDiseaseKey = ""', sample_slice)
+        self.assertIn('state.sampleVisionMode = ""', sample_slice)
+        self.assertNotIn("股骨头坏死", sample_slice)
 
     def test_frontend_exposes_collapsible_fhn_skill_protocol_comparison(self):
         status, body, content_type = dispatch_static_request("/")

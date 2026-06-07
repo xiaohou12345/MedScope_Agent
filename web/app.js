@@ -31,6 +31,7 @@ const elements = {
   evidenceGatewaySnapshotButton: document.getElementById("evidenceGatewaySnapshotButton"),
   xrayInsufficientButton: document.getElementById("xrayInsufficientButton"),
   fhnNoMaskButton: document.getElementById("fhnNoMaskButton"),
+  autoRoutingRiskCompareButton: document.getElementById("autoRoutingRiskCompareButton"),
   caseForm: document.getElementById("caseForm"),
   qaForm: document.getElementById("qaForm"),
   submitButton: document.getElementById("submitButton"),
@@ -4298,6 +4299,7 @@ function setCasePending(isPending, label = "运行分析") {
   elements.evidenceGatewaySnapshotButton.disabled = isPending;
   elements.xrayInsufficientButton.disabled = isPending;
   elements.fhnNoMaskButton.disabled = isPending;
+  elements.autoRoutingRiskCompareButton.disabled = isPending;
   elements.submitButton.textContent = isPending ? "Thinking..." : label;
   updateQaControls();
   if (!isPending) {
@@ -4767,6 +4769,21 @@ function loadFhnNoMaskSample() {
   elements.uploadStatus.textContent = "已载入 FHN no-mask 多征象样例；将调用 VLM 生成 box prompt，再由 MedSAM2 分割候选病灶。";
 }
 
+function loadAutoRoutingRiskCompareSample() {
+  elements.patientMessage.value = "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒，无明显外伤史。请结合这张髋关节 X 光片分析可能方向。";
+  elements.imagePath.value = "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png";
+  state.uploadedImagePaths = [];
+  state.uploadedImageNames = [];
+  state.useSampleMask = false;
+  state.sampleDiseaseKey = "";
+  state.sampleVisionMode = "";
+  state.demoCaseSlug = "";
+  state.realDemoMode = false;
+  state.publicSafeDemoMode = false;
+  elements.symptoms.value = "髋关节疼痛";
+  elements.uploadStatus.textContent = "已载入自动路由+不良习惯对比样例；不预设 disease_key，系统会根据症状、风险因素和髋关节 X 光自动生成候选假设并选择 skill。";
+}
+
 function loadPublicSafeDemoInputs() {
   elements.patientMessage.value = "public-safe MVP 演示：髋部疼痛，展示自动 skill 路由、视觉候选证据、诊断报告、evidence bundle 和 memory audit";
   elements.imagePath.value = "";
@@ -4877,6 +4894,16 @@ async function runFhnNoMaskSample() {
   setStatus("已载入 FHN no-mask 多征象样例，点击“运行分析”开始", "ok");
 }
 
+async function runAutoRoutingRiskCompareSample() {
+  if (state.casePending) {
+    setStatus("上一个病例仍在分析中", "warn");
+    return;
+  }
+  loadAutoRoutingRiskCompareSample();
+  resetViews();
+  setStatus("已载入自动路由+不良习惯对比样例，点击“运行分析”开始", "ok");
+}
+
 function resetViews() {
   state.caseId = "";
   state.lastPayload = {};
@@ -4905,6 +4932,7 @@ elements.realVlmMedSAM2Button.addEventListener("click", runRealVlmMedSAM2Sample)
 elements.evidenceGatewaySnapshotButton.addEventListener("click", runEvidenceGatewaySnapshot);
 elements.xrayInsufficientButton.addEventListener("click", runXrayInsufficientSample);
 elements.fhnNoMaskButton.addEventListener("click", runFhnNoMaskSample);
+elements.autoRoutingRiskCompareButton.addEventListener("click", runAutoRoutingRiskCompareSample);
 elements.refreshSkillsButton.addEventListener("click", loadSkillList);
 elements.saveSkillDraftButton.addEventListener("click", async () => {
   try {
