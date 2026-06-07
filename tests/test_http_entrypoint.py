@@ -150,10 +150,10 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(content_type, "text/html; charset=utf-8")
         text = body.decode("utf-8")
         self.assertIn('/static/app.css?v=skill-comparison-v2-20260606', text)
-        self.assertIn('/static/app.js?v=auto-routing-risk-compare-20260607', text)
+        self.assertIn('/static/app.js?v=routing-summary-v2-20260607', text)
         self.assertNotIn("skill-review-20260528", text)
         css_status, _, css_type = dispatch_static_request("/static/app.css?v=skill-comparison-v2-20260606")
-        js_status, _, js_type = dispatch_static_request("/static/app.js?v=auto-routing-risk-compare-20260607")
+        js_status, _, js_type = dispatch_static_request("/static/app.js?v=routing-summary-v2-20260607")
         self.assertEqual(css_status, 200)
         self.assertEqual(css_type, "text/css; charset=utf-8")
         self.assertEqual(js_status, 200)
@@ -357,19 +357,23 @@ class HttpEntrypointTest(unittest.TestCase):
             text.index("function renderReport"):
             text.index("function renderRoutingClinicalSummary")
         ]
+        self.assertIn("const routingSummaryHtml = renderRoutingClinicalSummary(payload)", render_report_slice)
         self.assertIn("renderPatientDiagnosisSummary(payload)", render_report_slice)
         self.assertIn("hasStructuredReport", render_report_slice)
         self.assertIn("renderLegacyReportSections(report, hasStructuredReport)", render_report_slice)
-        self.assertIn("elements.reportView.innerHTML = patientSummaryHtml", render_report_slice)
-        self.assertNotIn("${routingSummaryHtml}${patientSummaryHtml}", render_report_slice)
+        self.assertIn("${routingSummaryHtml}${patientSummaryHtml}", render_report_slice)
         self.assertNotIn("renderEvidenceProtocolReport(payload)", render_report_slice)
         routing_slice = text[
             text.index("function renderRoutingClinicalSummary"):
             text.index("function renderEvidenceProtocolReport")
         ]
         self.assertIn("clinical_hypotheses", routing_slice)
+        self.assertIn("主分析 Skill", routing_slice)
+        self.assertIn("Primary hypothesis", routing_slice)
         self.assertIn("候选假设队列", routing_slice)
         self.assertIn("这不是诊断结论", routing_slice)
+        self.assertIn("当前只加载主分析 Skill", routing_slice)
+        self.assertIn("不会自动写入 Skill 审核库", routing_slice)
         legacy_slice = text[
             text.index("function renderLegacyReportSections"):
             text.index("function renderRoutingClinicalSummary")

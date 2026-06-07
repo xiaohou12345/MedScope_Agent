@@ -1650,13 +1650,13 @@ function renderReport(payload) {
     elements.reportView.innerHTML = `<div class="report-section"><p>${escapeHtml(payload.reply_to_patient)}</p></div>`;
     return;
   }
+  const routingSummaryHtml = renderRoutingClinicalSummary(payload);
   const patientSummaryHtml = renderPatientDiagnosisSummary(payload);
   const hasStructuredReport = Boolean(patientSummaryHtml);
   if (patientSummaryHtml) {
-    elements.reportView.innerHTML = patientSummaryHtml;
+    elements.reportView.innerHTML = `${routingSummaryHtml}${patientSummaryHtml}`;
     return;
   }
-  const routingSummaryHtml = renderRoutingClinicalSummary(payload);
   const reportHtml = renderLegacyReportSections(report, hasStructuredReport);
   const differentialHtml = renderDifferentialConsiderations(payload);
   const guidelineEvidenceHtml = renderGuidelineEvidence(payload);
@@ -1840,8 +1840,12 @@ function renderRoutingClinicalSummary(payload) {
     return "";
   }
   const parts = [];
+  const selectedSkill = routing.selected_skill || hypothesis;
+  if (selectedSkill) {
+    parts.push(`主分析 Skill：${humanDiseaseName(selectedSkill)}`);
+  }
   if (hypothesis) {
-    parts.push(`临床假设：${humanDiseaseName(hypothesis)}`);
+    parts.push(`Primary hypothesis：${humanDiseaseName(hypothesis)}`);
   }
   if (status) {
     parts.push(`证据状态：${routingEvidenceStatusLabel(status)}`);
@@ -1869,7 +1873,7 @@ function renderRoutingClinicalSummary(payload) {
             </li>
           `).join("")}
         </ul>
-        <p class="muted">这不是诊断结论；只是根据症状、部位和影像类型决定先检查哪些 evidence。</p>
+        <p class="muted">这不是诊断结论；只是根据症状、部位和影像类型决定先检查哪些 evidence。当前只加载主分析 Skill；鉴别候选不会自动写入 Skill 审核库，也不会被当作已运行的诊断 Skill。</p>
       </div>
     `
     : "";
