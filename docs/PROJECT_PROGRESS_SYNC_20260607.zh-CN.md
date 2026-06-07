@@ -4,8 +4,8 @@
 
 ## 当前基线
 
-- 最近实现基线：`97d1a34 feat: add research evidence review ingestion`
-- 最近文档同步提交：`f6e5b21 docs: sync project progress status`
+- 最近实现基线：`900930c feat: structure clinical context evidence`
+- 最近文档同步提交：`a43e771 docs: consolidate project progress docs`
 - 当前工作区注意：根目录 `goal.md` 仍有本地未提交修改，本文件不修改它。
 - 产品安全定位：当前是 evidence-bounded clinical agent MVP，不是临床验证过的自动诊断产品。
 
@@ -14,9 +14,43 @@
 | 方向 | 当前状态 | 怎么理解 |
 | --- | --- | --- |
 | 1. Guideline Skill 结构扩展 | v1 基本完成 | FHN skill 已经从 finding list 升级为 evidence acquisition protocol，包含影像、量化、鉴别、临床上下文和综合推理协议。 |
-| 2. 患者临床信息结合 | v1 完成，v2 值得做 | 患者 prompt、病史、风险因素已经进入 clinical context bundle，并被限制为 suspicion modifier，不能替代影像证据。 |
+| 2. 患者临床信息结合 | v1 完成并收敛 | 患者 prompt 已结构化为 clinical evidence bundle，report / memory / QA 可追溯展示，并被限制为 suspicion modifier，不能替代影像证据。 |
 | 3. 候选假设生成与 Skill Routing | v1 完成 | 用户不显式指定疾病时，髋痛 + X-ray 可以自动生成 FHN primary hypothesis 和 differential candidates；候选假设不是诊断结论。 |
 | 4. 论文证据安全补充 Guideline Skill | v1 完成并收敛 | 论文证据可以进入 proposal-only、gateway、human review checklist、dry-run、patch preview 和前端 Review 面板，但不会直接改正式 skill。 |
+
+## 暂存目标
+
+### Real X-ray Case Comparison：finding-list baseline vs evidence-protocol skill
+
+状态：暂存，等待 VisionAgent 能力提升后恢复。
+
+暂停原因：
+
+- 当前 VisionAgent 对真实 X-ray 病灶的定位、分割和量化能力还不稳定。
+- 目前无法可靠依靠病灶提示词生成可用 mask。
+- 现在强行做旧 finding-list skill vs 新 evidence-protocol skill 的真实病例对比，会被视觉能力瓶颈干扰，无法公平体现 evidence protocol 本身的价值。
+
+本阶段先不做：
+
+- 真实病例旧 skill vs 新 skill 对比。
+- 真实病灶自动分割效果对比。
+- 真实量化指标对比。
+- 基于 VisionAgent 输出证明新版 protocol 更优。
+
+恢复条件：
+
+- 病灶候选定位更稳定。
+- mask / ROI / contour 有基本 QC。
+- measurement prototype 能在真实样例上稳定输出。
+- evidence bundle 能区分 candidate evidence 和 measurement evidence。
+- 前端能展示视觉结果和质量限制。
+
+当前替代方向：
+
+- 利用已有人工标注生成 annotation-derived evidence bundle。
+- 验证 DiagnosisAgent 在给定结构化 evidence 时的推理正确性。
+- 完善 clinical context / audit / QA 的证据边界。
+- 保持 VisionAgent 作为独立优化线继续提升。
 
 ## 1. Guideline Skill 结构扩展
 
@@ -77,6 +111,16 @@ FHN X-ray Evidence Protocol v2：让量化/测量协议更可执行、更易审�
 ### 已完成
 
 - `api/service.py` 会把 patient prompt 中的临床上下文补进 `patient_info`。
+- `api/service.py` 会从 patient prompt 结构化抽取：
+  - symptoms
+  - duration
+  - laterality
+  - pain location
+  - aggravating factors
+  - steroid use
+  - alcohol use
+  - trauma history
+- 未提供字段会标记为 `missing` / `unknown`，明确否定的风险因素会标记为 `absent`，不会编造。
 - `DiagnosisAgent` 会生成 `clinical_context_bundle`。
 - 已支持从 skill protocol 中抽取/匹配风险因素：
   - 激素使用
@@ -89,7 +133,9 @@ FHN X-ray Evidence Protocol v2：让量化/测量协议更可执行、更易审�
   - 不能确诊
   - 不能替代影像证据
 - Memory/evidence bundle 会暴露 `clinical_context_evidence`。
-- 前端能显示 clinical context evidence，但不把它展示成诊断证据。
+- `clinical_context_evidence` 会保留 `structured_context`、`source_trace` 和 `suspicion_effect`。
+- QA 能引用 clinical context，但会明确说明不能越权诊断。
+- tests 已保护“没有影像支持时，不能仅凭临床风险因素确诊”。
 
 ### 证据位置
 
@@ -107,10 +153,7 @@ FHN X-ray Evidence Protocol v2：让量化/测量协议更可执行、更易审�
 
 ### 未完成 / v2
 
-- 临床信息抽取还比较轻量，没有完整结构化：
-  - 疼痛持续时间
-  - 活动后加重
-  - 明确左右侧
+- 还没有抽取更细的临床强度字段：
   - 外伤发生时间
   - 激素剂量/持续时间
   - 饮酒强度
@@ -121,8 +164,8 @@ FHN X-ray Evidence Protocol v2：让量化/测量协议更可执行、更易审�
 ### 下一步建议
 
 ```text
-Clinical Context Evidence v2：把患者 prompt 规范化为结构化 clinical evidence bundle。
-范围：抽取 laterality、pain duration、pain location、activity worsening、steroid use、alcohol use、trauma history 和 missing-context questions。
+Clinical Context Evidence v2：把结构化 clinical evidence bundle 产品化。
+范围：补充剂量/强度/时间字段、missing-context questions、前端审核表单和多候选疾病权重。
 边界：临床风险因素仍然只能作为 suspicion modifier，不能确诊。
 ```
 
