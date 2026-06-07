@@ -930,29 +930,65 @@ function getVisualToolPlan(payload) {
 
 function renderSkillList(payload) {
   const skills = Array.isArray(payload.skills) ? payload.skills : [];
-  if (!skills.length) {
+  const proposals = differentialSkillCandidateProposals(skills);
+  const reviewItems = [...skills, ...proposals];
+  if (!reviewItems.length) {
     elements.skillListView.innerHTML = '<div class="trace-empty">暂无可审核 Skill</div>';
     return;
   }
   elements.skillListView.innerHTML = `
     <div class="doctor-skill-list">
-      ${skills.map((skill) => {
+      ${reviewItems.map((skill) => {
         const summary = skill.doctor_summary || {};
         const selectedClass = skill.skill_key === state.selectedSkillKey ? " selected" : "";
+        const isProposal = skill.proposal_status === "proposal_only";
         return `
-          <button class="doctor-skill-item${selectedClass}" type="button" data-skill-key="${escapeHtml(skill.skill_key)}">
+          <button class="doctor-skill-item${selectedClass}" type="button" data-skill-key="${escapeHtml(skill.skill_key)}" ${isProposal ? `data-proposal-candidate-key="${escapeHtml(skill.candidate_key)}"` : ""}>
             <strong>${escapeHtml(skill.disease_name || skill.skill_key)}</strong>
             <span>${escapeHtml(skill.evidence_level || "未标注")} · ${escapeHtml(skill.skill_type || "skill")}</span>
             <small>症状 ${formatValue(summary.symptom_count)} / 影像 ${formatValue(summary.image_requirement_count)} / 征象 ${formatValue(summary.visual_finding_count)}</small>
-            <em>${skill.review_status === "draft_saved" ? "已有医生草稿" : "未审核"}</em>
+            <em>${isProposal ? "本次病例候选" : skill.review_status === "draft_saved" ? "已有医生草稿" : "未审核"}</em>
           </button>
         `;
       }).join("")}
     </div>
   `;
   elements.skillListView.querySelectorAll("[data-skill-key]").forEach((button) => {
-    button.addEventListener("click", () => loadSkillDetail(button.dataset.skillKey));
+    button.addEventListener("click", () => {
+      if (button.dataset.proposalCandidateKey) {
+        renderSkillProposalCandidateDetail(button.dataset.proposalCandidateKey, payload);
+        return;
+      }
+      loadSkillDetail(button.dataset.skillKey);
+    });
   });
+}
+
+function differentialSkillCandidateProposals(formalSkills = []) {
+  const routing = state.lastPayload.routing_decision
+    || state.lastPayload.evidence_bundle?.skill_evidence?.routing_decision
+    || {};
+  const formalKeys = new Set(formalSkills.map((skill) => skill.skill_key));
+  const selected = routing.selected_skill || routing.primary_hypothesis;
+  const candidates = Array.isArray(routing.differential_skill_candidates)
+    ? routing.differential_skill_candidates
+    : [];
+  return candidates
+    .filter((candidate) => candidate && candidate !== selected && !formalKeys.has(candidate))
+    .map((candidate) => ({
+      skill_key: `proposal:${candidate}`,
+      candidate_key: candidate,
+      disease_name: humanDiseaseName(candidate),
+      evidence_level: "proposal_only",
+      skill_type: "differential_candidate",
+      review_status: "proposal_only",
+      proposal_status: "proposal_only",
+      doctor_summary: {
+        symptom_count: "待指南抽取",
+        image_requirement_count: "待指南抽取",
+        visual_finding_count: "待指南抽取",
+      },
+    }));
 }
 
 async function loadSkillProtocolComparison() {
@@ -1282,6 +1318,54 @@ async function loadSkillDetail(skillKey) {
   } catch (error) {
     elements.skillDetailView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
   }
+}
+
+function renderSkillProposalCandidateDetail(candidateKey, listPayload = {skills: []}) {
+  state.selectedSkillKey = `proposal:${candidateKey}`;
+  const routing = state.lastPayload.routing_decision
+    || state.lastPayload.evidence_bundle?.skill_evidence?.routing_decision
+    || {};
+  const hypotheses = Array.isArray(routing.clinical_hypotheses)
+    ? routing.clinical_hypotheses
+    : [];
+  const hypothesis = hypotheses.find((item) => item.disease_key === candidateKey) || {};
+  const diseaseName = humanDiseaseName(candidateKey);
+  elements.skillReviewStatus.textContent = "Differential candidate 已进入 proposal-only Skill 审核队列；不会直接写入正式 skill 库。";
+  elements.skillDetailView.innerHTML = `
+    <div class="doctor-skill-workspace">
+      <section class="doctor-skill-section">
+        <h3>${escapeHtml(diseaseName || candidateKey)} 待建 Skill</h3>
+        ${renderMetricGrid({
+          candidate_key: candidateKey,
+          proposal_status: "proposal_only",
+          candidate_type: "differential_candidate",
+          source: "current_case_routing",
+          formal_skill_updated: "false",
+          diagnosis_allowed: "false",
+        })}
+        <p class="warning-text">这是本次病例 routing 生成的鉴别候选，用于提醒医生审核是否需要补建 guideline skill。它不是正式 skill，不会作为正式诊断 Skill 运行。</p>
+      </section>
+      <section class="doctor-skill-section">
+        <h3>候选来源</h3>
+        ${renderList([
+          `主分析 Skill：${humanDiseaseName(routing.selected_skill || routing.primary_hypothesis || "")}`,
+          `候选角色：${hypothesisRoleLabel(hypothesis.role || "differential")}`,
+          `当前状态：${routingEvidenceStatusLabel(hypothesis.status || "differential_candidate")}`,
+          hypothesis.reason || "Alternative explanation retained by routing.",
+        ])}
+      </section>
+      <section class="doctor-skill-section">
+        <h3>进入正式 Skill 前需要</h3>
+        ${renderList([
+          "由 SkillBuilder 检索指南或共识来源。",
+          "抽取 clinical / imaging / quantitative / differential protocol。",
+          "通过 validator 和人工审核。",
+          "审核通过前 formal_update_allowed=false，diagnosis_allowed=false。",
+        ])}
+      </section>
+    </div>
+  `;
+  renderSkillList(listPayload);
 }
 
 function renderSkillReviewWorkspace(detail) {
@@ -1873,7 +1957,7 @@ function renderRoutingClinicalSummary(payload) {
             </li>
           `).join("")}
         </ul>
-        <p class="muted">这不是诊断结论；只是根据症状、部位和影像类型决定先检查哪些 evidence。当前只加载主分析 Skill；鉴别候选不会自动写入 Skill 审核库，也不会被当作已运行的诊断 Skill。</p>
+        <p class="muted">这不是诊断结论；只是根据症状、部位和影像类型决定先检查哪些 evidence。当前只加载主分析 Skill；鉴别候选会进入 proposal-only Skill 审核队列，但不会被当作正式或已运行的诊断 Skill。</p>
       </div>
     `
     : "";

@@ -150,10 +150,10 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(content_type, "text/html; charset=utf-8")
         text = body.decode("utf-8")
         self.assertIn('/static/app.css?v=skill-comparison-v2-20260606', text)
-        self.assertIn('/static/app.js?v=routing-summary-v2-20260607', text)
+        self.assertIn('/static/app.js?v=differential-skill-proposals-20260607', text)
         self.assertNotIn("skill-review-20260528", text)
         css_status, _, css_type = dispatch_static_request("/static/app.css?v=skill-comparison-v2-20260606")
-        js_status, _, js_type = dispatch_static_request("/static/app.js?v=routing-summary-v2-20260607")
+        js_status, _, js_type = dispatch_static_request("/static/app.js?v=differential-skill-proposals-20260607")
         self.assertEqual(css_status, 200)
         self.assertEqual(css_type, "text/css; charset=utf-8")
         self.assertEqual(js_status, 200)
@@ -373,7 +373,7 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("候选假设队列", routing_slice)
         self.assertIn("这不是诊断结论", routing_slice)
         self.assertIn("当前只加载主分析 Skill", routing_slice)
-        self.assertIn("不会自动写入 Skill 审核库", routing_slice)
+        self.assertIn("进入 proposal-only Skill 审核队列", routing_slice)
         legacy_slice = text[
             text.index("function renderLegacyReportSections"):
             text.index("function renderRoutingClinicalSummary")
@@ -384,6 +384,20 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn('"影像依据"', legacy_slice)
         self.assertIn('"不确定性说明"', legacy_slice)
         self.assertIn('"建议进一步检查"', legacy_slice)
+
+    def test_static_app_js_adds_differential_candidates_to_skill_review_queue(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("differentialSkillCandidateProposals", text)
+        self.assertIn("renderSkillProposalCandidateDetail", text)
+        self.assertIn("proposal_only", text)
+        self.assertIn("differential_candidate", text)
+        self.assertIn("待建 Skill", text)
+        self.assertIn("本次病例候选", text)
+        self.assertIn("不会作为正式诊断 Skill 运行", text)
 
     def test_static_app_js_renders_patient_diagnosis_report_as_three_block_summary(self):
         status, body, content_type = dispatch_static_request("/static/app.js")
