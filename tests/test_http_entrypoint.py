@@ -201,7 +201,8 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("偶尔饮酒", sample_slice)
         self.assertIn("无明显外伤史", sample_slice)
         self.assertIn('state.sampleDiseaseKey = ""', sample_slice)
-        self.assertIn('state.sampleVisionMode = ""', sample_slice)
+        self.assertIn('state.sampleVisionMode = "real_vlm_validation"', sample_slice)
+        self.assertNotIn('state.sampleVisionMode = "no_mask_skill"', sample_slice)
         self.assertNotIn("股骨头坏死", sample_slice)
 
     def test_frontend_exposes_collapsible_fhn_skill_protocol_comparison(self):

@@ -4776,12 +4776,12 @@ function loadAutoRoutingRiskCompareSample() {
   state.uploadedImageNames = [];
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
-  state.sampleVisionMode = "";
+  state.sampleVisionMode = "real_vlm_validation";
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
   elements.symptoms.value = "髋关节疼痛";
-  elements.uploadStatus.textContent = "已载入自动路由+不良习惯对比样例；不预设 disease_key，系统会根据症状、风险因素和髋关节 X 光自动生成候选假设并选择 skill。";
+  elements.uploadStatus.textContent = "已载入自动路由+不良习惯对比样例；不预设 disease_key，系统会根据症状、风险因素和髋关节 X 光自动生成候选假设并选择 skill。视觉部分使用安全候选验证模式，不调用 no-mask 分割链。";
 }
 
 function loadPublicSafeDemoInputs() {
