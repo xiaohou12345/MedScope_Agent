@@ -1937,18 +1937,29 @@ function renderRoutingClinicalSummary(payload) {
   const candidates = Array.isArray(routing.differential_skill_candidates)
     ? routing.differential_skill_candidates
     : [];
-  if (candidates.length) {
-    parts.push(`需要鉴别复核：${candidates.map(humanDiseaseName).join("、")}`);
+  const displayCandidates = Array.isArray(routing.display_differential_skill_candidates)
+    ? routing.display_differential_skill_candidates
+    : candidates.slice(0, 2);
+  if (displayCandidates.length) {
+    parts.push(`重点鉴别复核：${displayCandidates.map(humanDiseaseName).join("、")}`);
   }
   const hypotheses = Array.isArray(routing.clinical_hypotheses)
     ? routing.clinical_hypotheses
     : [];
+  const visibleRoutingHypotheses = hypotheses.filter((item) => (
+    item.role === "primary"
+    || item.display_group === "strong_differential"
+    || Number(item.priority) <= 1
+  ));
+  const collapsedRoutingHypotheses = hypotheses.filter((item) => (
+    !visibleRoutingHypotheses.includes(item)
+  ));
   const hypothesisQueueHtml = hypotheses.length
     ? `
       <div class="hypothesis-queue">
         <strong>候选假设队列</strong>
         <ul>
-          ${hypotheses.map((item) => `
+          ${visibleRoutingHypotheses.map((item) => `
             <li>
               <span>${escapeHtml(hypothesisRoleLabel(item.role))}</span>
               <b>${escapeHtml(humanDiseaseName(item.disease_key || item.target || ""))}</b>
@@ -1957,6 +1968,21 @@ function renderRoutingClinicalSummary(payload) {
             </li>
           `).join("")}
         </ul>
+        ${collapsedRoutingHypotheses.length ? `
+          <details class="routing-collapsed-hypotheses">
+            <summary>更多鉴别候选（${collapsedRoutingHypotheses.length}）</summary>
+            <ul>
+              ${collapsedRoutingHypotheses.map((item) => `
+                <li>
+                  <span>${escapeHtml(item.display_group === "low_priority" ? "低优先级" : "条件性鉴别")}</span>
+                  <b>${escapeHtml(humanDiseaseName(item.disease_key || item.target || ""))}</b>
+                  <em>${escapeHtml(routingEvidenceStatusLabel(item.status || ""))}</em>
+                  ${item.reason ? `<small>${escapeHtml(item.reason)}</small>` : ""}
+                </li>
+              `).join("")}
+            </ul>
+          </details>
+        ` : ""}
         <p class="muted">这不是诊断结论；只是根据症状、部位和影像类型决定先检查哪些 evidence。当前只加载主分析 Skill；鉴别候选会进入 proposal-only Skill 审核队列，但不会被当作正式或已运行的诊断 Skill。</p>
       </div>
     `

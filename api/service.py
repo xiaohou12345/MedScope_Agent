@@ -424,6 +424,16 @@ class MedScopeService:
             disease_key=disease_key,
             payload=payload,
         )
+        differential_ranking = self._rank_differential_skill_candidates(
+            disease_key=disease_key,
+            payload=payload,
+            differential_candidates=differential_candidates,
+        )
+        display_differential_candidates = [
+            item["disease_key"]
+            for item in differential_ranking
+            if item.get("display_group") == "strong_differential"
+        ][:2]
         skill_builder_action, skill_builder_action_reason = self._skill_builder_action_for(
             disease_key
         )
@@ -442,6 +452,7 @@ class MedScopeService:
             disease_key=disease_key,
             payload=payload,
             differential_candidates=differential_candidates,
+            differential_ranking=differential_ranking,
             initial_evidence_status=initial_evidence_status,
         )
         return SkillRoutingDecision(
@@ -453,6 +464,8 @@ class MedScopeService:
             matched_clues=matched_clues,
             primary_hypothesis=disease_key,
             differential_skill_candidates=differential_candidates,
+            differential_candidate_ranking=differential_ranking,
+            display_differential_skill_candidates=display_differential_candidates,
             clinical_hypotheses=clinical_hypotheses,
             skill_search_reason=skill_search_reason,
             initial_evidence_status=initial_evidence_status,
@@ -556,12 +569,114 @@ class MedScopeService:
             candidates.append("tumor_like_lesion")
         return candidates
 
+    def _rank_differential_skill_candidates(
+        self,
+        *,
+        disease_key: str | None,
+        payload: dict[str, Any],
+        differential_candidates: list[str],
+    ) -> list[dict[str, Any]]:
+        if disease_key != "femoral_head_necrosis":
+            return []
+        text = self._routing_text(payload)
+        structured = (payload.get("patient_info") or {}).get("structured_clinical_context") or {}
+        fields = structured.get("fields") if isinstance(structured, dict) else {}
+        trauma_status = (
+            fields.get("trauma_history", {}).get("status")
+            if isinstance(fields, dict)
+            else None
+        )
+        denied_trauma = trauma_status == "absent" or self._is_context_negated(text, "外伤")
+        has_trauma_clue = not denied_trauma and any(
+            marker in text for marker in ["外伤", "创伤", "trauma", "骨折"]
+        )
+        has_degenerative_clue = any(
+            marker in text for marker in ["关节间隙", "退变", "骨关节炎", "osteoarthritis"]
+        )
+        has_dysplasia_clue = any(
+            marker in text for marker in ["发育不良", "髋臼", "dysplasia", "ddh"]
+        )
+        ranked = []
+        for candidate in differential_candidates:
+            if candidate == "osteoarthritis_or_degenerative_hip_disease":
+                ranked.append(
+                    {
+                        "disease_key": candidate,
+                        "priority": 1,
+                        "display_group": "strong_differential",
+                        "rank_reason": (
+                            "Hip pain and X-ray are a common context for degenerative hip disease review."
+                            if not has_degenerative_clue
+                            else "Degenerative clues such as joint-space narrowing or degeneration were mentioned."
+                        ),
+                    }
+                )
+                continue
+            if candidate == "post_traumatic_change":
+                if denied_trauma:
+                    ranked.append(
+                        {
+                            "disease_key": candidate,
+                            "priority": 4,
+                            "display_group": "low_priority",
+                            "deprioritized_by": "denied_trauma_history",
+                            "rank_reason": (
+                                "Patient denied obvious trauma history; keep only as low-priority audit candidate."
+                            ),
+                        }
+                    )
+                elif has_trauma_clue:
+                    ranked.append(
+                        {
+                            "disease_key": candidate,
+                            "priority": 2,
+                            "display_group": "strong_differential",
+                            "rank_reason": "Trauma/fracture clues were mentioned.",
+                        }
+                    )
+                else:
+                    ranked.append(
+                        {
+                            "disease_key": candidate,
+                            "priority": 3,
+                            "display_group": "more_differential",
+                            "rank_reason": "No explicit trauma clue; retained as conditional differential.",
+                        }
+                    )
+                continue
+            if candidate == "developmental_dysplasia_related_degeneration":
+                ranked.append(
+                    {
+                        "disease_key": candidate,
+                        "priority": 2 if has_dysplasia_clue else 3,
+                        "display_group": "strong_differential"
+                        if has_dysplasia_clue
+                        else "more_differential",
+                        "rank_reason": (
+                            "Dysplasia/acetabular clues were mentioned."
+                            if has_dysplasia_clue
+                            else "Requires dysplasia or acetabular abnormality clues; retained as conditional differential."
+                        ),
+                    }
+                )
+                continue
+            ranked.append(
+                {
+                    "disease_key": candidate,
+                    "priority": 2,
+                    "display_group": "strong_differential",
+                    "rank_reason": "Specific symptom or imaging clue was mentioned.",
+                }
+            )
+        return sorted(ranked, key=lambda item: (int(item.get("priority", 9)), item["disease_key"]))
+
     def _clinical_hypotheses(
         self,
         *,
         disease_key: str | None,
         payload: dict[str, Any],
         differential_candidates: list[str],
+        differential_ranking: list[dict[str, Any]] | None = None,
         initial_evidence_status: str,
     ) -> list[dict[str, Any]]:
         if not disease_key:
@@ -578,16 +693,28 @@ class MedScopeService:
                 "role": "primary",
                 "status": initial_evidence_status,
                 "reason": reason,
+                "priority": 0,
+                "display_group": "primary",
             }
         ]
+        ranking_by_key = {
+            item.get("disease_key"): item
+            for item in differential_ranking or []
+            if item.get("disease_key")
+        }
         for candidate in differential_candidates:
+            rank = ranking_by_key.get(candidate, {})
             hypotheses.append(
                 {
                     "disease_key": candidate,
                     "role": "differential",
                     "status": "differential_candidate",
+                    "priority": int(rank.get("priority", 3)),
+                    "display_group": rank.get("display_group", "more_differential"),
+                    "deprioritized_by": rank.get("deprioritized_by"),
                     "reason": (
-                        "Alternative explanation retained by the orchestrator; requires bounded "
+                        rank.get("rank_reason")
+                        or "Alternative explanation retained by the orchestrator; requires bounded "
                         "evidence review and does not replace the primary skill."
                     ),
                 }

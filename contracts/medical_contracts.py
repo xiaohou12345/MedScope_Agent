@@ -180,6 +180,8 @@ class SkillRoutingDecision:
     agent_scope: str = "orchestrator_api"
     primary_hypothesis: str | None = None
     differential_skill_candidates: list[str] = field(default_factory=list)
+    differential_candidate_ranking: list[dict[str, Any]] = field(default_factory=list)
+    display_differential_skill_candidates: list[str] = field(default_factory=list)
     clinical_hypotheses: list[dict[str, Any]] = field(default_factory=list)
     skill_search_reason: str | None = None
     initial_evidence_status: str = "insufficient"
@@ -229,6 +231,12 @@ class SkillRoutingDecision:
             "skill_builder_action": self.skill_builder_action or self._skill_builder_action(),
             "primary_hypothesis": self.primary_hypothesis,
             "differential_skill_candidates": list(self.differential_skill_candidates),
+            "differential_candidate_ranking": [
+                dict(item) for item in self.differential_candidate_ranking
+            ],
+            "display_differential_skill_candidates": list(
+                self.display_differential_skill_candidates
+            ),
             "clinical_hypotheses": [dict(item) for item in self.clinical_hypotheses],
             "skill_search_reason": self.skill_search_reason,
             "initial_evidence_status": self.initial_evidence_status,

@@ -815,6 +815,44 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
         self.assertEqual(routing["routing_evidence_status"], "requires_differential_review")
         self.assertEqual(result["alignment_plan"]["analysis_status"], "partial_evidence")
 
+    def test_service_ranks_fhn_differential_candidates_and_deprioritizes_denied_trauma(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        result = service.handle_request(
+            {
+                "patient_message": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒，无明显外伤史，上传髋关节 X 光片",
+                "image_path": "output/fake/uploads/right_hip_ap_xray.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+                "vision_mode": "real_vlm_validation",
+            }
+        )
+
+        ranking = result["routing_decision"]["differential_candidate_ranking"]
+        by_key = {item["disease_key"]: item for item in ranking}
+        self.assertEqual(
+            by_key["osteoarthritis_or_degenerative_hip_disease"]["display_group"],
+            "strong_differential",
+        )
+        self.assertEqual(
+            by_key["post_traumatic_change"]["display_group"],
+            "low_priority",
+        )
+        self.assertEqual(
+            by_key["post_traumatic_change"]["deprioritized_by"],
+            "denied_trauma_history",
+        )
+        self.assertEqual(
+            result["routing_decision"]["display_differential_skill_candidates"],
+            ["osteoarthritis_or_degenerative_hip_disease"],
+        )
+        hypotheses = result["routing_decision"]["clinical_hypotheses"]
+        post_traumatic = next(
+            item for item in hypotheses if item["disease_key"] == "post_traumatic_change"
+        )
+        self.assertEqual(post_traumatic["display_group"], "low_priority")
+        self.assertEqual(post_traumatic["priority"], 4)
+
     def test_service_auto_selects_fhn_no_mask_mode_for_uploaded_hip_image_without_prompt_keywords(self):
         fake_doctor = FakeGaoDoctor()
         service = MedScopeService(gaodoctor_agent=fake_doctor)
