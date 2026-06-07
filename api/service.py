@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -195,12 +196,35 @@ class MedScopeService:
         payload: dict[str, Any],
         patient_info: dict[str, Any],
     ) -> None:
-        if patient_info.get("clinical_context") or patient_info.get("history") or patient_info.get("risk_factors"):
-            return
         message = str(payload.get("patient_message") or "").strip()
         if not message:
             return
+        if not patient_info.get("structured_clinical_context"):
+            patient_info["structured_clinical_context"] = (
+                self._extract_structured_clinical_context(message)
+            )
+        if patient_info.get("clinical_context") or patient_info.get("history") or patient_info.get("risk_factors"):
+            return
+        if not self._has_prompt_clinical_clue(message):
+            return
+        patient_info["clinical_context"] = message
+        patient_info["clinical_context_source"] = "patient_message"
+
+    def _has_prompt_clinical_clue(self, message: str) -> bool:
         markers = [
+            "痛",
+            "疼",
+            "髋",
+            "左",
+            "右",
+            "双侧",
+            "走路",
+            "活动",
+            "负重",
+            "加重",
+            "个月",
+            "月",
+            "年",
             "激素",
             "饮酒",
             "酗酒",
@@ -215,12 +239,142 @@ class MedScopeService:
             "trauma",
             "sickle",
             "autoimmune",
+            "pain",
+            "hip",
+            "left",
+            "right",
         ]
         lowered = message.lower()
-        if not any(marker in lowered for marker in markers):
-            return
-        patient_info["clinical_context"] = message
-        patient_info["clinical_context_source"] = "patient_message"
+        return any(marker in lowered for marker in markers)
+
+    def _extract_structured_clinical_context(self, message: str) -> dict[str, Any]:
+        fields: dict[str, dict[str, Any]] = {
+            "symptoms": self._extract_symptoms(message),
+            "duration": self._extract_duration(message),
+            "laterality": self._extract_laterality(message),
+            "pain_location": self._extract_pain_location(message),
+            "aggravating_factors": self._extract_aggravating_factors(message),
+            "steroid_use": self._extract_binary_context(
+                message,
+                aliases=["激素", "steroid", "corticosteroid"],
+                risk_factor="corticosteroid_use",
+            ),
+            "alcohol_use": self._extract_binary_context(
+                message,
+                aliases=["饮酒", "酗酒", "alcohol"],
+                risk_factor="alcohol_use",
+            ),
+            "trauma_history": self._extract_binary_context(
+                message,
+                aliases=["外伤", "创伤", "trauma"],
+                risk_factor="trauma_history",
+            ),
+        }
+        provided_risk_factors = [
+            field["risk_factor"]
+            for field in (
+                fields["steroid_use"],
+                fields["alcohol_use"],
+                fields["trauma_history"],
+            )
+            if field.get("status") == "present" and field.get("risk_factor")
+        ]
+        missing_fields = [
+            name for name, field in fields.items() if field.get("status") == "missing"
+        ]
+        return {
+            "schema_version": "clinical_context_extraction.v1",
+            "source": "patient_message",
+            "source_text": message,
+            "fields": fields,
+            "provided_risk_factors": provided_risk_factors,
+            "missing_fields": missing_fields,
+            "risk_factor_role": "suspicion_modifier_only",
+        }
+
+    def _extract_symptoms(self, message: str) -> dict[str, Any]:
+        lowered = message.lower()
+        values: list[str] = []
+        if ("髋" in message or "hip" in lowered) and any(token in message for token in ["痛", "疼"]):
+            values.append("hip_pain")
+        elif any(token in message for token in ["痛", "疼"]) or "pain" in lowered:
+            values.append("pain")
+        return {
+            "status": "present" if values else "missing",
+            "values": values,
+        }
+
+    def _extract_duration(self, message: str) -> dict[str, Any]:
+        match = re.search(
+            r"([一二两三四五六七八九十\d]+(?:个)?(?:天|日|周|星期|月|个月|年))",
+            message,
+        )
+        if not match:
+            return {"status": "missing", "value": "unknown"}
+        return {"status": "present", "value": match.group(1)}
+
+    def _extract_laterality(self, message: str) -> dict[str, Any]:
+        lowered = message.lower()
+        if any(token in message for token in ["双侧", "双髋"]) or "bilateral" in lowered:
+            return {"status": "present", "value": "bilateral"}
+        if "右" in message or "right" in lowered:
+            return {"status": "present", "value": "right"}
+        if "左" in message or "left" in lowered:
+            return {"status": "present", "value": "left"}
+        return {"status": "missing", "value": "unknown"}
+
+    def _extract_pain_location(self, message: str) -> dict[str, Any]:
+        lowered = message.lower()
+        if "髋" in message or "hip" in lowered:
+            return {"status": "present", "value": "hip"}
+        if "腹股沟" in message or "groin" in lowered:
+            return {"status": "present", "value": "groin"}
+        if "大腿" in message or "thigh" in lowered:
+            return {"status": "present", "value": "thigh"}
+        if "膝" in message or "knee" in lowered:
+            return {"status": "present", "value": "knee"}
+        return {"status": "missing", "value": "unknown"}
+
+    def _extract_aggravating_factors(self, message: str) -> dict[str, Any]:
+        lowered = message.lower()
+        values: list[str] = []
+        if (
+            any(token in message for token in ["走路", "行走", "活动", "负重"])
+            or "walking" in lowered
+            or "activity" in lowered
+            or "weight-bearing" in lowered
+        ) and ("加重" in message or "worse" in lowered or "aggravat" in lowered):
+            values.append("walking_or_activity")
+        return {
+            "status": "present" if values else "missing",
+            "values": values,
+        }
+
+    def _extract_binary_context(
+        self,
+        message: str,
+        *,
+        aliases: list[str],
+        risk_factor: str,
+    ) -> dict[str, Any]:
+        lowered = message.lower()
+        matched_alias = next(
+            (alias for alias in aliases if alias.lower() in lowered),
+            "",
+        )
+        if not matched_alias:
+            return {"status": "missing", "value": "unknown", "risk_factor": risk_factor}
+        if self._is_context_negated(message, matched_alias):
+            return {"status": "absent", "value": False, "risk_factor": risk_factor}
+        return {"status": "present", "value": True, "risk_factor": risk_factor}
+
+    def _is_context_negated(self, message: str, alias: str) -> bool:
+        escaped = re.escape(alias)
+        negation_before = rf"(无|没有|否认|未|无明显|不).{{0,8}}{escaped}"
+        negation_after = rf"{escaped}.{{0,6}}(阴性|否认)"
+        return bool(re.search(negation_before, message, re.IGNORECASE)) or bool(
+            re.search(negation_after, message, re.IGNORECASE)
+        )
 
     def _coerce_image_paths(self, value: Any) -> list[str]:
         if not value:

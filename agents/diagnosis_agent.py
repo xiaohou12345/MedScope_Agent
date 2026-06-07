@@ -525,6 +525,8 @@ class DiagnosisDoctorAgent:
             "missing_clinical_context": self._missing_clinical_context(patient_info, skill_descriptor),
             "can_confirm_without_imaging": False,
             "role": "clinical risk changes suspicion level only; it cannot confirm ONFH without imaging evidence.",
+            "structured_context": self._structured_clinical_context(patient_info),
+            "suspicion_effect": self._clinical_suspicion_effect(risk_factors),
         }
         clinical_context_bundle = self._build_clinical_context_bundle(
             patient_info,
@@ -766,22 +768,42 @@ class DiagnosisDoctorAgent:
                 raw_values.extend(str(item) for item in value if str(item).strip())
             else:
                 raw_values.append(str(value))
+        structured = self._structured_clinical_context(patient_info)
+        if structured:
+            source_fields.append("structured_clinical_context")
+            source_text = str(structured.get("source_text") or "").strip()
+            if source_text and source_text not in raw_values:
+                raw_values.append(source_text)
         raw_context = "；".join(raw_values)
-        source = patient_info.get("clinical_context_source") or (
-            "structured_patient_info" if raw_context else "missing"
-        )
+        if patient_info.get("clinical_context_source"):
+            source = patient_info["clinical_context_source"]
+        elif structured:
+            source = structured.get("source")
+        elif raw_context:
+            source = "structured_patient_info"
+        else:
+            source = "missing"
         provided = self._clinical_risk_factors(patient_info, skill_descriptor)
         missing = self._missing_clinical_context(patient_info, skill_descriptor)
+        source_trace = {
+            "source_fields": source_fields,
+            "structured_context_source": structured.get("source") if structured else "missing",
+        }
+        if structured.get("source_text"):
+            source_trace["source_text"] = structured.get("source_text")
         return {
             "schema_version": "clinical_context_bundle.v1",
             "source": source,
             "source_fields": source_fields,
             "raw_context": raw_context,
+            "structured_context": structured,
+            "source_trace": source_trace,
             "risk_modifiers": {
                 "provided_risk_factors": provided,
                 "missing_clinical_context": missing,
                 "suspicion_modifier_only": True,
             },
+            "suspicion_effect": self._clinical_suspicion_effect(provided),
             "diagnostic_limits": {
                 "can_confirm_without_imaging": False,
                 "diagnosis_usable": False,
@@ -799,6 +821,13 @@ class DiagnosisDoctorAgent:
         skill_descriptor: dict[str, Any],
     ) -> list[str]:
         provided = []
+        structured = self._structured_clinical_context(patient_info)
+        structured_provided = [
+            str(item)
+            for item in structured.get("provided_risk_factors") or []
+            if str(item).strip()
+        ]
+        structured_absent = set(self._absent_structured_risk_factors(patient_info))
         raw_values = []
         for key in ("risk_factors", "history", "clinical_context"):
             value = patient_info.get(key)
@@ -806,7 +835,7 @@ class DiagnosisDoctorAgent:
                 raw_values.extend(str(item) for item in value)
             elif value:
                 raw_values.append(str(value))
-        text = " ".join(raw_values)
+        text = " ".join(raw_values).lower()
         aliases = {
             "corticosteroid_use": ["激素", "corticosteroid", "steroid"],
             "alcohol_use": ["饮酒", "alcohol"],
@@ -816,7 +845,13 @@ class DiagnosisDoctorAgent:
         }
         protocol = skill_descriptor.get("clinical_context_protocol") or {}
         for factor in protocol.get("risk_factors") or []:
-            if any(alias in text for alias in aliases.get(str(factor), [str(factor)])):
+            factor = str(factor)
+            if factor in structured_absent:
+                continue
+            if factor in structured_provided:
+                provided.append(factor)
+                continue
+            if any(alias in text for alias in aliases.get(factor, [factor])):
                 provided.append(str(factor))
         return provided
 
@@ -827,11 +862,35 @@ class DiagnosisDoctorAgent:
     ) -> list[str]:
         protocol = skill_descriptor.get("clinical_context_protocol") or {}
         provided = set(self._clinical_risk_factors(patient_info, skill_descriptor))
+        known_absent = set(self._absent_structured_risk_factors(patient_info))
         return [
             str(factor)
             for factor in protocol.get("risk_factors") or []
-            if str(factor) not in provided
+            if str(factor) not in provided and str(factor) not in known_absent
         ]
+
+    def _structured_clinical_context(self, patient_info: dict[str, Any]) -> dict[str, Any]:
+        structured = patient_info.get("structured_clinical_context")
+        return dict(structured) if isinstance(structured, dict) else {}
+
+    def _absent_structured_risk_factors(self, patient_info: dict[str, Any]) -> list[str]:
+        structured = self._structured_clinical_context(patient_info)
+        fields = structured.get("fields") or {}
+        absent: list[str] = []
+        for field in fields.values():
+            if not isinstance(field, dict):
+                continue
+            if field.get("status") == "absent" and field.get("risk_factor"):
+                absent.append(str(field["risk_factor"]))
+        return absent
+
+    def _clinical_suspicion_effect(self, provided_risk_factors: list[str]) -> dict[str, Any]:
+        return {
+            "direction": "increases_suspicion" if provided_risk_factors else "neutral_or_unknown",
+            "basis": list(provided_risk_factors),
+            "role": "suspicion_modifier_only",
+            "can_confirm_diagnosis": False,
+        }
 
     def _bounded_differential_considerations(
         self,

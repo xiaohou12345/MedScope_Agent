@@ -534,6 +534,30 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
                 "symptoms": ["右髋疼痛"],
                 "clinical_context": "右髋疼痛三个月，长期激素治疗，偶尔饮酒",
                 "clinical_context_source": "patient_message",
+                "structured_clinical_context": {
+                    "schema_version": "clinical_context_extraction.v1",
+                    "source": "patient_message",
+                    "source_text": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒",
+                    "fields": {
+                        "symptoms": {"status": "present", "values": ["hip_pain"]},
+                        "duration": {"status": "present", "value": "三个月"},
+                        "laterality": {"status": "present", "value": "right"},
+                        "pain_location": {"status": "present", "value": "hip"},
+                        "aggravating_factors": {
+                            "status": "present",
+                            "values": ["walking_or_activity"],
+                        },
+                        "steroid_use": {"status": "present", "value": True},
+                        "alcohol_use": {"status": "present", "value": True},
+                        "trauma_history": {"status": "missing", "value": "unknown"},
+                    },
+                    "provided_risk_factors": [
+                        "corticosteroid_use",
+                        "alcohol_use",
+                    ],
+                    "missing_fields": ["trauma_history"],
+                    "risk_factor_role": "suspicion_modifier_only",
+                },
             },
             visual_result=visual_result,
             disease_skill=self.skill,
@@ -548,11 +572,86 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
             bundle["risk_modifiers"]["provided_risk_factors"],
             ["corticosteroid_use", "alcohol_use"],
         )
+        self.assertEqual(
+            bundle["structured_context"]["fields"]["laterality"]["value"],
+            "right",
+        )
+        self.assertEqual(
+            bundle["structured_context"]["fields"]["duration"]["value"],
+            "三个月",
+        )
+        self.assertEqual(
+            bundle["structured_context"]["fields"]["aggravating_factors"]["values"],
+            ["walking_or_activity"],
+        )
+        self.assertEqual(
+            bundle["source_trace"]["structured_context_source"],
+            "patient_message",
+        )
+        self.assertEqual(
+            report["clinical_context_assessment"]["suspicion_effect"]["role"],
+            "suspicion_modifier_only",
+        )
+        self.assertEqual(
+            report["clinical_context_assessment"]["suspicion_effect"]["direction"],
+            "increases_suspicion",
+        )
         self.assertEqual(bundle["diagnostic_limits"]["diagnosis_usable_level"], "risk_modifier_only")
         self.assertFalse(bundle["diagnostic_limits"]["can_confirm_without_imaging"])
         self.assertIn(
             "clinical_context_bundle",
             report["integrated_reasoning_summary"]["clinical_risk_support"],
+        )
+
+    def test_fhn_risk_factors_cannot_trigger_positive_diagnosis_without_imaging_support(self):
+        visual_result = {
+            "image_path": "output/fake/uploads/fhn_ap.png",
+            "modality": "xray",
+            "body_part": "hip",
+            "image_outputs": {
+                "original_image_path": "output/fake/uploads/fhn_ap.png",
+                "mask_path": "not_generated",
+                "overlay_path": "not_generated",
+            },
+            "visual_evidence": {
+                "disease_target": "femoral_head_necrosis",
+                "collapse": False,
+                "joint_space_narrowing": False,
+                "sclerosis": "unknown",
+                "cystic_change": "unknown",
+                "femoral_head_shape": "unknown",
+                "joint_space": "unknown",
+                "lesion_mask": "not_generated",
+                "confidence": 0.0,
+                "texture_abnormality_score": 0.0,
+                "lesion_area_ratio": 0.0,
+                "collapse_ratio": 0.0,
+                "joint_space_width": "unknown",
+                "evidence_items": [],
+                "findings": [],
+                "completeness": {},
+            },
+        }
+
+        report = DiagnosisDoctorAgent().generate_report(
+            case_id="case_fhn_risk_only",
+            patient_info={
+                "clinical_context": "右髋疼痛三个月，长期激素治疗，偶尔饮酒",
+                "clinical_context_source": "patient_message",
+            },
+            visual_result=visual_result,
+            disease_skill=self.skill,
+        )
+
+        target = report["target_disease_assessment"]
+        integrated = report["integrated_reasoning_summary"]
+        self.assertNotEqual(target["evidence_status"], "supported")
+        self.assertFalse(target["supports_target_disease"])
+        self.assertFalse(integrated["can_confirm_target_disease"])
+        self.assertFalse(report["clinical_context_assessment"]["can_confirm_without_imaging"])
+        self.assertEqual(
+            report["clinical_context_assessment"]["suspicion_effect"]["role"],
+            "suspicion_modifier_only",
         )
 
     def test_diagnosis_report_preserves_routing_hypotheses_without_treating_them_as_evidence(self):

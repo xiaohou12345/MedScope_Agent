@@ -211,26 +211,64 @@ class MemoryManager:
             raw_context = "；".join(str(item) for item in raw_context)
         source_fields = [
             key
-            for key in ("clinical_context", "history", "risk_factors", "symptoms")
+            for key in (
+                "clinical_context",
+                "history",
+                "risk_factors",
+                "symptoms",
+                "structured_clinical_context",
+            )
             if patient_info.get(key)
         ]
+        structured = patient_info.get("structured_clinical_context")
+        if not isinstance(structured, dict):
+            structured = {}
+        if not raw_context and structured.get("source_text"):
+            raw_context = str(structured.get("source_text") or "")
         if isinstance(existing_bundle, dict) and existing_bundle.get("schema_version"):
             bundle = dict(existing_bundle)
         else:
             provided = list(assessment.get("provided_risk_factors") or [])
+            if not provided:
+                provided = [
+                    str(item)
+                    for item in structured.get("provided_risk_factors") or []
+                    if str(item).strip()
+                ]
             missing = list(assessment.get("missing_clinical_context") or [])
+            suspicion_effect = assessment.get("suspicion_effect") or {
+                "direction": "increases_suspicion" if provided else "neutral_or_unknown",
+                "basis": list(provided),
+                "role": "suspicion_modifier_only",
+                "can_confirm_diagnosis": False,
+            }
+            source_trace = {
+                "source_fields": source_fields,
+                "structured_context_source": structured.get("source") if structured else "missing",
+            }
+            if structured.get("source_text"):
+                source_trace["source_text"] = structured.get("source_text")
+            if patient_info.get("clinical_context_source"):
+                source = patient_info["clinical_context_source"]
+            elif structured:
+                source = structured.get("source")
+            elif raw_context:
+                source = "structured_patient_info"
+            else:
+                source = "missing"
             bundle = {
                 "schema_version": "clinical_context_bundle.v1",
-                "source": patient_info.get("clinical_context_source") or (
-                    "structured_patient_info" if raw_context else "missing"
-                ),
+                "source": source,
                 "source_fields": source_fields,
                 "raw_context": str(raw_context),
+                "structured_context": structured,
+                "source_trace": source_trace,
                 "risk_modifiers": {
                     "provided_risk_factors": provided,
                     "missing_clinical_context": missing,
                     "suspicion_modifier_only": True,
                 },
+                "suspicion_effect": suspicion_effect,
                 "diagnostic_limits": {
                     "can_confirm_without_imaging": bool(
                         assessment.get("can_confirm_without_imaging", False)
@@ -250,6 +288,17 @@ class MemoryManager:
             "evidence_type": "clinical_context",
             "provided_risk_factors": list(risk_modifiers.get("provided_risk_factors") or []),
             "missing_clinical_context": list(risk_modifiers.get("missing_clinical_context") or []),
+            "suspicion_effect": bundle.get("suspicion_effect")
+            or {
+                "direction": (
+                    "increases_suspicion"
+                    if risk_modifiers.get("provided_risk_factors")
+                    else "neutral_or_unknown"
+                ),
+                "basis": list(risk_modifiers.get("provided_risk_factors") or []),
+                "role": "suspicion_modifier_only",
+                "can_confirm_diagnosis": False,
+            },
             "can_confirm_without_imaging": bool(
                 diagnostic_limits.get("can_confirm_without_imaging", False)
             ),

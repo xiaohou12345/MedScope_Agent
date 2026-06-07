@@ -735,7 +735,7 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
 
         service.handle_request(
             {
-                "patient_message": "右髋疼痛三个月，长期激素治疗，偶尔饮酒，上传 X 光片",
+                "patient_message": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒，无明显外伤史，上传 X 光片",
                 "image_path": "output/fake/uploads/right_hip_ap_xray.png",
                 "patient_info": {"symptoms": ["髋关节疼痛"]},
             }
@@ -749,6 +749,49 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
             forwarded_info["clinical_context_source"],
             "patient_message",
         )
+        structured = forwarded_info["structured_clinical_context"]
+        self.assertEqual(structured["schema_version"], "clinical_context_extraction.v1")
+        self.assertEqual(structured["source"], "patient_message")
+        self.assertIn("走路后加重", structured["source_text"])
+        fields = structured["fields"]
+        self.assertEqual(fields["symptoms"]["values"], ["hip_pain"])
+        self.assertEqual(fields["duration"]["value"], "三个月")
+        self.assertEqual(fields["laterality"]["value"], "right")
+        self.assertEqual(fields["pain_location"]["value"], "hip")
+        self.assertEqual(fields["aggravating_factors"]["values"], ["walking_or_activity"])
+        self.assertEqual(fields["steroid_use"]["status"], "present")
+        self.assertEqual(fields["alcohol_use"]["status"], "present")
+        self.assertEqual(fields["trauma_history"]["status"], "absent")
+        self.assertEqual(
+            structured["provided_risk_factors"],
+            ["corticosteroid_use", "alcohol_use"],
+        )
+        self.assertNotIn("trauma_history", structured["provided_risk_factors"])
+        self.assertEqual(structured["risk_factor_role"], "suspicion_modifier_only")
+
+    def test_service_marks_unprovided_clinical_prompt_fields_as_missing(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        service.handle_request(
+            {
+                "patient_message": "左髋疼痛，上传 X 光片",
+                "image_path": "output/fake/uploads/left_hip_ap_xray.png",
+                "patient_info": {},
+            }
+        )
+
+        structured = fake_doctor.calls[0]["patient_info"]["structured_clinical_context"]
+        fields = structured["fields"]
+        self.assertEqual(fields["laterality"]["value"], "left")
+        self.assertEqual(fields["pain_location"]["value"], "hip")
+        self.assertEqual(fields["duration"]["status"], "missing")
+        self.assertEqual(fields["aggravating_factors"]["status"], "missing")
+        self.assertEqual(fields["steroid_use"]["status"], "missing")
+        self.assertEqual(fields["alcohol_use"]["status"], "missing")
+        self.assertEqual(fields["trauma_history"]["status"], "missing")
+        self.assertIn("duration", structured["missing_fields"])
+        self.assertIn("steroid_use", structured["missing_fields"])
 
     def test_service_marks_fhn_with_degenerative_clues_for_bounded_differential_review(self):
         fake_doctor = FakeGaoDoctor()

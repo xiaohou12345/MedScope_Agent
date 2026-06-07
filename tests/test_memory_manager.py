@@ -274,6 +274,30 @@ class MemoryManagerQueryTest(unittest.TestCase):
                         "symptoms": ["髋关节疼痛"],
                         "clinical_context": "右髋疼痛，长期激素治疗，偶尔饮酒",
                         "clinical_context_source": "patient_message",
+                        "structured_clinical_context": {
+                            "schema_version": "clinical_context_extraction.v1",
+                            "source": "patient_message",
+                            "source_text": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒",
+                            "fields": {
+                                "symptoms": {"status": "present", "values": ["hip_pain"]},
+                                "duration": {"status": "present", "value": "三个月"},
+                                "laterality": {"status": "present", "value": "right"},
+                                "pain_location": {"status": "present", "value": "hip"},
+                                "aggravating_factors": {
+                                    "status": "present",
+                                    "values": ["walking_or_activity"],
+                                },
+                                "steroid_use": {"status": "present", "value": True},
+                                "alcohol_use": {"status": "present", "value": True},
+                                "trauma_history": {"status": "missing", "value": "unknown"},
+                            },
+                            "provided_risk_factors": [
+                                "corticosteroid_use",
+                                "alcohol_use",
+                            ],
+                            "missing_fields": ["trauma_history"],
+                            "risk_factor_role": "suspicion_modifier_only",
+                        },
                     },
                     "symptoms": ["髋关节疼痛"],
                     "intent": "diagnosis",
@@ -307,6 +331,14 @@ class MemoryManagerQueryTest(unittest.TestCase):
                             ],
                             "can_confirm_without_imaging": False,
                             "role": "clinical risk changes suspicion level only; it cannot confirm ONFH without imaging evidence.",
+                            "suspicion_effect": {
+                                "direction": "increases_suspicion",
+                                "basis": [
+                                    "corticosteroid_use",
+                                    "alcohol_use",
+                                ],
+                                "role": "suspicion_modifier_only",
+                            },
                         }
                     },
                     "key_evidence": [],
@@ -346,6 +378,26 @@ class MemoryManagerQueryTest(unittest.TestCase):
             self.assertEqual(
                 clinical["diagnostic_limits"]["diagnosis_usable_level"],
                 "risk_modifier_only",
+            )
+            self.assertEqual(
+                clinical["structured_context"]["fields"]["laterality"]["value"],
+                "right",
+            )
+            self.assertEqual(
+                clinical["structured_context"]["fields"]["aggravating_factors"]["values"],
+                ["walking_or_activity"],
+            )
+            self.assertEqual(
+                clinical["source_trace"]["structured_context_source"],
+                "patient_message",
+            )
+            self.assertIn(
+                "source_text",
+                clinical["source_trace"],
+            )
+            self.assertEqual(
+                clinical["suspicion_effect"]["role"],
+                "suspicion_modifier_only",
             )
 
     def test_get_evidence_bundle_exposes_differential_reasoning_evidence(self):

@@ -1862,6 +1862,9 @@ class GaoDoctorAgent:
         factor_text = "、".join(factors) if factors else "当前没有结构化到明确风险因素"
         raw_context = str(clinical.get("raw_context") or "").strip()
         raw_text = f"原始上下文是：{raw_context}。" if raw_context else ""
+        structured_text = self._format_structured_clinical_context_for_qa(
+            clinical.get("structured_context") or {}
+        )
         limit_role = str(
             limits.get("role")
             or clinical.get("role")
@@ -1869,11 +1872,47 @@ class GaoDoctorAgent:
         )
         return (
             f"这部分临床上下文来源是 {source}。"
+            f"{structured_text}"
             f"已识别的 risk modifier 包括：{factor_text}。"
             f"{raw_text}"
             f"限制是：{limit_role} "
             "也就是说，它只能提高或降低怀疑程度，不能单独确诊。"
         )
+
+    def _format_structured_clinical_context_for_qa(
+        self,
+        structured_context: dict[str, Any],
+    ) -> str:
+        fields = structured_context.get("fields") or {}
+        if not isinstance(fields, dict):
+            return ""
+        readable: list[str] = []
+        laterality = (fields.get("laterality") or {}).get("value")
+        laterality_text = {
+            "left": "左侧",
+            "right": "右侧",
+            "bilateral": "双侧",
+        }.get(str(laterality), "")
+        if laterality_text:
+            readable.append(laterality_text)
+        pain_location = (fields.get("pain_location") or {}).get("value")
+        location_text = {
+            "hip": "髋部",
+            "groin": "腹股沟",
+            "thigh": "大腿",
+            "knee": "膝部",
+        }.get(str(pain_location), "")
+        if location_text:
+            readable.append(location_text)
+        duration = (fields.get("duration") or {}).get("value")
+        if duration and duration != "unknown":
+            readable.append(str(duration))
+        aggravating = (fields.get("aggravating_factors") or {}).get("values") or []
+        if "walking_or_activity" in aggravating:
+            readable.append("活动/走路后加重")
+        if not readable:
+            return ""
+        return "结构化病史包括：" + "、".join(readable) + "。"
 
     def _is_diagnosis_confirmation_question(self, question: str) -> bool:
         return any(marker in question for marker in ["是", "是不是", "有没有", "有吗", "吗"]) and any(

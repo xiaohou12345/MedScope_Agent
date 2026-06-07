@@ -841,6 +841,30 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                     "patient_info": {
                         "clinical_context": "右髋疼痛三个月，长期激素治疗，偶尔饮酒",
                         "clinical_context_source": "patient_message",
+                        "structured_clinical_context": {
+                            "schema_version": "clinical_context_extraction.v1",
+                            "source": "patient_message",
+                            "source_text": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒",
+                            "fields": {
+                                "symptoms": {"status": "present", "values": ["hip_pain"]},
+                                "duration": {"status": "present", "value": "三个月"},
+                                "laterality": {"status": "present", "value": "right"},
+                                "pain_location": {"status": "present", "value": "hip"},
+                                "aggravating_factors": {
+                                    "status": "present",
+                                    "values": ["walking_or_activity"],
+                                },
+                                "steroid_use": {"status": "present", "value": True},
+                                "alcohol_use": {"status": "present", "value": True},
+                                "trauma_history": {"status": "missing", "value": "unknown"},
+                            },
+                            "provided_risk_factors": [
+                                "corticosteroid_use",
+                                "alcohol_use",
+                            ],
+                            "missing_fields": ["trauma_history"],
+                            "risk_factor_role": "suspicion_modifier_only",
+                        },
                     },
                     "intent": "diagnosis",
                 },
@@ -884,6 +908,28 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                                 "diagnosis_usable_level": "risk_modifier_only",
                                 "role": "clinical risk changes suspicion level only; it cannot confirm ONFH without imaging evidence.",
                             },
+                            "structured_context": {
+                                "schema_version": "clinical_context_extraction.v1",
+                                "source": "patient_message",
+                                "source_text": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒",
+                                "fields": {
+                                    "symptoms": {"status": "present", "values": ["hip_pain"]},
+                                    "duration": {"status": "present", "value": "三个月"},
+                                    "laterality": {"status": "present", "value": "right"},
+                                    "pain_location": {"status": "present", "value": "hip"},
+                                    "aggravating_factors": {
+                                        "status": "present",
+                                        "values": ["walking_or_activity"],
+                                    },
+                                    "steroid_use": {"status": "present", "value": True},
+                                    "alcohol_use": {"status": "present", "value": True},
+                                    "trauma_history": {"status": "missing", "value": "unknown"},
+                                },
+                            },
+                            "source_trace": {
+                                "structured_context_source": "patient_message",
+                                "source_text": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒",
+                            },
                         }
                     },
                 },
@@ -897,6 +943,9 @@ class MedScopeMvpFlowTest(unittest.TestCase):
 
             self.assertEqual(result["intent"], "qa")
             self.assertIn("patient_message", result["reply_to_patient"])
+            self.assertIn("右侧", result["reply_to_patient"])
+            self.assertIn("三个月", result["reply_to_patient"])
+            self.assertIn("活动/走路后加重", result["reply_to_patient"])
             self.assertIn("corticosteroid_use", result["reply_to_patient"])
             self.assertIn("alcohol_use", result["reply_to_patient"])
             self.assertIn("risk modifier", result["reply_to_patient"])
