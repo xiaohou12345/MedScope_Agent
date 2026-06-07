@@ -155,6 +155,58 @@ class ContractBoundaryTest(unittest.TestCase):
                 matched_clues=[],
             )
 
+    def test_skill_routing_decision_contract_preserves_hypothesis_and_initial_evidence_status(self):
+        decision = SkillRoutingDecision(
+            selected_skill="femoral_head_necrosis",
+            selected_vision_mode="no_mask_skill",
+            source="auto",
+            reason="matched hip xray clues",
+            confidence=0.75,
+            matched_clues=["髋", "xray"],
+            primary_hypothesis="femoral_head_necrosis",
+            differential_skill_candidates=["osteoarthritis_or_degenerative_hip_disease"],
+            clinical_hypotheses=[
+                {
+                    "disease_key": "femoral_head_necrosis",
+                    "role": "primary",
+                    "status": "requires_evidence_acquisition",
+                    "reason": "hip pain with xray",
+                },
+                {
+                    "disease_key": "osteoarthritis_or_degenerative_hip_disease",
+                    "role": "differential",
+                    "status": "differential_candidate",
+                    "reason": "hip pain can have degenerative alternatives",
+                },
+            ],
+            skill_search_reason="Selected primary disease skill as a clinical hypothesis.",
+            initial_evidence_status="requires_evidence_acquisition",
+            routing_evidence_status="requires_evidence_acquisition",
+        )
+
+        payload = decision.to_dict()
+
+        self.assertEqual(payload["primary_hypothesis"], "femoral_head_necrosis")
+        self.assertEqual(
+            payload["differential_skill_candidates"],
+            ["osteoarthritis_or_degenerative_hip_disease"],
+        )
+        self.assertEqual(payload["clinical_hypotheses"][0]["role"], "primary")
+        self.assertEqual(payload["clinical_hypotheses"][0]["disease_key"], "femoral_head_necrosis")
+        self.assertEqual(payload["clinical_hypotheses"][1]["role"], "differential")
+        self.assertEqual(payload["initial_evidence_status"], "requires_evidence_acquisition")
+        self.assertEqual(payload["routing_evidence_status"], "requires_evidence_acquisition")
+
+        with self.assertRaises(ValueError):
+            SkillRoutingDecision(
+                selected_skill="femoral_head_necrosis",
+                selected_vision_mode="no_mask_skill",
+                source="auto",
+                reason="invalid evidence status",
+                confidence=0.75,
+                initial_evidence_status="confirmed_diagnosis",
+            )
+
     def test_visual_analysis_contract_rejects_final_diagnosis(self):
         with self.assertRaises(ValueError):
             VisualAnalysisResult.from_dict(

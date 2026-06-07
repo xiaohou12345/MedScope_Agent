@@ -29,10 +29,15 @@ def build_lesion_gallery(
             usage = usage_by_id.get(finding_id, _candidate_usage(finding))
             measurements = _region_measurements(region=region, finding=finding, usage=usage)
             image_paths = _image_paths(region=region, finding=finding, measurements=measurements)
+            image_id = _first_non_empty(region, finding, usage, key="image_id")
+            view_hint = _first_non_empty(region, finding, usage, key="view_hint")
             items.append(
                 {
                     "finding_id": finding_id,
                     "region_id": region.get("region_id") or f"r{region_index}",
+                    "image_id": image_id,
+                    "view_hint": view_hint,
+                    "view_label": _view_hint_label(str(view_hint or "")),
                     "target": finding.get("target"),
                     "display_name": finding.get("display_name") or finding.get("target"),
                     "status": finding.get("status") or usage.get("status"),
@@ -58,6 +63,22 @@ def build_lesion_gallery(
                 }
             )
     return LesionGallery(items=items).to_dict()
+
+
+def _first_non_empty(*payloads: dict[str, Any], key: str) -> Any:
+    for payload in payloads:
+        value = payload.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _view_hint_label(view_hint: str) -> str:
+    return {
+        "ap_pelvis": "骨盆正位/AP",
+        "frog_lateral": "蛙式侧位",
+        "lateral": "侧位",
+    }.get(view_hint, "")
 
 
 def _usage_by_finding_id(visual_fact_usage: dict[str, Any]) -> dict[str, dict[str, Any]]:

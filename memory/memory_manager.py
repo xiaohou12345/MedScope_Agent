@@ -133,6 +133,10 @@ class MemoryManager:
             visual_evidence_bundle=visual_evidence_bundle,
             visual_fact_usage=visual_fact_usage,
         )
+        clinical_context_evidence = self._clinical_context_evidence(record)
+        differential_reasoning_evidence = self._differential_reasoning_evidence(record)
+        quantitative_evidence = self._quantitative_evidence(record)
+        integrated_reasoning_evidence = self._integrated_reasoning_evidence(record)
         return {
             "case_id": record["case_id"],
             "patient_context": {
@@ -142,6 +146,10 @@ class MemoryManager:
                 "symptoms": record["patient_memory"].get("symptoms", []),
                 "intent": record["patient_memory"].get("intent"),
             },
+            "clinical_context_evidence": clinical_context_evidence,
+            "differential_reasoning_evidence": differential_reasoning_evidence,
+            "quantitative_evidence": quantitative_evidence,
+            "integrated_reasoning_evidence": integrated_reasoning_evidence,
             "image_evidence": {
                 "image_path": image_memory.get("image_path"),
                 "modality": image_memory.get("modality"),
@@ -185,6 +193,151 @@ class MemoryManager:
             "lesion_gallery": lesion_gallery,
             "missing_or_unassessed": missing_or_unassessed,
             "quality_warnings": quality_warnings,
+        }
+
+    def _clinical_context_evidence(self, record: dict[str, Any]) -> dict[str, Any]:
+        patient_memory = record.get("patient_memory") or {}
+        patient_info = patient_memory.get("patient_info") or {}
+        reasoning_report = (record.get("reasoning_memory") or {}).get("report") or {}
+        assessment = reasoning_report.get("clinical_context_assessment") or {}
+        raw_context = (
+            patient_info.get("clinical_context")
+            or patient_info.get("history")
+            or patient_info.get("risk_factors")
+            or ""
+        )
+        if isinstance(raw_context, list):
+            raw_context = "；".join(str(item) for item in raw_context)
+        return {
+            "evidence_type": "clinical_context",
+            "source": patient_info.get("clinical_context_source") or (
+                "structured_patient_info" if raw_context else "missing"
+            ),
+            "raw_context": str(raw_context),
+            "provided_risk_factors": list(assessment.get("provided_risk_factors") or []),
+            "missing_clinical_context": list(assessment.get("missing_clinical_context") or []),
+            "can_confirm_without_imaging": bool(assessment.get("can_confirm_without_imaging", False)),
+            "diagnosis_usable": False,
+            "diagnosis_usable_level": "risk_modifier_only",
+            "role": assessment.get(
+                "role",
+                "clinical context can modify suspicion only; it cannot replace imaging evidence.",
+            ),
+        }
+
+    def _differential_reasoning_evidence(self, record: dict[str, Any]) -> dict[str, Any]:
+        skill_memory = record.get("skill_memory") or {}
+        routing_decision = skill_memory.get("routing_decision") or {}
+        reasoning_report = (record.get("reasoning_memory") or {}).get("report") or {}
+        considerations = reasoning_report.get("differential_considerations") or []
+        if not isinstance(considerations, list):
+            considerations = []
+        candidates = routing_decision.get("differential_skill_candidates") or []
+        if not isinstance(candidates, list):
+            candidates = []
+        return {
+            "evidence_type": "differential_reasoning",
+            "source": "diagnosis_report_and_routing_decision",
+            "primary_hypothesis": routing_decision.get("primary_hypothesis"),
+            "routing_evidence_status": routing_decision.get("routing_evidence_status")
+            or routing_decision.get("initial_evidence_status"),
+            "differential_skill_candidates": list(candidates),
+            "considerations": [dict(item) for item in considerations if isinstance(item, dict)],
+            "diagnosis_usable": False,
+            "diagnosis_usable_level": "bounded_differential_only",
+            "can_replace_primary_diagnosis": False,
+            "role": (
+                "Differential considerations explain alternative possibilities and nonspecific findings; "
+                "they cannot replace evidence-bounded diagnosis without supporting evidence."
+            ),
+        }
+
+    def _quantitative_evidence(self, record: dict[str, Any]) -> dict[str, Any]:
+        reasoning_report = (record.get("reasoning_memory") or {}).get("report") or {}
+        summary = reasoning_report.get("quantitative_evidence_summary") or {}
+        measurement_items = list(summary.get("measurement_items") or [])
+        exploratory_features = list(summary.get("exploratory_features") or [])
+        if not measurement_items and not exploratory_features:
+            visual_bundle = (
+                (record.get("image_memory") or {})
+                .get("visual_evidence_bundle")
+                or {}
+            )
+            evidence_items = visual_bundle.get("evidence_items") or visual_bundle.get("findings") or []
+            for item in evidence_items:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("evidence_type") == "anatomical_measurement":
+                    measurement_items.append(dict(item))
+                if (
+                    item.get("evidence_type") == "image_feature_quantification"
+                    or item.get("diagnosis_usable_level") == "exploratory_only"
+                ):
+                    exploratory_features.append(dict(item))
+        strong_count = int(summary.get("strong_quantitative_support_count") or 0)
+        if strong_count == 0:
+            strong_count = sum(
+                1
+                for item in measurement_items
+                if item.get("diagnosis_usable") is True
+                and (item.get("measurements") or {}).get("measurement_usable") is True
+            )
+        return {
+            "evidence_type": "quantitative_evidence",
+            "source": "diagnosis_report_and_visual_evidence_bundle",
+            "measurement_items": [
+                dict(item) for item in measurement_items if isinstance(item, dict)
+            ],
+            "exploratory_features": [
+                dict(item) for item in exploratory_features if isinstance(item, dict)
+            ],
+            "strong_quantitative_support_count": strong_count,
+            "can_confirm_diagnosis": strong_count > 0,
+            "diagnosis_usable_level": (
+                "measurement_support" if strong_count > 0 else "not_usable_or_exploratory"
+            ),
+            "role": (
+                "Quantitative evidence is only diagnosis-supporting when measurements are usable and quality-gated; "
+                "exploratory image features require validation."
+            ),
+        }
+
+    def _integrated_reasoning_evidence(self, record: dict[str, Any]) -> dict[str, Any]:
+        reasoning_report = (record.get("reasoning_memory") or {}).get("report") or {}
+        summary = reasoning_report.get("integrated_reasoning_summary") or {}
+        if not isinstance(summary, dict):
+            summary = {}
+        imaging = summary.get("imaging_support") or {}
+        quantitative = summary.get("quantitative_support") or {}
+        missing = summary.get("missing_evidence") or {}
+        clinical = summary.get("clinical_risk_support") or {}
+        return {
+            "evidence_type": "integrated_reasoning",
+            "source": "diagnosis_report.integrated_reasoning_summary",
+            "target_disease": summary.get("target_disease"),
+            "evidence_status": summary.get("evidence_status"),
+            "can_confirm_target_disease": bool(summary.get("can_confirm_target_disease", False)),
+            "supported_targets": list(imaging.get("supported_targets") or []),
+            "nonspecific_or_unusable_targets": list(
+                imaging.get("nonspecific_or_unusable_targets") or []
+            ),
+            "missing_required_targets": list(missing.get("missing_required_targets") or []),
+            "strong_quantitative_support_count": int(
+                quantitative.get("strong_quantitative_support_count") or 0
+            ),
+            "measurement_targets_not_usable": list(
+                quantitative.get("measurement_targets_not_usable") or []
+            ),
+            "exploratory_targets": list(quantitative.get("exploratory_targets") or []),
+            "provided_risk_factors": list(clinical.get("provided_risk_factors") or []),
+            "recommended_next_step": list(summary.get("recommended_next_step") or []),
+            "diagnosis_usable": False,
+            "diagnosis_usable_level": "bounded_summary_only",
+            "can_create_new_evidence": False,
+            "role": (
+                "Integrated reasoning summarizes already bounded evidence; it cannot create new findings "
+                "or override missing, low-quality, or exploratory evidence."
+            ),
         }
 
     def append_qa_memory(
@@ -305,6 +458,11 @@ class MemoryManager:
             for agent in agents_traced
             if agent in agent_io_summary
         }
+        clinical_hypotheses = [
+            dict(item)
+            for item in routing_decision.get("clinical_hypotheses") or []
+            if isinstance(item, dict)
+        ]
         audit = {
             "case_id": case_id,
             "schema_version": record["schema_version"],
@@ -350,6 +508,14 @@ class MemoryManager:
                     "routing_agent_scope": routing_decision.get("agent_scope"),
                     "routing_source": routing_decision.get("source"),
                     "skill_builder_action": routing_decision.get("skill_builder_action"),
+                    "primary_hypothesis": routing_decision.get("primary_hypothesis"),
+                    "initial_evidence_status": routing_decision.get("initial_evidence_status"),
+                    "routing_evidence_status": routing_decision.get("routing_evidence_status"),
+                    "differential_skill_candidates": list(
+                        routing_decision.get("differential_skill_candidates") or []
+                    ),
+                    "clinical_hypotheses": clinical_hypotheses,
+                    "clinical_hypotheses_count": len(clinical_hypotheses),
                     "formal_skill_status": quality_control.get("formal_skill_status"),
                     "visual_protocol_status": quality_control.get("visual_protocol_status"),
                 },

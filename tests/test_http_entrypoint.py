@@ -2,6 +2,7 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from urllib.parse import quote
 from unittest.mock import patch
 
 from agents.gaodoctor_agent import GaoDoctorAgent
@@ -89,6 +90,25 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["status"], "ok")
 
+    def test_readiness_endpoint_reports_offline_deployment_checks_without_secret_values(self):
+        with patch.dict("os.environ", {"DMX_API_KEY": "secret-test-key"}, clear=False):
+            status, payload = dispatch_http_request(
+                method="GET",
+                path="/v1/readiness",
+                service_factory=FakeService,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["api_route"]["active_route"], "dmx")
+        self.assertTrue(payload["api_route"]["api_key_present"])
+        self.assertNotIn("secret-test-key", json.dumps(payload, ensure_ascii=False))
+        self.assertIn("real_call_ready", payload["api_route"])
+        self.assertIn("real_call_ready", payload["medsam2"])
+        self.assertTrue(payload["storage"]["upload_root_exists"])
+        self.assertTrue(payload["storage"]["output_root_exists"])
+        self.assertIn("version", payload["python"])
+
     def test_root_serves_interactive_frontend(self):
         status, body, content_type = dispatch_static_request("/")
 
@@ -118,6 +138,394 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertNotIn("视觉模式", text)
         self.assertNotIn("疾病 Skill", text)
 
+    def test_root_frontend_assets_use_current_cache_buster(self):
+        status, body, content_type = dispatch_static_request("/")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/html; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn('/static/app.css?v=frontend-demo-20260603', text)
+        self.assertIn('/static/app.js?v=frontend-demo-20260603', text)
+        self.assertNotIn("skill-review-20260528", text)
+        css_status, _, css_type = dispatch_static_request("/static/app.css?v=frontend-demo-20260603")
+        js_status, _, js_type = dispatch_static_request("/static/app.js?v=frontend-demo-20260603")
+        self.assertEqual(css_status, 200)
+        self.assertEqual(css_type, "text/css; charset=utf-8")
+        self.assertEqual(js_status, 200)
+        self.assertEqual(js_type, "application/javascript; charset=utf-8")
+
+    def test_root_keeps_evidence_gateway_snapshot_inside_debug_section(self):
+        status, body, content_type = dispatch_static_request("/")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/html; charset=utf-8")
+        text = body.decode("utf-8")
+        input_panel = text[
+            text.index('<form id="caseForm"'):
+            text.index('<section id="visualPanel"')
+        ]
+        debug_section = text[
+            text.index('<details class="debug-details">'):
+            text.index('<section class="panel qa-panel">')
+        ]
+        self.assertNotIn("evidenceGatewaySnapshotButton", input_panel)
+        self.assertIn("evidenceGatewaySnapshotButton", debug_section)
+        self.assertIn("Evidence Gateway 快照", debug_section)
+
+    def test_static_app_js_renders_patient_friendly_routing_and_differential_sections(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("renderRoutingClinicalSummary", text)
+        self.assertIn("renderEvidenceProtocolReport", text)
+        self.assertIn("renderLegacyReportSections", text)
+        self.assertIn("renderDifferentialConsiderations", text)
+        self.assertIn("renderClinicalHypothesesAssessment", text)
+        self.assertIn("分析路径", text)
+        self.assertIn("主假设评估", text)
+        self.assertIn("影像证据", text)
+        self.assertIn("量化证据", text)
+        self.assertIn("鉴别考虑", text)
+        self.assertIn("clinical_hypotheses_assessment", text)
+        self.assertIn("候选假设队列", text)
+        self.assertIn("clinical_hypotheses", text)
+        self.assertIn("缺失证据", text)
+        self.assertIn("建议下一步", text)
+        self.assertIn("routing_evidence_status", text)
+        self.assertIn("imaging_evidence_summary", text)
+        self.assertIn("quantitative_evidence_summary", text)
+        self.assertIn("integrated_reasoning_summary", text)
+        self.assertIn("clinical_context_evidence", text)
+        self.assertIn("临床上下文证据", text)
+        self.assertIn("risk_modifier_only", text)
+        self.assertIn("differential_reasoning_evidence", text)
+        self.assertIn("鉴别推理证据", text)
+        self.assertIn("bounded_differential_only", text)
+        self.assertIn("quantitative_evidence", text)
+        self.assertIn("量化证据审计", text)
+        self.assertIn("not_usable_or_exploratory", text)
+        self.assertIn("integrated_reasoning_evidence", text)
+        self.assertIn("综合推理审计", text)
+        self.assertIn("bounded_summary_only", text)
+        self.assertIn("differential_considerations", text)
+        self.assertIn("missing_evidence", text)
+        self.assertIn("recommendation", text)
+        patient_report_slice = text[
+            text.index("function renderEvidenceProtocolReport"):
+            text.index("function renderDifferentialConsiderations")
+        ]
+        self.assertIn("renderClinicalHypothesesAssessment", patient_report_slice)
+        self.assertIn("主假设评估", patient_report_slice)
+        self.assertIn("综合推理", patient_report_slice)
+        self.assertIn("不是诊断证据", patient_report_slice)
+        self.assertIn("可参考发现", patient_report_slice)
+        self.assertIn("仅作提示", patient_report_slice)
+        self.assertIn("不能确认", patient_report_slice)
+        self.assertNotIn("执行方式：", patient_report_slice)
+        self.assertNotIn("诊断级别：", patient_report_slice)
+        self.assertNotIn("强量化支持", patient_report_slice)
+        self.assertNotIn("measurement_usable", patient_report_slice)
+        render_report_slice = text[
+            text.index("function renderReport"):
+            text.index("function renderRoutingClinicalSummary")
+        ]
+        self.assertIn("renderPatientDiagnosisSummary(payload)", render_report_slice)
+        self.assertIn("hasStructuredReport", render_report_slice)
+        self.assertIn("renderLegacyReportSections(report, hasStructuredReport)", render_report_slice)
+        self.assertIn("elements.reportView.innerHTML = patientSummaryHtml", render_report_slice)
+        self.assertNotIn("${routingSummaryHtml}${patientSummaryHtml}", render_report_slice)
+        self.assertNotIn("renderEvidenceProtocolReport(payload)", render_report_slice)
+        routing_slice = text[
+            text.index("function renderRoutingClinicalSummary"):
+            text.index("function renderEvidenceProtocolReport")
+        ]
+        self.assertIn("clinical_hypotheses", routing_slice)
+        self.assertIn("候选假设队列", routing_slice)
+        self.assertIn("这不是诊断结论", routing_slice)
+        legacy_slice = text[
+            text.index("function renderLegacyReportSections"):
+            text.index("function renderRoutingClinicalSummary")
+        ]
+        self.assertIn("hasStructuredReport", legacy_slice)
+        self.assertIn('"诊断倾向"', legacy_slice)
+        self.assertIn('"治疗建议"', legacy_slice)
+        self.assertIn('"影像依据"', legacy_slice)
+        self.assertIn('"不确定性说明"', legacy_slice)
+        self.assertIn('"建议进一步检查"', legacy_slice)
+
+    def test_static_app_js_renders_patient_diagnosis_report_as_three_block_summary(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("function renderPatientDiagnosisSummary", text)
+        self.assertIn("function patientDiagnosisConclusion", text)
+        self.assertIn("function patientDiagnosisEvidenceItems", text)
+        self.assertIn("function patientDiagnosisNextSteps", text)
+        summary_slice = text[
+            text.index("function renderPatientDiagnosisSummary"):
+            text.index("function patientDiagnosisConclusion")
+        ]
+        self.assertIn("患者诊断摘要", summary_slice)
+        self.assertIn("结论", summary_slice)
+        self.assertIn("主要依据", summary_slice)
+        self.assertIn("下一步", summary_slice)
+        self.assertIn("slice(0, 3)", summary_slice)
+        self.assertNotIn("影像证据", summary_slice)
+        self.assertNotIn("量化证据", summary_slice)
+        self.assertNotIn("临床风险因素", summary_slice)
+        self.assertNotIn("缺失证据</h3>", summary_slice)
+
+    def test_static_app_js_hides_internal_missing_evidence_keys_from_patient_summary(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("function patientMissingEvidenceName", text)
+        evidence_slice = text[
+            text.index("function patientDiagnosisEvidenceItems"):
+            text.index("function patientDiagnosisNextSteps")
+        ]
+        self.assertIn("patientMissingEvidenceName", evidence_slice)
+        self.assertNotIn("missingTargets.slice(0, 3).map(humanFindingName)", evidence_slice)
+        missing_label_slice = text[
+            text.index("function patientMissingEvidenceName"):
+            text.index("function humanFindingName")
+        ]
+        self.assertIn("可用于测量分级的病灶分割结果", missing_label_slice)
+        self.assertIn("可展示的分割对照图", missing_label_slice)
+        self.assertNotIn("缺少可用于测量分级的病灶分割结果", missing_label_slice)
+        self.assertNotIn("缺少可展示的分割对照图", missing_label_slice)
+        self.assertNotIn("仍缺少：缺少", missing_label_slice)
+        self.assertNotIn("measurement_grade_mask", evidence_slice)
+        self.assertNotIn("segmentation_display", evidence_slice)
+
+    def test_static_app_js_deduplicates_patient_summary_finding_names(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("function uniquePatientFindingNames", text)
+        evidence_slice = text[
+            text.index("function patientDiagnosisEvidenceItems"):
+            text.index("function patientDiagnosisNextSteps")
+        ]
+        self.assertIn("uniquePatientFindingNames(supportedTargets)", evidence_slice)
+        self.assertIn("uniquePatientFindingNames(nonspecificTargets)", evidence_slice)
+        self.assertNotIn("supportedTargets.map(humanFindingName)", evidence_slice)
+        self.assertNotIn("nonspecificTargets.slice(0, 3).map(humanFindingName)", evidence_slice)
+        helper_slice = text[
+            text.index("function uniquePatientFindingNames"):
+            text.index("function patientMissingEvidenceName")
+        ]
+        self.assertIn("new Set", helper_slice)
+        self.assertIn("filter(Boolean)", helper_slice)
+        self.assertIn("slice(0, 3)", helper_slice)
+
+    def test_static_app_js_renders_skill_proposal_report_before_plain_reply(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("function renderSkillProposalReport", text)
+        self.assertIn("Skill Builder 候选草案", text)
+        self.assertIn("不能直接诊断", text)
+        self.assertIn("formal_update_allowed", text)
+        render_report_slice = text[
+            text.index("function renderReport"):
+            text.index("function renderLegacyReportSections")
+        ]
+        self.assertIn("renderSkillProposalReport(payload)", render_report_slice)
+        self.assertLess(
+            render_report_slice.index("renderSkillProposalReport(payload)"),
+            render_report_slice.index("payload.reply_to_patient"),
+        )
+
+    def test_static_app_js_renders_protocol_evidence_item_view_source(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        title_slice = text[
+            text.index("function evidenceProtocolItemTitle"):
+            text.index("function evidenceProtocolItemSummary")
+        ]
+        self.assertIn("evidenceViewHintLabel", title_slice)
+        self.assertIn("view_hint", title_slice)
+        self.assertIn("骨盆正位/AP", text)
+        self.assertIn("蛙式侧位", text)
+
+    def test_static_app_js_renders_lesion_gallery_view_source(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        gallery_slice = text[
+            text.index("function buildCandidateLesionItems"):
+            text.index("function getLesionGalleryItems")
+        ]
+        self.assertIn("candidateTitleWithView", gallery_slice)
+        self.assertIn("view_label", gallery_slice)
+        self.assertIn("view_hint", gallery_slice)
+
+    def test_static_app_js_health_button_uses_readiness_endpoint(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        health_slice = text[
+            text.index("async function checkHealth"):
+            text.index("function renderList")
+        ]
+        self.assertIn("/v1/readiness", health_slice)
+        self.assertIn("real_call_ready", health_slice)
+        self.assertIn("MedSAM2", health_slice)
+        self.assertNotIn('fetch("/health")', health_slice)
+
+    def test_static_app_js_upload_status_summarizes_multiview_inputs(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("function formatUploadedImageSeriesStatus", text)
+        upload_slice = text[
+            text.index("async function uploadFiles"):
+            text.index("async function checkHealth")
+        ]
+        self.assertIn("formatUploadedImageSeriesStatus(uploaded)", upload_slice)
+        formatter_slice = text[
+            text.index("function formatUploadedImageSeriesStatus"):
+            text.index("async function checkHealth")
+        ]
+        self.assertIn("inferViewHint", formatter_slice)
+        infer_slice = text[
+            text.index("function inferViewHint"):
+            text.index("function buildQaPayload")
+        ]
+        self.assertIn('text.includes("lateral")', infer_slice)
+        self.assertIn('text.includes("侧位")', infer_slice)
+        label_slice = text[
+            text.index("function imageViewLabel"):
+            text.index("function renderImageSeriesContext")
+        ]
+        self.assertIn('lateral: "髋关节侧位/Lateral"', label_slice)
+        self.assertIn("imageViewLabel", formatter_slice)
+        self.assertIn("image_001", formatter_slice)
+        self.assertIn("骨盆正位/AP", text)
+        self.assertIn("蛙式侧位", text)
+
+    def test_static_app_js_clears_stale_outputs_and_gates_qa_during_new_analysis(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        upload_slice = text[
+            text.index("async function uploadFiles"):
+            text.index("function formatUploadedImageSeriesStatus")
+        ]
+        self.assertIn("resetViews()", upload_slice)
+        self.assertIn("state.useSampleMask = false", upload_slice)
+        thinking_slice = text[
+            text.index("function showCaseThinking"):
+            text.index("function renderCaseError")
+        ]
+        self.assertIn("elements.alignmentView.innerHTML", thinking_slice)
+        self.assertIn("elements.lesionFigure.hidden = true", thinking_slice)
+        qa_slice = text[
+            text.index("function updateQaControls"):
+            text.index("function setCasePending")
+        ]
+        self.assertIn("state.qaPending", qa_slice)
+        self.assertIn("elements.qaInput.disabled = !analysisReady || state.casePending || state.qaPending", qa_slice)
+        self.assertIn("elements.qaSubmitButton.disabled = !analysisReady || state.casePending", qa_slice)
+
+    def test_static_app_js_renders_qa_answer_with_patient_safe_clean_paragraphs(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("function renderPatientQaAnswer", text)
+        self.assertIn("function patientQaAnswerParagraphs", text)
+        qa_slice = text[
+            text.index("function updateQaItem"):
+            text.index("function ensureImageLightbox")
+        ]
+        self.assertIn("renderPatientQaAnswer(answer)", qa_slice)
+        self.assertNotIn("<p>${escapeHtml(answer || \"-\")}</p>", qa_slice)
+        renderer_slice = text[
+            text.index("function renderPatientQaAnswer"):
+            text.index("function patientQaAnswerParagraphs")
+        ]
+        self.assertIn("qa-answer", renderer_slice)
+        self.assertIn("paragraphs.map", renderer_slice)
+        paragraph_slice = text[
+            text.index("function patientQaAnswerParagraphs"):
+            text.index("function ensureImageLightbox")
+        ]
+        self.assertIn('replace(/\\*\\*/g, "")', paragraph_slice)
+        self.assertIn('replace(/__/g, "")', paragraph_slice)
+        self.assertIn("slice(0, 3)", paragraph_slice)
+
+    def test_static_app_js_falls_back_to_uploaded_input_image_when_no_visual_output_exists(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("function renderInputImageFallbackGallery", text)
+        self.assertIn("function buildInputImageFallbackItems", text)
+        visual_slice = text[
+            text.index("function renderVisualOutput"):
+            text.index("function renderPatientVisualSummary")
+        ]
+        self.assertIn("renderInputImageFallbackGallery", visual_slice)
+        fallback_slice = text[
+            text.index("function buildInputImageFallbackItems"):
+            text.index("function renderPatientVisualSummary")
+        ]
+        self.assertIn("visualBundle.image_context", fallback_slice)
+        self.assertIn("payload.image_paths", fallback_slice)
+        self.assertIn("payload.image_path", fallback_slice)
+        self.assertIn("输入图像", text)
+
+    def test_static_app_js_renders_readiness_errors_as_structured_panels(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("function buildApiError", text)
+        self.assertIn("error.apiPayload", text)
+        self.assertIn("function renderStructuredErrorPanel", text)
+        self.assertIn("部署检查未通过", text)
+        self.assertIn("需要处理", text)
+        self.assertIn("medsam2_configuration", text)
+        self.assertIn("routing_decision", text)
+        error_slice = text[
+            text.index("function renderCaseError"):
+            text.index("function showQaThinking")
+        ]
+        self.assertIn("renderStructuredErrorPanel", error_slice)
+        self.assertIn("报告区", error_slice)
+        status_slice = text[
+            text.index('elements.caseForm.addEventListener("submit"'):
+            text.index('elements.qaForm.addEventListener("submit"')
+        ]
+        self.assertIn("shortApiErrorMessage(error", status_slice)
+        self.assertNotIn("setStatus(error.message", status_slice)
+
     def test_static_frontend_assets_are_served_from_allowlist(self):
         status, body, content_type = dispatch_static_request("/static/app.js")
 
@@ -132,6 +540,13 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn(b"renderSourcePriority", body)
         self.assertIn(b"renderEvidenceBundle", body)
         self.assertIn(b"renderVisualEvidenceBundle", body)
+        self.assertIn(b"renderImageSeriesContext", body)
+        self.assertIn(b"view_coverage", body)
+        self.assertIn(b"image_series", body)
+        self.assertIn("多体位输入".encode("utf-8"), body)
+        self.assertIn("当前仅分析主图".encode("utf-8"), body)
+        self.assertIn("多体位分析".encode("utf-8"), body)
+        self.assertIn(b"multi_view_execution", body)
         self.assertIn(b"renderSegmentationResults", body)
         self.assertIn(b"renderVisualToolPlan", body)
         self.assertIn("分割任务结果".encode("utf-8"), body)
@@ -163,6 +578,11 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("分割结果".encode("utf-8"), body)
         self.assertIn("分割候选 mask".encode("utf-8"), body)
         self.assertIn("对比叠加".encode("utf-8"), body)
+        self.assertIn(b"renderMultiViewOutputGallery", body)
+        self.assertIn(b"per_image_results", body)
+        self.assertIn("多体位视觉结果".encode("utf-8"), body)
+        self.assertIn("按体位查看".encode("utf-8"), body)
+        self.assertIn(b"data-view-hint", body)
         self.assertIn("诊断采用证据".encode("utf-8"), body)
         self.assertIn("排除证据".encode("utf-8"), body)
         self.assertIn(b"visual_fact_usage", body)
@@ -327,6 +747,20 @@ class HttpEntrypointTest(unittest.TestCase):
             self.assertEqual(uploaded_path.name, "scan.nii.gz")
             self.assertIn("output/fake/uploads", payload["image_path"])
             self.assertEqual(uploaded_path.read_bytes(), b"fake-nifti")
+
+    def test_upload_route_decodes_frontend_encoded_filename(self):
+        encoded_filename = quote("髋关节 正位.png")
+
+        status, payload = dispatch_http_request(
+            method="POST",
+            path=f"/v1/upload?filename={encoded_filename}",
+            body=b"fake-png",
+            service_factory=FakeService,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["filename"], "髋关节_正位.png")
+        self.assertNotIn("%", payload["filename"])
 
     def test_upload_rejects_empty_file(self):
         status, payload = handle_file_upload(filename="scan.nii.gz", body=b"")
@@ -668,6 +1102,88 @@ class HttpEntrypointTest(unittest.TestCase):
             self.assertEqual(audit_status, 200)
             self.assertEqual(audit["case_id"], "case_demo")
             self.assertIn("memory_completeness", audit)
+
+    def test_fhn_no_mask_demo_response_backfills_structured_protocol_report(self):
+        with TemporaryDirectory() as tmpdir:
+            output_root = Path(tmpdir) / "output"
+            artifacts_dir = (
+                output_root
+                / "fake"
+                / "standard_demo_with_fhn_no_mask_qc"
+                / "cases"
+                / "fhn_no_mask_multifinding"
+                / "artifacts"
+            )
+            artifacts_dir.mkdir(parents=True)
+            (artifacts_dir / "fhn_no_mask_multifinding_response.json").write_text(
+                json.dumps(
+                    {
+                        "case_id": "case_demo",
+                        "routing_decision": {
+                            "selected_skill": "femoral_head_necrosis",
+                            "selected_vision_mode": "no_mask_skill",
+                        },
+                        "alignment_plan": {
+                            "required_next_images": [
+                                {
+                                    "modality": "MRI",
+                                    "region": "双髋关节",
+                                    "reason": "早期股骨头坏死需要 MRI 评估。",
+                                }
+                            ],
+                            "insufficiency_reasons": ["X 光不能排除早期股骨头坏死。"],
+                        },
+                        "report": {
+                            "case_id": "case_demo",
+                            "诊断倾向": "疑似股骨头坏死影像表现，需 MRI 和影像科复核",
+                            "visual_fact_usage": {
+                                "used": [
+                                    {
+                                        "target": "sclerotic_band",
+                                        "display_name": "硬化带",
+                                        "summary_text": "右侧股骨头上外侧带状密度增高候选区",
+                                        "diagnosis_usable": True,
+                                        "quality_level": "medium",
+                                    }
+                                ],
+                                "excluded": [
+                                    {
+                                        "target": "cystic_change",
+                                        "display_name": "囊性变",
+                                        "exclusion_reason": "non_independent_evidence",
+                                        "diagnosis_usable": False,
+                                    }
+                                ],
+                            },
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            status, response = dispatch_demo_request(
+                method="GET",
+                path="/v1/demo/standard/cases/fhn_no_mask_multifinding/response",
+                output_root=output_root,
+            )
+
+        self.assertEqual(status, 200)
+        report = response["report"]
+        self.assertIn("target_disease_assessment", report)
+        self.assertIn("imaging_evidence_summary", report)
+        self.assertIn("quantitative_evidence_summary", report)
+        self.assertIn("clinical_context_assessment", report)
+        self.assertIn("missing_evidence", report)
+        self.assertIn("modality_limitations", report)
+        self.assertIn("recommendation", report)
+        self.assertEqual(
+            report["target_disease_assessment"]["target_disease"],
+            "femoral_head_necrosis",
+        )
+        self.assertEqual(len(report["imaging_evidence_summary"]["usable_items"]), 1)
+        self.assertEqual(len(report["imaging_evidence_summary"]["nonspecific_items"]), 1)
+        self.assertTrue(any("MRI" in item for item in report["recommendation"]))
 
     def test_evidence_gateway_snapshot_demo_is_served_from_output_fake(self):
         with TemporaryDirectory() as tmpdir:
@@ -1438,6 +1954,51 @@ class HttpEntrypointTest(unittest.TestCase):
             payload["routing_decision"]["skill_builder_action"],
             "load_existing_skill",
         )
+
+    def test_post_medscope_returns_skill_proposal_when_selected_skill_is_missing(self):
+        class MissingProposalSkillTool:
+            def load_guideline_skill(self, disease_key):
+                raise FileNotFoundError(disease_key)
+
+            def prepare_skill(self, **kwargs):
+                return {
+                    "skill_id": f"{kwargs['disease_key']}_proposal_v0.1",
+                    "disease_name": kwargs["disease_name"],
+                    "skill_type": "data_mined_hypothesis",
+                    "source_type": "internal_dataset_summary",
+                    "evidence_level": "low",
+                }
+
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(
+            gaodoctor_agent=fake_doctor,
+            skill_tool=MissingProposalSkillTool(),
+        )
+        status, payload = dispatch_http_request(
+            method="POST",
+            path="/v1/medscope",
+            body=json.dumps(
+                {
+                    "patient_message": "左髋疼痛，考虑罕见髋部疾病，请根据指南评估",
+                    "image_path": "output/fake/uploads/rare_hip_xray.png",
+                    "disease_key": "rare_hip_disorder",
+                    "patient_info": {"symptoms": ["髋关节疼痛"]},
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            service_factory=lambda: service,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["intent"], "skill_proposal")
+        self.assertEqual(payload["analysis_status"], "skill_proposal_required")
+        self.assertEqual(
+            payload["routing_decision"]["skill_builder_action"],
+            "search_or_generate_skill",
+        )
+        self.assertFalse(payload["skill_builder_proposal"]["diagnosis_allowed"])
+        self.assertFalse(payload["skill_builder_proposal"]["formal_update_allowed"])
+        self.assertEqual(fake_doctor.calls, [])
 
     @unittest.skipUnless(
         REAL_IMAGE.exists() and REAL_MASK.exists(),

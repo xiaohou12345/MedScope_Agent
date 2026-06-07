@@ -13,6 +13,9 @@ def build_structured_visual_facts(findings: list[dict[str, Any]]) -> list[dict[s
         overlap_qc = dict(finding.get("overlap_qc") or {})
         fact = {
             "finding_id": finding.get("finding_id"),
+            "image_id": finding.get("image_id"),
+            "view_hint": finding.get("view_hint"),
+            "source_image_path": finding.get("source_image_path"),
             "target": finding.get("target"),
             "display_name": finding.get("display_name") or finding.get("target"),
             "status": finding.get("status"),
@@ -47,10 +50,14 @@ def build_structured_visual_facts(findings: list[dict[str, Any]]) -> list[dict[s
 
 def _structured_visual_fact_summary(fact: dict[str, Any]) -> str:
     parts = []
+    view = _view_hint_display_name(str(fact.get("view_hint") or ""))
     laterality = fact.get("laterality")
+    display_name = str(fact.get("display_name") or fact.get("target") or "finding")
     if laterality:
-        parts.append(str(laterality))
-    parts.append(str(fact.get("display_name") or fact.get("target") or "finding"))
+        display_name = f"{laterality}{display_name}"
+    if view:
+        display_name = f"{view}：{display_name}"
+    parts.append(display_name)
     parts.append(str(fact.get("status") or "unknown_status"))
     if not fact.get("diagnosis_usable", True):
         parts.append("not_diagnosis_usable")
@@ -65,3 +72,11 @@ def _structured_visual_fact_summary(fact: dict[str, Any]) -> str:
     elif fact.get("area_ratio_in_image") is not None:
         parts.append(f"area_ratio_in_image={fact['area_ratio_in_image']}")
     return "; ".join(parts)
+
+
+def _view_hint_display_name(view_hint: str) -> str:
+    return {
+        "ap_pelvis": "骨盆正位/AP",
+        "frog_lateral": "蛙式侧位",
+        "lateral": "侧位",
+    }.get(view_hint, "")

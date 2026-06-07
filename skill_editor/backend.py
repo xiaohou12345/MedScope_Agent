@@ -22,6 +22,14 @@ STATIC_FILES = {
 }
 
 
+def _remove_prefix(value: str, prefix: str) -> str:
+    return value[len(prefix) :] if value.startswith(prefix) else value
+
+
+def _remove_suffix(value: str, suffix: str) -> str:
+    return value[: -len(suffix)] if suffix and value.endswith(suffix) else value
+
+
 def dispatch_skill_editor_static_request(path: str) -> tuple[int | None, bytes, str]:
     route_path = urlparse(path).path
     filename = STATIC_FILES.get(route_path)
@@ -123,10 +131,10 @@ def _dispatch_skill_api(
     if method == "GET" and suffix == "versions":
         return 200, {"versions": _list_versions(kind="skills", document_key=skill_key, version_root=version_root)}
     if method == "GET" and suffix.startswith("versions/"):
-        version_id = suffix.removeprefix("versions/")
+        version_id = _remove_prefix(suffix, "versions/")
         return _version_response(kind="skills", document_key=skill_key, version_id=version_id, version_root=version_root)
     if method == "POST" and suffix.startswith("versions/") and suffix.endswith("/restore"):
-        version_id = suffix.removeprefix("versions/").removesuffix("/restore").strip("/")
+        version_id = _remove_suffix(_remove_prefix(suffix, "versions/"), "/restore").strip("/")
         status, payload = _version_response(
             kind="skills",
             document_key=skill_key,
@@ -227,10 +235,10 @@ def _dispatch_prompt_api(
     if method == "GET" and suffix == "versions":
         return 200, {"versions": _list_versions(kind="prompts", document_key=prompt_key, version_root=version_root)}
     if method == "GET" and suffix.startswith("versions/"):
-        version_id = suffix.removeprefix("versions/")
+        version_id = _remove_prefix(suffix, "versions/")
         return _version_response(kind="prompts", document_key=prompt_key, version_id=version_id, version_root=version_root)
     if method == "POST" and suffix.startswith("versions/") and suffix.endswith("/restore"):
-        version_id = suffix.removeprefix("versions/").removesuffix("/restore").strip("/")
+        version_id = _remove_suffix(_remove_prefix(suffix, "versions/"), "/restore").strip("/")
         status, payload = _version_response(
             kind="prompts",
             document_key=prompt_key,
@@ -522,7 +530,7 @@ def _json_body(body: bytes) -> dict:
 
 
 def _split_document_route(route_path: str, prefix: str) -> tuple[str, str]:
-    remainder = route_path.removeprefix(prefix).strip("/")
+    remainder = _remove_prefix(route_path, prefix).strip("/")
     if not remainder:
         return "", ""
     parts = remainder.split("/", 1)

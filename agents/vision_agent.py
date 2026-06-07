@@ -45,6 +45,11 @@ class VisionAgent:
         image_path: str,
         disease_skill: dict[str, Any],
     ) -> dict[str, Any]:
+        if disease_skill.get("imaging_evidence_protocol"):
+            return self.analyze_with_visual_protocol(
+                image_path=image_path,
+                disease_skill=disease_skill,
+            )
         tasks = disease_skill.get("vision_agent_tasks", {})
         evidence = VisualEvidence(
             femoral_head_shape="基本完整",
@@ -91,7 +96,7 @@ class VisionAgent:
         segmentation_prompt: dict[str, Any] | None = None,
         output_mask_path: str | None = None,
     ) -> dict[str, Any]:
-        protocol = disease_skill.get("visual_protocol") or {}
+        protocol = self._visual_protocol_from_skill(disease_skill)
         visual_tool_plan = self.visual_tool_router.plan_from_protocol(protocol)
         if mask_path:
             resolved_overlay_path = overlay_path or self._default_overlay_path(image_path)
@@ -129,6 +134,10 @@ class VisionAgent:
             image_outputs={},
             segmentation_source="not_run_no_runtime_executor",
         )
+        evidence_items = self._evidence_items_from_visual_plan(
+            visual_tool_plan=visual_tool_plan,
+            segmentation_results=segmentation_results,
+        )
         evidence = VisualEvidence(
             femoral_head_shape="not_applicable",
             collapse=False,
@@ -150,6 +159,7 @@ class VisionAgent:
             completeness=self._completeness_from_segmentation_results(segmentation_results),
             visual_tool_plan=visual_tool_plan,
             segmentation_results=segmentation_results,
+            evidence_items=evidence_items,
             suspected_visual_findings=[
                 "视觉工具已完成路由，但当前没有可执行的分割运行时输入。"
             ],
@@ -409,7 +419,7 @@ class VisionAgent:
         features = segmentation["features"]
         mask_shape = segmentation["mask_shape"]
         image_outputs = segmentation["image_outputs"]
-        protocol = disease_skill.get("visual_protocol") or {}
+        protocol = self._visual_protocol_from_skill(disease_skill)
         protocol_payload = self._build_visual_protocol_payload(
             features=features,
             disease_skill=disease_skill,
@@ -472,7 +482,7 @@ class VisionAgent:
         image_outputs: dict[str, Any] | None = None,
         segmentation_source: str = "unknown",
     ) -> dict[str, Any]:
-        protocol = disease_skill.get("visual_protocol") or {}
+        protocol = self._visual_protocol_from_skill(disease_skill)
         if not protocol:
             return {}
         available_modalities = [
@@ -517,12 +527,17 @@ class VisionAgent:
             image_outputs=image_outputs or {},
             segmentation_source=segmentation_source,
         )
+        evidence_items = self._evidence_items_from_visual_plan(
+            visual_tool_plan=visual_tool_plan,
+            segmentation_results=segmentation_results,
+        )
         return {
             "disease_target": protocol.get("disease_target"),
             "measurements": measurements,
             "completeness": completeness,
             "visual_tool_plan": visual_tool_plan,
             "segmentation_results": segmentation_results,
+            "evidence_items": evidence_items,
         }
 
     def _build_segmentation_results(
@@ -557,6 +572,67 @@ class VisionAgent:
                 ).to_dict()
             )
         return results
+
+    def _evidence_items_from_visual_plan(
+        self,
+        visual_tool_plan: list[dict[str, Any]],
+        segmentation_results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        results_by_target = {
+            str(result.get("target")): dict(result)
+            for result in segmentation_results
+            if isinstance(result, dict)
+        }
+        items: list[dict[str, Any]] = []
+        for planned in visual_tool_plan:
+            if not isinstance(planned, dict):
+                continue
+            task = dict(planned.get("task") or {})
+            target = str(task.get("target") or "")
+            if not target:
+                continue
+            result = results_by_target.get(target, {})
+            diagnosis_level = str(
+                planned.get("diagnosis_usable_level")
+                or task.get("diagnosis_usable_level")
+                or "not_usable"
+            )
+            execution_mode = str(planned.get("execution_mode") or task.get("execution_mode") or "")
+            diagnosis_usable = (
+                bool(result.get("diagnosis_usable"))
+                if result
+                else diagnosis_level not in {"exploratory_only", "not_usable"}
+                and planned.get("status") == "runnable"
+                and bool(planned.get("diagnosis_usable_without_qc"))
+            )
+            measurement_usable = bool(task.get("measurement_usable", False)) and diagnosis_usable
+            items.append(
+                {
+                    "target": target,
+                    "display_name": task.get("display_name") or target,
+                    "evidence_type": planned.get("evidence_type") or task.get("evidence_type") or "visual_observation",
+                    "execution_mode": execution_mode,
+                    "visual_observation": {
+                        "status": planned.get("status"),
+                        "reason": planned.get("reason"),
+                    },
+                    "segmentation": {
+                        "status": result.get("status", "not_run"),
+                        "mask_path": result.get("mask_path", "not_generated"),
+                        "overlay_path": result.get("overlay_path", "not_generated"),
+                    },
+                    "measurements": {
+                        **dict(result.get("measurements") or {}),
+                        "measurement_dependencies": list(task.get("measurement_dependencies") or []),
+                        "measurement_usable": measurement_usable,
+                    },
+                    "quality": dict(result.get("quality") or {}),
+                    "diagnosis_usable": diagnosis_usable,
+                    "diagnosis_usable_level": diagnosis_level,
+                    "limitations": list(task.get("limitations") or []),
+                }
+            )
+        return items
 
     def _task_measurements(
         self,
@@ -601,6 +677,13 @@ class VisionAgent:
     def _empty_measurements_from_protocol(self, protocol: dict[str, Any]) -> dict[str, Any]:
         return {str(measurement): None for measurement in protocol.get("measurements") or []}
 
+    def _visual_protocol_from_skill(self, disease_skill: dict[str, Any]) -> dict[str, Any]:
+        return dict(
+            disease_skill.get("imaging_evidence_protocol")
+            or disease_skill.get("visual_protocol")
+            or {}
+        )
+
     def _completeness_from_segmentation_results(
         self,
         segmentation_results: list[dict[str, Any]],
@@ -631,7 +714,7 @@ class VisionAgent:
         return lowered.endswith(".nii") or lowered.endswith(".nii.gz")
 
     def _modality_from_protocol_or_path(self, protocol: dict[str, Any], image_path: str) -> str:
-        modalities = protocol.get("imaging_modalities") or []
+        modalities = protocol.get("imaging_modalities") or protocol.get("available_modalities") or []
         if modalities:
             return str(modalities[0])
         inferred = self._infer_available_modalities(image_path)

@@ -58,6 +58,26 @@ class MemoryManagerQueryTest(unittest.TestCase):
                     "source": "auto",
                     "agent_scope": "orchestrator_api",
                     "skill_builder_action": "load_existing_skill",
+                    "primary_hypothesis": "femoral_head_necrosis",
+                    "differential_skill_candidates": [
+                        "osteoarthritis_or_degenerative_hip_disease",
+                    ],
+                    "clinical_hypotheses": [
+                        {
+                            "disease_key": "femoral_head_necrosis",
+                            "role": "primary",
+                            "status": "requires_differential_review",
+                            "reason": "Matched hip pain symptom and hip/X-ray clues.",
+                        },
+                        {
+                            "disease_key": "osteoarthritis_or_degenerative_hip_disease",
+                            "role": "differential",
+                            "status": "differential_candidate",
+                            "reason": "Alternative explanation retained by orchestrator.",
+                        },
+                    ],
+                    "initial_evidence_status": "requires_differential_review",
+                    "routing_evidence_status": "requires_differential_review",
                 },
                 "guideline_evidence": {"citations": [{"title": "test guideline"}]},
                 "quality_control": {
@@ -241,6 +261,355 @@ class MemoryManagerQueryTest(unittest.TestCase):
             )
             self.assertTrue(bundle["quality_warnings"])
 
+    def test_get_evidence_bundle_exposes_clinical_context_evidence(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            memory.save_case_memory(
+                case_id="case_clinical_context",
+                patient_memory={
+                    "case_id": "case_clinical_context",
+                    "patient_message": "右髋疼痛，长期激素治疗，偶尔饮酒",
+                    "patient_id": "patient_001",
+                    "patient_info": {
+                        "symptoms": ["髋关节疼痛"],
+                        "clinical_context": "右髋疼痛，长期激素治疗，偶尔饮酒",
+                        "clinical_context_source": "patient_message",
+                    },
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "case_id": "case_clinical_context",
+                    "image_path": "data/images/fhn_xray.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "image_outputs": {},
+                    "visual_features": {},
+                },
+                skill_memory={
+                    "selected_skill": "femoral_head_necrosis",
+                    "selected_vision_mode": "no_mask_skill",
+                    "skill_type": "guideline_based",
+                    "routing_decision": {},
+                    "alignment_plan": {},
+                },
+                reasoning_memory={
+                    "case_id": "case_clinical_context",
+                    "diagnostic_tendency": "疑似股骨头坏死，但证据不足",
+                    "report": {
+                        "clinical_context_assessment": {
+                            "provided_risk_factors": [
+                                "corticosteroid_use",
+                                "alcohol_use",
+                            ],
+                            "missing_clinical_context": [
+                                "trauma_history",
+                            ],
+                            "can_confirm_without_imaging": False,
+                            "role": "clinical risk changes suspicion level only; it cannot confirm ONFH without imaging evidence.",
+                        }
+                    },
+                    "key_evidence": [],
+                    "uncertainty": [],
+                    "follow_up": [],
+                    "treatment_advice": [],
+                },
+            )
+
+            bundle = memory.get_evidence_bundle("case_clinical_context")
+
+            clinical = bundle["clinical_context_evidence"]
+            self.assertEqual(
+                clinical["source"],
+                "patient_message",
+            )
+            self.assertIn("长期激素治疗", clinical["raw_context"])
+            self.assertEqual(
+                clinical["provided_risk_factors"],
+                ["corticosteroid_use", "alcohol_use"],
+            )
+            self.assertEqual(
+                clinical["missing_clinical_context"],
+                ["trauma_history"],
+            )
+            self.assertFalse(clinical["can_confirm_without_imaging"])
+            self.assertEqual(
+                clinical["diagnosis_usable_level"],
+                "risk_modifier_only",
+            )
+
+    def test_get_evidence_bundle_exposes_differential_reasoning_evidence(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            memory.save_case_memory(
+                case_id="case_differential_context",
+                patient_memory={
+                    "case_id": "case_differential_context",
+                    "patient_message": "左髋疼痛，X 光有关节间隙变窄和退变",
+                    "patient_id": "patient_001",
+                    "patient_info": {"symptoms": ["髋关节疼痛"]},
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "case_id": "case_differential_context",
+                    "image_path": "data/images/fhn_xray.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "image_outputs": {},
+                    "visual_features": {},
+                    "completeness": {
+                        "early_osteonecrosis": {
+                            "status": "missing",
+                            "reason": "X-ray only; requires MRI",
+                        }
+                    },
+                },
+                skill_memory={
+                    "selected_skill": "femoral_head_necrosis",
+                    "selected_vision_mode": "no_mask_skill",
+                    "skill_type": "guideline_based",
+                    "routing_decision": {
+                        "primary_hypothesis": "femoral_head_necrosis",
+                        "differential_skill_candidates": [
+                            "osteoarthritis_or_degenerative_hip_disease",
+                        ],
+                        "routing_evidence_status": "requires_differential_review",
+                    },
+                    "alignment_plan": {},
+                },
+                reasoning_memory={
+                    "case_id": "case_differential_context",
+                    "diagnostic_tendency": "疑似股骨头坏死，但需鉴别退变性髋关节病变",
+                    "report": {
+                        "differential_considerations": [
+                            {
+                                "condition": "osteoarthritis_or_degenerative_hip_disease",
+                                "display_name": "退变性髋关节病变",
+                                "status": "cannot_exclude",
+                                "reason": "当前存在非特异观察和缺失证据，需保留鉴别。",
+                            }
+                        ]
+                    },
+                    "key_evidence": [],
+                    "uncertainty": [],
+                    "follow_up": [],
+                    "treatment_advice": [],
+                },
+            )
+
+            bundle = memory.get_evidence_bundle("case_differential_context")
+
+            differential = bundle["differential_reasoning_evidence"]
+            self.assertEqual(
+                differential["evidence_type"],
+                "differential_reasoning",
+            )
+            self.assertEqual(
+                differential["primary_hypothesis"],
+                "femoral_head_necrosis",
+            )
+            self.assertEqual(
+                differential["routing_evidence_status"],
+                "requires_differential_review",
+            )
+            self.assertEqual(
+                differential["diagnosis_usable_level"],
+                "bounded_differential_only",
+            )
+            self.assertFalse(differential["can_replace_primary_diagnosis"])
+            self.assertEqual(
+                differential["considerations"][0]["condition"],
+                "osteoarthritis_or_degenerative_hip_disease",
+            )
+
+    def test_get_evidence_bundle_exposes_quantitative_evidence(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            measurement_item = {
+                "target": "collapse",
+                "evidence_type": "anatomical_measurement",
+                "execution_mode": "measurement_only",
+                "measurements": {
+                    "collapse_depth_mm": None,
+                    "measurement_usable": False,
+                    "reason": "ROI/contour quality insufficient",
+                },
+                "quality": {"status": "low_quality"},
+                "diagnosis_usable": False,
+                "diagnosis_usable_level": "not_usable",
+            }
+            exploratory_item = {
+                "target": "trabecular_irregularity_score",
+                "evidence_type": "image_feature_quantification",
+                "execution_mode": "vlm_only",
+                "measurements": {
+                    "score": None,
+                    "measurement_usable": False,
+                },
+                "quality": {"status": "requires_validation"},
+                "diagnosis_usable": False,
+                "diagnosis_usable_level": "exploratory_only",
+            }
+            memory.save_case_memory(
+                case_id="case_quantitative_context",
+                patient_memory={
+                    "case_id": "case_quantitative_context",
+                    "patient_message": "右髋疼痛，上传 X 光",
+                    "patient_id": "patient_001",
+                    "patient_info": {"symptoms": ["髋关节疼痛"]},
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "case_id": "case_quantitative_context",
+                    "image_path": "data/images/fhn_xray.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "image_outputs": {},
+                    "visual_features": {},
+                    "visual_evidence_bundle": {
+                        "schema_version": "visual_evidence_bundle.v2",
+                        "evidence_items": [measurement_item, exploratory_item],
+                    },
+                },
+                skill_memory={
+                    "selected_skill": "femoral_head_necrosis",
+                    "selected_vision_mode": "no_mask_skill",
+                    "skill_type": "guideline_based",
+                    "routing_decision": {},
+                    "alignment_plan": {},
+                },
+                reasoning_memory={
+                    "case_id": "case_quantitative_context",
+                    "diagnostic_tendency": "疑似股骨头坏死，但量化证据不足",
+                    "report": {
+                        "quantitative_evidence_summary": {
+                            "measurement_items": [measurement_item],
+                            "exploratory_features": [exploratory_item],
+                            "strong_quantitative_support_count": 0,
+                        }
+                    },
+                    "key_evidence": [],
+                    "uncertainty": [],
+                    "follow_up": [],
+                    "treatment_advice": [],
+                },
+            )
+
+            bundle = memory.get_evidence_bundle("case_quantitative_context")
+
+            quantitative = bundle["quantitative_evidence"]
+            self.assertEqual(
+                quantitative["evidence_type"],
+                "quantitative_evidence",
+            )
+            self.assertEqual(quantitative["strong_quantitative_support_count"], 0)
+            self.assertEqual(len(quantitative["measurement_items"]), 1)
+            self.assertEqual(len(quantitative["exploratory_features"]), 1)
+            self.assertFalse(quantitative["can_confirm_diagnosis"])
+            self.assertEqual(
+                quantitative["measurement_items"][0]["measurements"]["measurement_usable"],
+                False,
+            )
+            self.assertEqual(
+                quantitative["exploratory_features"][0]["diagnosis_usable_level"],
+                "exploratory_only",
+            )
+
+    def test_get_evidence_bundle_exposes_integrated_reasoning_evidence(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            memory.save_case_memory(
+                case_id="case_integrated_reasoning",
+                patient_memory={
+                    "case_id": "case_integrated_reasoning",
+                    "patient_message": "右髋疼痛，上传 X 光",
+                    "patient_id": "patient_001",
+                    "patient_info": {"symptoms": ["髋关节疼痛"]},
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "case_id": "case_integrated_reasoning",
+                    "image_path": "data/images/fhn_xray.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "image_outputs": {},
+                    "visual_features": {},
+                },
+                skill_memory={
+                    "selected_skill": "femoral_head_necrosis",
+                    "selected_vision_mode": "no_mask_skill",
+                    "skill_type": "guideline_based",
+                    "routing_decision": {},
+                    "alignment_plan": {},
+                },
+                reasoning_memory={
+                    "case_id": "case_integrated_reasoning",
+                    "diagnostic_tendency": "影像证据不足，需进一步评估",
+                    "report": {
+                        "integrated_reasoning_summary": {
+                            "target_disease": "femoral_head_necrosis",
+                            "evidence_status": "insufficient",
+                            "can_confirm_target_disease": False,
+                            "imaging_support": {
+                                "supported_targets": [],
+                                "nonspecific_or_unusable_targets": ["collapse"],
+                                "missing_targets": ["early_osteonecrosis"],
+                                "usable_item_count": 0,
+                            },
+                            "quantitative_support": {
+                                "strong_quantitative_support_count": 0,
+                                "measurement_targets_not_usable": ["collapse"],
+                                "exploratory_targets": ["trabecular_blurring"],
+                            },
+                            "clinical_risk_support": {
+                                "provided_risk_factors": ["corticosteroid_use"],
+                                "missing_clinical_context": ["trauma_history"],
+                                "can_confirm_without_imaging": False,
+                            },
+                            "missing_evidence": {
+                                "missing_required_targets": ["early_osteonecrosis"],
+                            },
+                            "recommended_next_step": [
+                                "建议完善双髋 MRI T1/T2/STIR 检查。",
+                            ],
+                        }
+                    },
+                    "key_evidence": [],
+                    "uncertainty": [],
+                    "follow_up": [],
+                    "treatment_advice": [],
+                },
+            )
+
+            bundle = memory.get_evidence_bundle("case_integrated_reasoning")
+
+            integrated = bundle["integrated_reasoning_evidence"]
+            self.assertEqual(integrated["evidence_type"], "integrated_reasoning")
+            self.assertEqual(integrated["target_disease"], "femoral_head_necrosis")
+            self.assertEqual(integrated["evidence_status"], "insufficient")
+            self.assertFalse(integrated["can_confirm_target_disease"])
+            self.assertEqual(
+                integrated["diagnosis_usable_level"],
+                "bounded_summary_only",
+            )
+            self.assertFalse(integrated["can_create_new_evidence"])
+            self.assertIn(
+                "early_osteonecrosis",
+                integrated["missing_required_targets"],
+            )
+            self.assertIn(
+                "collapse",
+                integrated["measurement_targets_not_usable"],
+            )
+            self.assertIn(
+                "trabecular_blurring",
+                integrated["exploratory_targets"],
+            )
+            self.assertTrue(any("MRI" in item for item in integrated["recommended_next_step"]))
+
     def test_get_evidence_bundle_builds_lesion_gallery_from_visual_usage(self):
         with TemporaryDirectory() as tmpdir:
             memory = MemoryManager(base_dir=Path(tmpdir))
@@ -363,6 +732,101 @@ class MemoryManagerQueryTest(unittest.TestCase):
             self.assertEqual(visual_step["lesion_gallery_summary"]["item_count"], 2)
             self.assertEqual(audit_step["lesion_gallery_summary"]["used_count"], 1)
 
+    def test_lesion_gallery_preserves_multiview_source_context(self):
+        with TemporaryDirectory() as tmpdir:
+            memory = MemoryManager(base_dir=Path(tmpdir))
+            memory.save_case_memory(
+                case_id="case_multiview_gallery",
+                patient_memory={
+                    "patient_message": "请分析双体位髋关节 X 光",
+                    "patient_info": {},
+                    "symptoms": ["髋关节疼痛"],
+                    "intent": "diagnosis",
+                },
+                image_memory={
+                    "image_path": "output/fake/uploads/fhn_ap.png",
+                    "modality": "xray",
+                    "body_part": "hip",
+                    "image_outputs": {},
+                    "visual_evidence_bundle": {
+                        "schema_version": "visual_evidence_bundle.v2",
+                        "findings": [
+                            {
+                                "finding_id": "image_001_sclerotic_band",
+                                "image_id": "image_001",
+                                "view_hint": "ap_pelvis",
+                                "target": "sclerotic_band",
+                                "display_name": "硬化带",
+                                "status": "candidate_present",
+                                "regions": [
+                                    {
+                                        "region_id": "r1",
+                                        "comparison_path": "output/fake/ap_comparison.png",
+                                    }
+                                ],
+                            },
+                            {
+                                "finding_id": "image_002_cystic_change",
+                                "image_id": "image_002",
+                                "view_hint": "frog_lateral",
+                                "target": "cystic_change",
+                                "display_name": "囊性变",
+                                "status": "candidate_present",
+                                "regions": [
+                                    {
+                                        "region_id": "r1",
+                                        "comparison_path": "output/fake/frog_comparison.png",
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                },
+                skill_memory={
+                    "selected_skill": "femoral_head_necrosis",
+                    "skill_type": "guideline_based",
+                },
+                reasoning_memory={
+                    "diagnostic_tendency": "疑似",
+                    "key_evidence": [],
+                    "uncertainty": [],
+                    "follow_up": [],
+                    "treatment_advice": [],
+                    "visual_fact_usage": {
+                        "used": [
+                            {
+                                "finding_id": "image_001_sclerotic_band",
+                                "image_id": "image_001",
+                                "view_hint": "ap_pelvis",
+                                "target": "sclerotic_band",
+                                "summary_text": "骨盆正位/AP：硬化带",
+                            },
+                            {
+                                "finding_id": "image_002_cystic_change",
+                                "image_id": "image_002",
+                                "view_hint": "frog_lateral",
+                                "target": "cystic_change",
+                                "summary_text": "蛙式侧位：囊性变",
+                            },
+                        ],
+                        "excluded": [],
+                        "used_count": 2,
+                        "excluded_count": 0,
+                    },
+                },
+            )
+
+            gallery = memory.get_evidence_bundle("case_multiview_gallery")["lesion_gallery"]
+
+            self.assertEqual(
+                [(item.get("image_id"), item.get("view_hint")) for item in gallery["items"]],
+                [("image_001", "ap_pelvis"), ("image_002", "frog_lateral")],
+            )
+            self.assertEqual(
+                [item.get("view_label") for item in gallery["items"]],
+                ["骨盆正位/AP", "蛙式侧位"],
+            )
+
     def test_append_qa_memory_persists_follow_up_history(self):
         with TemporaryDirectory() as tmpdir:
             memory = MemoryManager(base_dir=Path(tmpdir))
@@ -448,6 +912,30 @@ class MemoryManagerQueryTest(unittest.TestCase):
             self.assertEqual(
                 audit["memory_type_details"]["skill_memory"]["routing_agent_scope"],
                 "orchestrator_api",
+            )
+            self.assertEqual(
+                audit["memory_type_details"]["skill_memory"]["primary_hypothesis"],
+                "femoral_head_necrosis",
+            )
+            self.assertEqual(
+                audit["memory_type_details"]["skill_memory"]["routing_evidence_status"],
+                "requires_differential_review",
+            )
+            self.assertEqual(
+                audit["memory_type_details"]["skill_memory"]["differential_skill_candidates"],
+                ["osteoarthritis_or_degenerative_hip_disease"],
+            )
+            self.assertEqual(
+                audit["memory_type_details"]["skill_memory"]["clinical_hypotheses_count"],
+                2,
+            )
+            self.assertEqual(
+                audit["memory_type_details"]["skill_memory"]["clinical_hypotheses"][0]["role"],
+                "primary",
+            )
+            self.assertEqual(
+                audit["memory_type_details"]["skill_memory"]["clinical_hypotheses"][1]["role"],
+                "differential",
             )
             self.assertEqual(
                 audit["agent_io_summary"]["GaoDoctorAgent"]["routing_decision"]["agent_scope"],

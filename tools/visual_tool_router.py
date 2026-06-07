@@ -88,42 +88,55 @@ class VisualToolRouter:
             missing = self._missing_modalities(task.required_modalities, available_modalities)
             if missing:
                 plan.append(
-                    {
-                        "task": task.to_dict(),
-                        "status": "missing_input",
-                        "execution_mode": "insufficient_input"
-                        if task.execution_mode == "insufficient_input"
-                        else task.execution_mode,
-                        "selected_tool": None,
-                        "reason": self._requires_modality_reason(missing),
-                        "diagnosis_usable_without_qc": False,
-                    }
+                    self._with_safety_fields(
+                        {
+                            "task": task.to_dict(),
+                            "status": "missing_input",
+                            "execution_mode": "insufficient_input"
+                            if task.execution_mode == "insufficient_input"
+                            else task.execution_mode,
+                            "selected_tool": None,
+                            "reason": self._requires_modality_reason(missing),
+                            "diagnosis_usable_without_qc": False,
+                        },
+                        task,
+                    )
                 )
                 continue
             tool = self.registry.find_best_tool(task, available_modalities)
             if tool is None:
                 plan.append(
-                    {
-                        "task": task.to_dict(),
-                        "status": "no_capable_tool",
-                        "execution_mode": task.execution_mode,
-                        "selected_tool": None,
-                        "reason": "No registered visual tool can satisfy this task.",
-                        "diagnosis_usable_without_qc": False,
-                    }
+                    self._with_safety_fields(
+                        {
+                            "task": task.to_dict(),
+                            "status": "no_capable_tool",
+                            "execution_mode": task.execution_mode,
+                            "selected_tool": None,
+                            "reason": "No registered visual tool can satisfy this task.",
+                            "diagnosis_usable_without_qc": False,
+                        },
+                        task,
+                    )
                 )
                 continue
             plan.append(
-                {
-                    "task": task.to_dict(),
-                    "status": "runnable",
-                    "execution_mode": task.execution_mode,
-                    "selected_tool": tool.to_dict(),
-                    "reason": self._selected_tool_reason(task, tool),
-                    "diagnosis_usable_without_qc": tool.role != "candidate_segmenter",
-                }
+                self._with_safety_fields(
+                    {
+                        "task": task.to_dict(),
+                        "status": "runnable",
+                        "execution_mode": task.execution_mode,
+                        "selected_tool": tool.to_dict(),
+                        "reason": self._selected_tool_reason(task, tool),
+                        "diagnosis_usable_without_qc": self._diagnosis_usable_without_qc(task, tool),
+                    },
+                    task,
+                )
             )
         return plan
+
+    def plan_from_skill(self, skill: dict[str, Any]) -> list[dict[str, Any]]:
+        protocol = skill.get("imaging_evidence_protocol") or skill.get("visual_protocol") or {}
+        return self.plan_from_protocol(dict(protocol))
 
     def _protocol_tasks(self, visual_protocol: dict[str, Any]) -> list[dict[str, Any]]:
         tasks = [
@@ -142,26 +155,66 @@ class VisualToolRouter:
         execution_mode = str(finding_target.get("execution_mode") or "vlm_plus_segmenter")
         segmentation_mode = str(finding_target.get("segmentation_mode") or "")
         if not segmentation_mode:
-            segmentation_mode = "none" if execution_mode in {"vlm_only", "measurement_only"} else "candidate_mask"
+            segmentation_mode = (
+                "none"
+                if execution_mode in {"vlm_only", "measurement_only", "insufficient_input"}
+                else "candidate_mask"
+            )
         localization_mode = str(finding_target.get("localization_mode") or "")
         if not localization_mode:
             localization_mode = "measurement" if execution_mode == "measurement_only" else "bbox"
         diagnosis_level = str(finding_target.get("diagnosis_usable_level") or "")
         if not diagnosis_level:
             diagnosis_level = (
-                "observation_only"
+                "not_usable"
+                if execution_mode == "insufficient_input"
+                else "observation_only"
                 if execution_mode == "vlm_only"
                 else "measurement_support"
                 if execution_mode == "measurement_only"
                 else "candidate_support"
             )
+        evidence_type = str(finding_target.get("evidence_type") or "")
+        if not evidence_type:
+            evidence_type = (
+                "visual_observation"
+                if execution_mode in {"vlm_only", "insufficient_input"}
+                else "anatomical_measurement"
+                if execution_mode == "measurement_only"
+                else "candidate_mask"
+            )
+        measurement_dependencies = [
+            str(item) for item in finding_target.get("measurement_dependencies") or []
+        ]
+        measurement_usable = bool(finding_target.get("measurement_usable", False))
         return {
             **finding_target,
             "execution_mode": execution_mode,
             "segmentation_mode": segmentation_mode,
             "localization_mode": localization_mode,
             "diagnosis_usable_level": diagnosis_level,
+            "evidence_type": evidence_type,
+            "measurement_dependencies": measurement_dependencies,
+            "measurement_usable": measurement_usable,
         }
+
+    def _plan_safety_fields(self, task: VisualTask) -> dict[str, Any]:
+        return {
+            "evidence_type": task.evidence_type,
+            "diagnosis_usable_level": task.diagnosis_usable_level,
+            "measurement_dependencies": list(task.measurement_dependencies),
+            "measurement_usable": bool(task.measurement_usable),
+        }
+
+    def _with_safety_fields(self, item: dict[str, Any], task: VisualTask) -> dict[str, Any]:
+        return {**item, **self._plan_safety_fields(task)}
+
+    def _diagnosis_usable_without_qc(self, task: VisualTask, tool: VisualToolCapability) -> bool:
+        if task.diagnosis_usable_level in {"exploratory_only", "not_usable"}:
+            return False
+        if task.execution_mode in {"vlm_plus_segmenter", "measurement_only"}:
+            return False
+        return tool.role != "candidate_segmenter"
 
     def _missing_modalities(
         self,

@@ -5,13 +5,15 @@ import mimetypes
 import json
 import os
 import re
+import sys
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from api.service import MedScopeReadinessError, MedScopeService
+from llm.connectivity import ApiConnectivityChecker
 from memory.memory_manager import MemoryManager
 from scripts.image_prompt_skill_baseline import run_image_prompt_skill_baseline
 from skill_editor.backend import (
@@ -19,6 +21,7 @@ from skill_editor.backend import (
     dispatch_skill_editor_static_request,
 )
 from tools.skill_builder_tool import SkillBuilderTool
+from tools.medsam2_segmentation_tool import inspect_medsam2_configuration
 
 
 STATIC_ROOT = Path(__file__).resolve().parent.parent / "web"
@@ -72,6 +75,14 @@ STATIC_ROUTES = {
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
     "/static/app.js": ("app.js", "application/javascript; charset=utf-8"),
 }
+
+
+def _remove_prefix(value: str, prefix: str) -> str:
+    return value[len(prefix) :] if value.startswith(prefix) else value
+
+
+def _remove_suffix(value: str, suffix: str) -> str:
+    return value[: -len(suffix)] if suffix and value.endswith(suffix) else value
 
 
 def load_dotenv_local(path: Path | str = Path(".env.local")) -> dict[str, str]:
@@ -172,6 +183,35 @@ def handle_file_upload(
     return 200, {"image_path": str(file_path), "filename": safe_name, "size_bytes": len(body)}
 
 
+def build_readiness_payload(
+    upload_root: Path | str = DEFAULT_UPLOAD_ROOT,
+    output_root: Path | str = DEFAULT_OUTPUT_ROOT,
+) -> dict:
+    upload_path = Path(upload_root)
+    output_path = Path(output_root)
+    upload_path.mkdir(parents=True, exist_ok=True)
+    output_path.mkdir(parents=True, exist_ok=True)
+    api_route = ApiConnectivityChecker().inspect()
+    medsam2 = inspect_medsam2_configuration()
+    return {
+        "status": "ok",
+        "api_route": api_route,
+        "medsam2": medsam2,
+        "storage": {
+            "upload_root": str(upload_path),
+            "upload_root_exists": upload_path.exists(),
+            "upload_root_writable": os.access(upload_path, os.W_OK),
+            "output_root": str(output_path),
+            "output_root_exists": output_path.exists(),
+            "output_root_writable": os.access(output_path, os.W_OK),
+        },
+        "python": {
+            "version": sys.version.split()[0],
+            "executable": sys.executable,
+        },
+    }
+
+
 def dispatch_binary_request(
     method: str,
     path: str,
@@ -194,7 +234,7 @@ def resolve_public_output_path(path: str, output_root: Path | str = DEFAULT_OUTP
     if not route_path.startswith("/output/"):
         raise ValueError("only output files can be served")
     root = Path(output_root).resolve()
-    relative = route_path.removeprefix("/output/")
+    relative = _remove_prefix(route_path, "/output/")
     if not relative or ".." in Path(relative).parts:
         raise ValueError("invalid output path")
     resolved = (root / relative).resolve()
@@ -205,7 +245,7 @@ def resolve_public_output_path(path: str, output_root: Path | str = DEFAULT_OUTP
 
 def _safe_upload_filename(filename: str) -> str:
     name = Path(filename or "upload.bin").name
-    name = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")
+    name = re.sub(r"[^\w.-]+", "_", name, flags=re.UNICODE).strip("._")
     return name or "upload.bin"
 
 
@@ -230,7 +270,7 @@ def dispatch_skill_request(
         return 200, {"skills": skills, "count": len(skills)}
 
     prefix = "/v1/skills/"
-    remainder = route_path.removeprefix(prefix).strip("/")
+    remainder = _remove_prefix(route_path, prefix).strip("/")
     parts = remainder.split("/") if remainder else []
     if not parts or not _is_safe_skill_key(parts[0]):
         return 404, {"error": "not found"}
@@ -443,7 +483,7 @@ def _latest_skill_review_draft(*, skill_key: str, output_root: Path) -> dict:
     if not drafts:
         return {"exists": False}
     latest = drafts[-1]
-    return {"exists": True, "draft_path": str(latest), "updated_at": latest.stem.removeprefix(f"{skill_key}_")}
+    return {"exists": True, "draft_path": str(latest), "updated_at": _remove_prefix(latest.stem, f"{skill_key}_")}
 
 
 def _save_skill_review_draft(
@@ -512,21 +552,32 @@ def dispatch_http_request(
     route_path = urlparse(path).path
     if method == "GET" and route_path == "/health":
         return 200, {"status": "ok"}
+    if method == "GET" and route_path == "/v1/readiness":
+        return 200, build_readiness_payload()
     if method == "POST" and route_path == "/v1/medscope":
         try:
             payload = json.loads(body.decode("utf-8")) if body else {}
             return 200, factory().handle_request(payload)
+        except json.JSONDecodeError as exc:
+            return 400, {"error": f"invalid json: {exc}"}
         except MedScopeReadinessError as exc:
             return 503, exc.to_response()
         except ValueError as exc:
             return 400, {"error": str(exc)}
-        except json.JSONDecodeError as exc:
-            return 400, {"error": f"invalid json: {exc}"}
+        except Exception as exc:
+            return 500, {
+                "error": str(exc),
+                "error_type": "analysis_runtime_error",
+                "action_items": [
+                    "实时分析链路异常中断，请查看服务器日志或重试。",
+                    "如果刚上传图片，请确认图片路径存在且 VLM/API 可用。",
+                ],
+            }
     if method == "POST" and route_path == "/v1/upload":
         parsed = urlparse(path)
         filename = "upload.bin"
         if parsed.query.startswith("filename="):
-            filename = parsed.query.removeprefix("filename=")
+            filename = unquote(_remove_prefix(parsed.query, "filename="))
         return handle_file_upload(filename=filename, body=body)
     if method == "POST" and route_path == "/v1/baseline/image-prompt-skill":
         try:
@@ -590,7 +641,7 @@ def dispatch_memory_request(
     prefix = "/v1/memory/cases/"
     if not route_path.startswith(prefix):
         return 404, {"error": "not found"}
-    remainder = route_path.removeprefix(prefix).strip("/")
+    remainder = _remove_prefix(route_path, prefix).strip("/")
     parts = remainder.split("/") if remainder else []
     if not parts or not parts[0]:
         return 404, {"error": "not found"}
@@ -643,7 +694,7 @@ def dispatch_demo_request(
     prefix = "/v1/demo/standard/cases/"
     if not route_path.startswith(prefix):
         return None, {}
-    remainder = route_path.removeprefix(prefix).strip("/")
+    remainder = _remove_prefix(route_path, prefix).strip("/")
     parts = remainder.split("/") if remainder else []
     if len(parts) != 2:
         return 404, {"error": "not found"}
@@ -666,7 +717,10 @@ def dispatch_demo_request(
         / "artifacts"
         / filename_template.format(case_slug=case_slug)
     )
-    return _read_demo_json(artifact_path, output_root=Path(output_root))
+    status, payload = _read_demo_json(artifact_path, output_root=Path(output_root))
+    if status == 200 and artifact_type == "response":
+        payload = _backfill_standard_demo_response(case_slug=case_slug, payload=payload)
+    return status, payload
 
 
 def _dispatch_real_vlm_medsam2_demo_request(
@@ -676,7 +730,7 @@ def _dispatch_real_vlm_medsam2_demo_request(
     output_root: Path,
 ) -> tuple[int, dict]:
     prefix = "/v1/demo/real-vlm-medsam2"
-    artifact_name = route_path.removeprefix(prefix).strip("/")
+    artifact_name = _remove_prefix(route_path, prefix).strip("/")
     if method == "POST" and artifact_name == "qa":
         return _answer_real_vlm_medsam2_demo_qa(body=body, output_root=output_root)
     if method == "GET" and artifact_name == "response":
@@ -897,7 +951,7 @@ def _largest_nonzero_slice(mask_volume: object) -> int:
 def _preview_stem(path: str) -> str:
     name = Path(path).name
     if name.endswith(".nii.gz"):
-        name = name.removesuffix(".nii.gz")
+        name = _remove_suffix(name, ".nii.gz")
     else:
         name = Path(name).stem
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "mask"
@@ -1081,6 +1135,249 @@ def _normalize_real_vlm_medsam2_demo_report(report: dict, bundle: dict) -> dict:
     normalized["used_visual_facts"] = visual_fact_usage["used"]
     normalized["excluded_visual_facts"] = visual_fact_usage["excluded"]
     return normalized
+
+
+def _backfill_standard_demo_response(case_slug: str, payload: dict) -> dict:
+    if case_slug != "fhn_no_mask_multifinding":
+        return payload
+    routing = payload.get("routing_decision")
+    if not isinstance(routing, dict) or routing.get("selected_skill") != "femoral_head_necrosis":
+        return payload
+    report = payload.get("report")
+    if not isinstance(report, dict):
+        return payload
+    if report.get("target_disease_assessment") and report.get("imaging_evidence_summary"):
+        return payload
+
+    normalized = dict(payload)
+    normalized_report = dict(report)
+    normalized_routing = dict(routing)
+    normalized_routing.setdefault("primary_hypothesis", "femoral_head_necrosis")
+    normalized_routing.setdefault("initial_evidence_status", "nonspecific")
+    normalized_routing.setdefault("routing_evidence_status", "nonspecific")
+    normalized_routing.setdefault(
+        "skill_search_reason",
+        "Loaded legacy FHN no-mask demo as a bounded clinical hypothesis artifact.",
+    )
+    normalized.setdefault("routing_decision", normalized_routing)
+
+    alignment_plan = normalized.get("alignment_plan")
+    if not isinstance(alignment_plan, dict):
+        alignment_plan = report.get("alignment_plan") if isinstance(report.get("alignment_plan"), dict) else {}
+    visual_fact_usage = _standard_demo_visual_fact_usage(normalized, normalized_report)
+    used_items = [
+        _standard_demo_visual_fact_to_protocol_item(fact, diagnosis_usable=True)
+        for fact in visual_fact_usage.get("used", [])
+        if isinstance(fact, dict)
+    ]
+    nonspecific_items = [
+        _standard_demo_visual_fact_to_protocol_item(fact, diagnosis_usable=False)
+        for fact in visual_fact_usage.get("excluded", [])
+        if isinstance(fact, dict)
+    ]
+    missing_items = _standard_demo_missing_items(alignment_plan)
+    recommendations = _standard_demo_recommendations(normalized_report, alignment_plan)
+    modality_limitations = _standard_demo_modality_limitations(normalized_report, alignment_plan)
+
+    normalized_report.setdefault(
+        "target_disease_assessment",
+        {
+            "target_disease": "femoral_head_necrosis",
+            "evidence_status": "nonspecific" if not used_items else "supported",
+            "supports_target_disease": [
+                item.get("target") for item in used_items if item.get("target")
+            ],
+            "nonspecific_or_unusable_findings": [
+                item.get("target") for item in nonspecific_items if item.get("target")
+            ],
+            "missing_required_evidence": [
+                item.get("target") for item in missing_items if item.get("target")
+            ],
+        },
+    )
+    normalized_report.setdefault(
+        "imaging_evidence_summary",
+        {
+            "usable_items": used_items,
+            "nonspecific_items": nonspecific_items,
+            "missing_items": missing_items,
+        },
+    )
+    normalized_report.setdefault(
+        "quantitative_evidence_summary",
+        {
+            "exploratory_features": [],
+            "measurement_items": [
+                item for item in used_items + nonspecific_items
+                if item.get("measurements")
+            ],
+            "strong_quantitative_support_count": 0,
+        },
+    )
+    normalized_report.setdefault(
+        "differential_considerations",
+        [
+            {
+                "condition": "osteoarthritis_or_degenerative_hip_disease",
+                "display_name": "骨关节炎或退行性髋关节病变",
+                "status": "cannot_exclude",
+                "reason": "旧 demo artifact 只提供候选影像征象，不能开放式改诊断；需结合临床和影像科复核。",
+            },
+            {
+                "condition": "post_traumatic_change",
+                "display_name": "外伤后改变",
+                "status": "cannot_exclude",
+                "reason": "如果存在外伤史，部分非特异影像改变需要纳入鉴别。",
+            },
+        ],
+    )
+    normalized_report.setdefault(
+        "clinical_context_assessment",
+        {
+            "provided_risk_factors": [],
+            "missing_clinical_context": [
+                "corticosteroid_use",
+                "alcohol_use",
+                "trauma_history",
+            ],
+            "can_confirm_without_imaging": False,
+            "role": "临床风险因素只能改变怀疑程度，不能替代影像证据确诊。",
+        },
+    )
+    normalized_report.setdefault(
+        "missing_evidence",
+        [
+            item.get("visual_observation", {}).get("reason") or item.get("target")
+            for item in missing_items
+        ],
+    )
+    normalized_report.setdefault("modality_limitations", modality_limitations)
+    normalized_report.setdefault("recommendation", recommendations)
+    normalized["report"] = normalized_report
+    return normalized
+
+
+def _standard_demo_visual_fact_usage(payload: dict, report: dict) -> dict:
+    usage = report.get("visual_fact_usage") or payload.get("visual_fact_usage")
+    if isinstance(usage, dict):
+        return {
+            "used": list(usage.get("used") or []),
+            "excluded": list(usage.get("excluded") or []),
+        }
+    return {
+        "used": list(payload.get("used_visual_facts") or report.get("used_visual_facts") or []),
+        "excluded": list(
+            payload.get("excluded_visual_facts") or report.get("excluded_visual_facts") or []
+        ),
+    }
+
+
+def _standard_demo_visual_fact_to_protocol_item(
+    fact: dict,
+    *,
+    diagnosis_usable: bool,
+) -> dict:
+    target = fact.get("target") or fact.get("finding_id") or "legacy_visual_fact"
+    measurements = {
+        key: fact.get(key)
+        for key in (
+            "area_px",
+            "area_ratio_in_image",
+            "area_ratio_in_anatomy",
+            "bbox",
+            "centroid",
+        )
+        if fact.get(key) is not None
+    }
+    if measurements:
+        measurements["measurement_usable"] = False
+    return {
+        "target": target,
+        "display_name": fact.get("display_name") or target,
+        "evidence_type": "visual_observation",
+        "execution_mode": "vlm_plus_segmenter",
+        "visual_observation": {
+            "status": fact.get("status") or "candidate_present",
+            "description": fact.get("summary_text") or fact.get("exclusion_reason") or "",
+        },
+        "segmentation": {
+            "status": "legacy_demo_candidate",
+            "reason": "Backfilled from pre-generated no-mask demo artifact.",
+        },
+        "measurements": measurements,
+        "quality": {
+            "status": fact.get("quality_level") or "legacy_demo",
+            "qc_status": "legacy_demo_backfill",
+        },
+        "diagnosis_usable": diagnosis_usable,
+        "diagnosis_usable_level": "candidate_support" if diagnosis_usable else "observation_only",
+        "limitations": [
+            "Legacy no-mask demo artifact; use for demonstration, not as independent clinical diagnosis.",
+        ],
+    }
+
+
+def _standard_demo_missing_items(alignment_plan: dict) -> list[dict]:
+    reasons = list(alignment_plan.get("insufficiency_reasons") or [])
+    if not reasons:
+        reasons = ["X 光不能可靠排除早期股骨头坏死；缺少 MRI 证据。"]
+    return [
+        {
+            "target": "early_osteonecrosis_mri_evidence",
+            "evidence_type": "visual_observation",
+            "execution_mode": "insufficient_input",
+            "visual_observation": {
+                "status": "missing",
+                "reason": str(reason),
+            },
+            "quality": {"status": "missing_input"},
+            "diagnosis_usable": False,
+            "diagnosis_usable_level": "not_usable",
+            "limitations": ["Missing MRI evidence must not be treated as negative."],
+        }
+        for reason in reasons
+    ]
+
+
+def _standard_demo_recommendations(report: dict, alignment_plan: dict) -> list[str]:
+    recommendations = [
+        str(item)
+        for item in report.get("建议进一步检查") or []
+        if str(item).strip()
+    ]
+    for image in alignment_plan.get("required_next_images") or []:
+        if not isinstance(image, dict):
+            continue
+        modality = image.get("modality") or "补充影像"
+        region = image.get("region") or ""
+        reason = image.get("reason") or ""
+        text = f"建议完善{region} {modality} 检查".strip()
+        if reason:
+            text = f"{text}：{reason}"
+        if text not in recommendations:
+            recommendations.append(text)
+    if not recommendations:
+        recommendations = [
+            "建议完善双髋 MRI T1/T2/STIR 检查。",
+            "建议由骨科或影像科医生结合临床体征复核。",
+        ]
+    return recommendations
+
+
+def _standard_demo_modality_limitations(report: dict, alignment_plan: dict) -> list[str]:
+    limitations = [
+        "单纯 X 光对早期股骨头坏死敏感性有限。",
+        "X-ray only 不能可靠判断或排除 early osteonecrosis。",
+    ]
+    for item in report.get("不确定性说明") or []:
+        text = str(item).strip()
+        if text and text not in limitations:
+            limitations.append(text)
+    for reason in alignment_plan.get("insufficiency_reasons") or []:
+        text = str(reason).strip()
+        if text and text not in limitations:
+            limitations.append(text)
+    return limitations
 
 
 def _build_real_vlm_medsam2_visual_fact_usage(bundle: dict) -> dict:
