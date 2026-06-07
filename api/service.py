@@ -408,6 +408,10 @@ class MedScopeService:
             disease_key=disease_key,
             payload=payload,
         )
+        focused_primary_only = self._focused_primary_skill_only(
+            payload=payload,
+            explicit_disease_key=bool(explicit_disease_key),
+        )
         if explicit_disease_key or explicit_vision_mode:
             source = "explicit"
             confidence = 1.0
@@ -423,6 +427,7 @@ class MedScopeService:
         differential_candidates = self._differential_skill_candidates(
             disease_key=disease_key,
             payload=payload,
+            focused_primary_only=focused_primary_only,
         )
         differential_ranking = self._rank_differential_skill_candidates(
             disease_key=disease_key,
@@ -554,8 +559,11 @@ class MedScopeService:
         *,
         disease_key: str | None,
         payload: dict[str, Any],
+        focused_primary_only: bool = False,
     ) -> list[str]:
         if disease_key != "femoral_head_necrosis":
+            return []
+        if focused_primary_only:
             return []
         text = self._routing_text(payload)
         candidates = [
@@ -568,6 +576,50 @@ class MedScopeService:
         if any(marker in text for marker in ["肿瘤", "骨破坏", "tumor", "aggressive"]):
             candidates.append("tumor_like_lesion")
         return candidates
+
+    def _focused_primary_skill_only(
+        self,
+        *,
+        payload: dict[str, Any],
+        explicit_disease_key: bool,
+    ) -> bool:
+        patient_info = payload.get("patient_info") or {}
+        symptoms = patient_info.get("symptoms", [])
+        symptoms_text = (
+            symptoms
+            if isinstance(symptoms, str)
+            else " ".join(str(item) for item in symptoms)
+        )
+        text = " ".join(
+            str(value)
+            for value in [payload.get("patient_message", ""), symptoms_text]
+        ).lower()
+        if self._explicitly_requests_differential_review(text):
+            return False
+        if explicit_disease_key:
+            return True
+        has_fhn_focus = any(
+            marker in text
+            for marker in ["股骨头坏死", "fhn", "onfh", "avn"]
+        )
+        has_focus_language = any(
+            marker in text
+            for marker in ["怀疑", "是不是", "是否", "用", "根据", "skill", "诊断", "分析"]
+        )
+        return has_fhn_focus and has_focus_language
+
+    def _explicitly_requests_differential_review(self, text: str) -> bool:
+        return any(
+            marker in text
+            for marker in [
+                "鉴别",
+                "其他可能",
+                "还有什么",
+                "排除其他",
+                "differential",
+                "other causes",
+            ]
+        )
 
     def _rank_differential_skill_candidates(
         self,

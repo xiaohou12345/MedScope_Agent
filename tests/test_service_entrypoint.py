@@ -728,6 +728,30 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
         self.assertEqual(routing["initial_evidence_status"], "requires_evidence_acquisition")
         self.assertNotEqual(routing["initial_evidence_status"], "supported")
         self.assertIn("clinical hypothesis", routing["skill_search_reason"])
+        self.assertEqual(routing["differential_skill_candidates"], [])
+        self.assertEqual(routing["display_differential_skill_candidates"], [])
+        self.assertEqual(len(routing["clinical_hypotheses"]), 1)
+
+    def test_service_keeps_explicit_fhn_disease_key_focused_without_differentials(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        result = service.handle_request(
+            {
+                "patient_message": "请用股骨头坏死 skill 分析这张 X 光片",
+                "image_path": "output/fake/uploads/right_hip_ap_xray.png",
+                "disease_key": "femoral_head_necrosis",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+                "vision_mode": "real_vlm_validation",
+            }
+        )
+
+        routing = result["routing_decision"]
+        self.assertEqual(routing["source"], "explicit")
+        self.assertEqual(routing["selected_skill"], "femoral_head_necrosis")
+        self.assertEqual(routing["differential_skill_candidates"], [])
+        self.assertEqual(routing["display_differential_skill_candidates"], [])
+        self.assertEqual(len(routing["clinical_hypotheses"]), 1)
 
     def test_service_preserves_prompt_clinical_context_for_fhn_diagnosis(self):
         fake_doctor = FakeGaoDoctor()
@@ -821,8 +845,8 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
 
         result = service.handle_request(
             {
-                "patient_message": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒，无明显外伤史，上传髋关节 X 光片",
-                "image_path": "output/fake/uploads/right_hip_ap_xray.png",
+                "patient_message": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒，无明显外伤史。请结合这张髋关节 X 光片分析可能方向。",
+                "image_path": "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png",
                 "patient_info": {"symptoms": ["髋关节疼痛"]},
                 "vision_mode": "real_vlm_validation",
             }
