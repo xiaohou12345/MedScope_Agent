@@ -56,6 +56,11 @@ class MedScopeService:
         "no_mask_skill",
         "real_vlm_validation",
     }
+    SUPPORTED_SKILL_SELECTION_MODES = {
+        "primary_only",
+        "manual_secondary",
+        "agent_auto_secondary",
+    }
 
     def __init__(
         self,
@@ -109,6 +114,11 @@ class MedScopeService:
                     "配置完成后可先运行 MedSAM2 smoke/readiness 测试，再重新提交病例。",
                 ],
             ) from exc
+        routing_decision = self._attach_secondary_skill_run_plan(
+            payload=payload,
+            routing_decision=routing_decision,
+            primary_result=result,
+        )
         result["routing_decision"] = routing_decision
         result["alignment_plan"] = alignment_plan
         result.setdefault("analysis_status", alignment_plan["analysis_status"])
@@ -402,6 +412,7 @@ class MedScopeService:
         explicit_vision_mode = payload.get("vision_mode")
         if explicit_vision_mode:
             self._validate_vision_mode(str(explicit_vision_mode))
+        skill_selection_mode = self._skill_selection_mode(payload)
         matched_clues = self._match_supported_clues(payload)
         disease_key = explicit_disease_key or self._infer_disease_key(payload)
         vision_mode = explicit_vision_mode or self._infer_vision_mode(
@@ -411,6 +422,10 @@ class MedScopeService:
         focused_primary_only = self._focused_primary_skill_only(
             payload=payload,
             explicit_disease_key=bool(explicit_disease_key),
+        )
+        manual_secondary_candidates = self._manual_secondary_skill_candidates(
+            payload=payload,
+            primary_skill=disease_key,
         )
         if explicit_disease_key or explicit_vision_mode:
             source = "explicit"
@@ -467,16 +482,258 @@ class MedScopeService:
             reason=reason,
             confidence=confidence,
             matched_clues=matched_clues,
+            skill_selection_mode=skill_selection_mode,
+            manual_secondary_skill_candidates=manual_secondary_candidates,
             primary_hypothesis=disease_key,
             differential_skill_candidates=differential_candidates,
             differential_candidate_ranking=differential_ranking,
             display_differential_skill_candidates=display_differential_candidates,
+            secondary_skill_run_plan=self._initial_secondary_skill_run_plan(
+                skill_selection_mode=skill_selection_mode,
+                focused_primary_only=focused_primary_only,
+                manual_secondary_candidates=manual_secondary_candidates,
+                has_differential_candidates=bool(differential_candidates),
+            ),
             clinical_hypotheses=clinical_hypotheses,
             skill_search_reason=skill_search_reason,
             initial_evidence_status=initial_evidence_status,
             routing_evidence_status=initial_evidence_status,
             skill_builder_action=skill_builder_action,
         ).to_dict()
+
+    def _skill_selection_mode(self, payload: dict[str, Any]) -> str:
+        mode = str(payload.get("skill_selection_mode") or "primary_only").strip()
+        if mode not in self.SUPPORTED_SKILL_SELECTION_MODES:
+            supported = ", ".join(sorted(self.SUPPORTED_SKILL_SELECTION_MODES))
+            raise ValueError(
+                f"unsupported skill_selection_mode: {mode}. Supported modes: {supported}"
+            )
+        return mode
+
+    def _manual_secondary_skill_candidates(
+        self,
+        *,
+        payload: dict[str, Any],
+        primary_skill: str | None,
+    ) -> list[str]:
+        raw = payload.get("manual_secondary_skill_candidates")
+        if raw is None:
+            raw = payload.get("secondary_skill_candidates")
+        if not raw:
+            return []
+        if isinstance(raw, str):
+            values = [item.strip() for item in re.split(r"[,，;；\n]", raw)]
+        elif isinstance(raw, list):
+            values = [str(item).strip() for item in raw]
+        else:
+            values = []
+        candidates: list[str] = []
+        for value in values:
+            if not value or value == primary_skill or value in candidates:
+                continue
+            candidates.append(value)
+        return candidates[:2]
+
+    def _initial_secondary_skill_run_plan(
+        self,
+        *,
+        skill_selection_mode: str,
+        focused_primary_only: bool,
+        manual_secondary_candidates: list[str],
+        has_differential_candidates: bool,
+    ) -> dict[str, Any]:
+        if skill_selection_mode == "primary_only":
+            return {
+                "status": "not_applicable" if focused_primary_only else "not_triggered",
+                "triggered": False,
+                "reason": (
+                    "explicit primary skill focus; secondary differential run was not requested"
+                    if focused_primary_only
+                    else "primary-only mode keeps secondary candidates display-only"
+                ),
+                "skill_selection_mode": skill_selection_mode,
+                "candidates": [],
+            }
+        if skill_selection_mode == "manual_secondary":
+            return {
+                "status": "awaiting_manual_secondary_evidence"
+                if manual_secondary_candidates
+                else "not_triggered",
+                "triggered": False,
+                "reason": (
+                    "manual secondary mode selected; waiting for primary result before preparing selected backup skills"
+                    if manual_secondary_candidates
+                    else "manual secondary mode selected but no backup skill was provided"
+                ),
+                "skill_selection_mode": skill_selection_mode,
+                "candidates": [],
+            }
+        if focused_primary_only:
+            return {
+                "status": "not_applicable",
+                "triggered": False,
+                "reason": "explicit primary skill focus; agent-auto secondary run was not requested",
+                "skill_selection_mode": skill_selection_mode,
+                "candidates": [],
+            }
+        if not has_differential_candidates:
+            return {
+                "status": "not_applicable",
+                "triggered": False,
+                "reason": "no differential candidates were generated by routing",
+                "skill_selection_mode": skill_selection_mode,
+                "candidates": [],
+            }
+        return {
+            "status": "awaiting_primary_evidence",
+            "triggered": False,
+            "reason": "secondary run is evaluated after the primary skill evidence bundle is available",
+            "skill_selection_mode": skill_selection_mode,
+            "candidates": [],
+        }
+
+    def _attach_secondary_skill_run_plan(
+        self,
+        *,
+        payload: dict[str, Any],
+        routing_decision: dict[str, Any],
+        primary_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        updated = dict(routing_decision)
+        skill_selection_mode = str(updated.get("skill_selection_mode") or "primary_only")
+        initial_plan = dict(updated.get("secondary_skill_run_plan") or {})
+        if initial_plan.get("status") == "not_applicable":
+            updated["secondary_skill_run_plan"] = initial_plan
+            return updated
+        if skill_selection_mode == "primary_only":
+            updated["secondary_skill_run_plan"] = {
+                "status": initial_plan.get("status") or "not_triggered",
+                "triggered": False,
+                "reason": initial_plan.get("reason") or "primary-only mode keeps secondary candidates display-only",
+                "skill_selection_mode": skill_selection_mode,
+                "candidates": [],
+            }
+            return updated
+        if skill_selection_mode == "manual_secondary":
+            candidates = list(updated.get("manual_secondary_skill_candidates") or [])
+        else:
+            candidates = list(updated.get("display_differential_skill_candidates") or [])
+        if not candidates and skill_selection_mode != "manual_secondary":
+            candidates = [
+                item.get("disease_key")
+                for item in updated.get("differential_candidate_ranking", [])
+                if item.get("display_group") == "strong_differential"
+            ]
+        candidates = [str(candidate) for candidate in candidates if candidate][:2]
+        if not candidates:
+            updated["secondary_skill_run_plan"] = {
+                "status": "not_applicable",
+                "triggered": False,
+                "reason": "no high-priority differential candidate is eligible for secondary run",
+                "skill_selection_mode": skill_selection_mode,
+                "candidates": [],
+            }
+            return updated
+        if (
+            skill_selection_mode == "agent_auto_secondary"
+            and not self._primary_result_has_insufficient_evidence(primary_result)
+        ):
+            updated["secondary_skill_run_plan"] = {
+                "status": "not_triggered",
+                "triggered": False,
+                "reason": "primary skill did not report insufficient evidence",
+                "skill_selection_mode": skill_selection_mode,
+                "candidates": [],
+            }
+            return updated
+
+        candidate_plans = [
+            self._secondary_skill_candidate_plan(
+                candidate_key=candidate,
+                primary_skill=str(updated.get("selected_skill") or ""),
+                payload=payload,
+            )
+            for candidate in candidates
+        ]
+        updated["secondary_skill_run_plan"] = {
+            "status": "manual_secondary_hypothesis_validation_ready"
+            if skill_selection_mode == "manual_secondary"
+            else "secondary_hypothesis_validation_ready",
+            "triggered": True,
+            "primary_skill": updated.get("selected_skill"),
+            "trigger_reason": "manual_secondary_skill_selected"
+            if skill_selection_mode == "manual_secondary"
+            else "primary_evidence_insufficient",
+            "skill_selection_mode": skill_selection_mode,
+            "reason": (
+                "Manual secondary skill was selected; backup skills can be used as bounded hypothesis validation."
+                if skill_selection_mode == "manual_secondary"
+                else "Primary skill evidence is insufficient; high-priority differential candidates "
+                "can be used as bounded secondary hypothesis validation."
+            ),
+            "max_secondary_runs": 2,
+            "candidates": candidate_plans,
+        }
+        return updated
+
+    def _primary_result_has_insufficient_evidence(self, result: dict[str, Any]) -> bool:
+        report = result.get("report") or {}
+        status_values = [
+            result.get("analysis_status"),
+            (report.get("target_disease_assessment") or {}).get("evidence_status"),
+            (report.get("integrated_reasoning_summary") or {}).get("evidence_status"),
+        ]
+        insufficient_statuses = {
+            "insufficient",
+            "insufficient_evidence",
+            "requires_differential_review",
+            "partial_evidence",
+        }
+        if any(str(status or "").lower() in insufficient_statuses for status in status_values):
+            return True
+        report_text = json.dumps(report, ensure_ascii=False)
+        return any(marker in report_text for marker in ["证据不足", "不能确认", "不能仅凭"])
+
+    def _secondary_skill_candidate_plan(
+        self,
+        *,
+        candidate_key: str,
+        primary_skill: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        skill_builder_action, skill_builder_reason = self._skill_builder_action_for(candidate_key)
+        base = {
+            "disease_key": candidate_key,
+            "disease_name": self._disease_name_for(candidate_key),
+            "primary_skill": primary_skill,
+            "skill_builder_action": skill_builder_action,
+            "skill_builder_reason": skill_builder_reason,
+            "analysis_allowed": True,
+        }
+        if skill_builder_action == "load_existing_skill":
+            return {
+                **base,
+                "action": "run_formal_secondary_skill",
+                "review_status": "formal_guideline_skill",
+                "use_scope": "evidence_bounded_secondary_diagnosis",
+                "diagnosis_allowed": True,
+            }
+        proposal_skill = self.skill_tool.prepare_skill(
+            disease_key=candidate_key,
+            disease_name=self._disease_name_for(candidate_key),
+            observations=self._proposal_observations(payload),
+            persist=False,
+        )
+        return {
+            **base,
+            "action": "run_unreviewed_skill_hypothesis_validation",
+            "review_status": "unreviewed",
+            "use_scope": "hypothesis_validation_only",
+            "diagnosis_allowed": False,
+            "proposal_skill_id": proposal_skill.get("skill_id"),
+            "proposal_skill_type": proposal_skill.get("skill_type"),
+            "formal_skill_updated": False,
+        }
 
     def _validate_vision_mode(self, vision_mode: str) -> None:
         if vision_mode not in self.SUPPORTED_VISION_MODES:
@@ -535,6 +792,11 @@ class MedScopeService:
             "femoral_head_necrosis": "股骨头坏死",
             "diffuse_glioma_brats": "成人弥漫性胶质瘤",
             "idiopathic_pulmonary_fibrosis_hrct": "特发性肺纤维化",
+            "osteoarthritis_or_degenerative_hip_disease": "骨关节炎或退行性髋关节病变",
+            "developmental_dysplasia_related_degeneration": "发育性髋臼发育不良相关退变",
+            "post_traumatic_change": "外伤后改变",
+            "infection_or_inflammatory_arthritis": "感染或炎症性关节炎",
+            "tumor_like_lesion": "肿瘤样骨病变",
         }
         return names.get(disease_key, disease_key.replace("_", " "))
 

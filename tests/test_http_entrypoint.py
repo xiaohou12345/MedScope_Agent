@@ -150,10 +150,10 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(content_type, "text/html; charset=utf-8")
         text = body.decode("utf-8")
         self.assertIn('/static/app.css?v=skill-comparison-v2-20260606', text)
-        self.assertIn('/static/app.js?v=routing-candidate-ranking-20260607', text)
+        self.assertIn('/static/app.js?v=skill-selection-mode-20260608', text)
         self.assertNotIn("skill-review-20260528", text)
         css_status, _, css_type = dispatch_static_request("/static/app.css?v=skill-comparison-v2-20260606")
-        js_status, _, js_type = dispatch_static_request("/static/app.js?v=routing-candidate-ranking-20260607")
+        js_status, _, js_type = dispatch_static_request("/static/app.js?v=skill-selection-mode-20260608")
         self.assertEqual(css_status, 200)
         self.assertEqual(css_type, "text/css; charset=utf-8")
         self.assertEqual(js_status, 200)
@@ -179,6 +179,29 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertNotIn("state.sampleVisionMode || elements.visionModeSelect.value", js)
         self.assertIn('state.sampleVisionMode = "no_mask_skill"', js)
         self.assertIn("候选视觉证据", js)
+
+    def test_frontend_exposes_skill_selection_modes_without_vision_mode_picker(self):
+        status, body, content_type = dispatch_static_request("/")
+        js_status, js_body, js_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/html; charset=utf-8")
+        self.assertEqual(js_status, 200)
+        self.assertEqual(js_type, "application/javascript; charset=utf-8")
+        html = body.decode("utf-8")
+        js = js_body.decode("utf-8")
+        self.assertIn("skillSelectionMode", html)
+        self.assertIn("primary_only", html)
+        self.assertIn("manual_secondary", html)
+        self.assertIn("agent_auto_secondary", html)
+        self.assertIn("manualSecondarySkills", html)
+        self.assertIn("主 Skill 单路", html)
+        self.assertIn("人工备用 Skill", html)
+        self.assertIn("Agent 自动多 Skill", html)
+        self.assertIn("payload.skill_selection_mode", js)
+        self.assertIn("manual_secondary_skill_candidates", js)
+        self.assertIn("splitList(elements.manualSecondarySkills.value)", js)
+        self.assertNotIn("visionModeSelect", html)
 
     def test_frontend_exposes_auto_routing_clinical_risk_comparison_sample(self):
         status, body, content_type = dispatch_static_request("/")
@@ -380,6 +403,10 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("低优先级", routing_slice)
         self.assertIn("display_differential_skill_candidates", routing_slice)
         self.assertIn("重点鉴别复核", routing_slice)
+        self.assertIn("secondary_skill_run_plan", routing_slice)
+        self.assertIn("Secondary skill run", routing_slice)
+        self.assertIn("未审核 Skill 可用于假设验证", routing_slice)
+        self.assertIn("不能作为正式确诊依据", routing_slice)
         legacy_slice = text[
             text.index("function renderLegacyReportSections"):
             text.index("function renderRoutingClinicalSummary")

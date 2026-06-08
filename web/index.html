@@ -49,6 +49,20 @@
               <span>Agent 会按 Skill evidence protocol 自动选择安全视觉链路：先获取候选视觉证据，再按需要调用分割或测量工具；弱证据不会被升级为确诊依据。</span>
             </div>
 
+            <label>
+              Skill 选择模式
+              <select id="skillSelectionMode" name="skill_selection_mode">
+                <option value="primary_only" selected>主 Skill 单路</option>
+                <option value="manual_secondary">主 Skill + 人工备用 Skill</option>
+                <option value="agent_auto_secondary">Agent 自动多 Skill</option>
+              </select>
+            </label>
+
+            <label>
+              人工备用 Skill
+              <input id="manualSecondarySkills" name="manual_secondary_skill_candidates" placeholder="例如 osteoarthritis_or_degenerative_hip_disease" />
+            </label>
+
             <input id="imagePath" name="image_path" type="hidden" value="" />
             <label>
               症状
@@ -166,6 +180,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=routing-candidate-ranking-20260607"></script>
+    <script src="/static/app.js?v=skill-selection-mode-20260608"></script>
   </body>
 </html>

@@ -163,8 +163,23 @@ class ContractBoundaryTest(unittest.TestCase):
             reason="matched hip xray clues",
             confidence=0.75,
             matched_clues=["髋", "xray"],
+            skill_selection_mode="agent_auto_secondary",
+            manual_secondary_skill_candidates=[],
             primary_hypothesis="femoral_head_necrosis",
             differential_skill_candidates=["osteoarthritis_or_degenerative_hip_disease"],
+            secondary_skill_run_plan={
+                "status": "secondary_hypothesis_validation_ready",
+                "triggered": True,
+                "reason": "Primary evidence is insufficient and the top differential can run as unreviewed hypothesis validation.",
+                "candidates": [
+                    {
+                        "disease_key": "osteoarthritis_or_degenerative_hip_disease",
+                        "action": "run_unreviewed_skill_hypothesis_validation",
+                        "analysis_allowed": True,
+                        "diagnosis_allowed": False,
+                    }
+                ],
+            },
             clinical_hypotheses=[
                 {
                     "disease_key": "femoral_head_necrosis",
@@ -187,9 +202,22 @@ class ContractBoundaryTest(unittest.TestCase):
         payload = decision.to_dict()
 
         self.assertEqual(payload["primary_hypothesis"], "femoral_head_necrosis")
+        self.assertEqual(payload["skill_selection_mode"], "agent_auto_secondary")
+        self.assertEqual(payload["manual_secondary_skill_candidates"], [])
         self.assertEqual(
             payload["differential_skill_candidates"],
             ["osteoarthritis_or_degenerative_hip_disease"],
+        )
+        self.assertEqual(
+            payload["secondary_skill_run_plan"]["status"],
+            "secondary_hypothesis_validation_ready",
+        )
+        self.assertTrue(payload["secondary_skill_run_plan"]["triggered"])
+        self.assertTrue(
+            payload["secondary_skill_run_plan"]["candidates"][0]["analysis_allowed"]
+        )
+        self.assertFalse(
+            payload["secondary_skill_run_plan"]["candidates"][0]["diagnosis_allowed"]
         )
         self.assertEqual(payload["clinical_hypotheses"][0]["role"], "primary")
         self.assertEqual(payload["clinical_hypotheses"][0]["disease_key"], "femoral_head_necrosis")

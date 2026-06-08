@@ -49,6 +49,26 @@ class FakeGaoDoctor:
         }
 
 
+class FakeInsufficientEvidenceDoctor(FakeGaoDoctor):
+    def handle_message(self, *args, **kwargs):
+        super().handle_message(*args, **kwargs)
+        return {
+            "case_id": kwargs.get("case_id") or "case_new",
+            "intent": "diagnosis",
+            "reply_to_patient": "primary evidence insufficient",
+            "report": {
+                "target_disease_assessment": {
+                    "target_disease": kwargs.get("disease_key"),
+                    "evidence_status": "insufficient",
+                },
+                "integrated_reasoning_summary": {
+                    "evidence_status": "insufficient",
+                    "conclusion": "目前证据不足，不能确认股骨头坏死。",
+                },
+            },
+        }
+
+
 class FakeAlignmentPlanner:
     def __init__(self):
         self.calls = []
@@ -119,6 +139,13 @@ class IncompleteLocalSkillTool(ProposalSkillTool):
             "source_type": "guideline",
             "evidence_level": "medium",
         }
+
+
+class FhnOnlySkillTool(ProposalSkillTool):
+    def load_guideline_skill(self, disease_key):
+        if disease_key != "femoral_head_necrosis":
+            raise FileNotFoundError(disease_key)
+        return json.loads(Path("skills/femoral_head_necrosis.yaml").read_text(encoding="utf-8"))
 
 
 class InvalidVisualProtocolSkillTool(ProposalSkillTool):
@@ -876,6 +903,152 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
         )
         self.assertEqual(post_traumatic["display_group"], "low_priority")
         self.assertEqual(post_traumatic["priority"], 4)
+
+    def test_service_primary_only_mode_keeps_secondary_candidates_display_only_by_default(self):
+        fake_doctor = FakeInsufficientEvidenceDoctor()
+        skill_tool = FhnOnlySkillTool()
+        service = MedScopeService(
+            gaodoctor_agent=fake_doctor,
+            skill_tool=skill_tool,
+        )
+
+        result = service.handle_request(
+            {
+                "patient_message": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒，无明显外伤史。请结合这张髋关节 X 光片分析可能方向。",
+                "image_path": "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+                "vision_mode": "real_vlm_validation",
+            }
+        )
+
+        routing = result["routing_decision"]
+        self.assertEqual(routing["skill_selection_mode"], "primary_only")
+        self.assertIn(
+            "osteoarthritis_or_degenerative_hip_disease",
+            routing["display_differential_skill_candidates"],
+        )
+        plan = routing["secondary_skill_run_plan"]
+        self.assertEqual(plan["status"], "not_triggered")
+        self.assertFalse(plan["triggered"])
+        self.assertEqual(plan["candidates"], [])
+        self.assertIn("primary-only", plan["reason"])
+        self.assertEqual(skill_tool.prepare_calls, [])
+
+    def test_service_agent_auto_mode_builds_secondary_skill_run_plan_after_insufficient_primary_evidence(self):
+        fake_doctor = FakeInsufficientEvidenceDoctor()
+        skill_tool = FhnOnlySkillTool()
+        service = MedScopeService(
+            gaodoctor_agent=fake_doctor,
+            skill_tool=skill_tool,
+        )
+
+        result = service.handle_request(
+            {
+                "patient_message": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒，无明显外伤史。请结合这张髋关节 X 光片分析可能方向。",
+                "image_path": "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+                "vision_mode": "real_vlm_validation",
+                "skill_selection_mode": "agent_auto_secondary",
+            }
+        )
+
+        self.assertEqual(
+            result["routing_decision"]["skill_selection_mode"],
+            "agent_auto_secondary",
+        )
+        plan = result["routing_decision"]["secondary_skill_run_plan"]
+        self.assertEqual(plan["status"], "secondary_hypothesis_validation_ready")
+        self.assertTrue(plan["triggered"])
+        self.assertEqual(plan["primary_skill"], "femoral_head_necrosis")
+        self.assertEqual(plan["trigger_reason"], "primary_evidence_insufficient")
+        self.assertEqual(
+            [item["disease_key"] for item in plan["candidates"]],
+            ["osteoarthritis_or_degenerative_hip_disease"],
+        )
+        candidate = plan["candidates"][0]
+        self.assertEqual(
+            candidate["action"],
+            "run_unreviewed_skill_hypothesis_validation",
+        )
+        self.assertEqual(candidate["skill_builder_action"], "search_or_generate_skill")
+        self.assertEqual(candidate["review_status"], "unreviewed")
+        self.assertEqual(candidate["use_scope"], "hypothesis_validation_only")
+        self.assertTrue(candidate["analysis_allowed"])
+        self.assertFalse(candidate["diagnosis_allowed"])
+        self.assertEqual(len(fake_doctor.calls), 1)
+        self.assertEqual(
+            skill_tool.prepare_calls[0]["disease_key"],
+            "osteoarthritis_or_degenerative_hip_disease",
+        )
+        self.assertFalse(skill_tool.prepare_calls[0]["persist"])
+
+    def test_service_manual_secondary_mode_uses_user_selected_backup_skill(self):
+        fake_doctor = FakeInsufficientEvidenceDoctor()
+        skill_tool = FhnOnlySkillTool()
+        service = MedScopeService(
+            gaodoctor_agent=fake_doctor,
+            skill_tool=skill_tool,
+        )
+
+        result = service.handle_request(
+            {
+                "patient_message": "右髋疼痛三个月，走路后加重。请先看主方向，同时备用检查退行性髋关节病变。",
+                "image_path": "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+                "vision_mode": "real_vlm_validation",
+                "skill_selection_mode": "manual_secondary",
+                "manual_secondary_skill_candidates": [
+                    "osteoarthritis_or_degenerative_hip_disease",
+                ],
+            }
+        )
+
+        routing = result["routing_decision"]
+        self.assertEqual(routing["skill_selection_mode"], "manual_secondary")
+        self.assertEqual(
+            routing["manual_secondary_skill_candidates"],
+            ["osteoarthritis_or_degenerative_hip_disease"],
+        )
+        plan = routing["secondary_skill_run_plan"]
+        self.assertEqual(plan["status"], "manual_secondary_hypothesis_validation_ready")
+        self.assertTrue(plan["triggered"])
+        self.assertEqual(plan["trigger_reason"], "manual_secondary_skill_selected")
+        self.assertEqual(
+            [item["disease_key"] for item in plan["candidates"]],
+            ["osteoarthritis_or_degenerative_hip_disease"],
+        )
+        self.assertEqual(
+            plan["candidates"][0]["action"],
+            "run_unreviewed_skill_hypothesis_validation",
+        )
+        self.assertFalse(plan["candidates"][0]["diagnosis_allowed"])
+        self.assertEqual(
+            skill_tool.prepare_calls[0]["disease_key"],
+            "osteoarthritis_or_degenerative_hip_disease",
+        )
+
+    def test_service_does_not_build_secondary_plan_when_user_explicitly_focuses_fhn_skill(self):
+        fake_doctor = FakeInsufficientEvidenceDoctor()
+        service = MedScopeService(
+            gaodoctor_agent=fake_doctor,
+            skill_tool=FhnOnlySkillTool(),
+        )
+
+        result = service.handle_request(
+            {
+                "patient_message": "请用股骨头坏死 skill 分析这张 X 光片",
+                "image_path": "output/fake/uploads/right_hip_ap_xray.png",
+                "disease_key": "femoral_head_necrosis",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+                "vision_mode": "real_vlm_validation",
+            }
+        )
+
+        plan = result["routing_decision"]["secondary_skill_run_plan"]
+        self.assertEqual(plan["status"], "not_applicable")
+        self.assertFalse(plan["triggered"])
+        self.assertEqual(plan["candidates"], [])
+        self.assertIn("explicit", plan["reason"])
 
     def test_service_auto_selects_fhn_no_mask_mode_for_uploaded_hip_image_without_prompt_keywords(self):
         fake_doctor = FakeGaoDoctor()

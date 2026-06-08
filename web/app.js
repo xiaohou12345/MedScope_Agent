@@ -6,6 +6,8 @@ const state = {
   sampleDiseaseKey: "",
   sampleVisionMode: "",
   demoCaseSlug: "",
+  sampleSkillSelectionMode: "",
+  sampleManualSecondarySkills: [],
   realDemoMode: false,
   publicSafeDemoMode: false,
   casePending: false,
@@ -42,6 +44,8 @@ const elements = {
   patientMessage: document.getElementById("patientMessage"),
   imagePath: document.getElementById("imagePath"),
   symptoms: document.getElementById("symptoms"),
+  skillSelectionMode: document.getElementById("skillSelectionMode"),
+  manualSecondarySkills: document.getElementById("manualSecondarySkills"),
   qaInput: document.getElementById("qaInput"),
   qaSubmitButton: document.getElementById("qaSubmitButton"),
   reportView: document.getElementById("reportView"),
@@ -149,6 +153,12 @@ function buildCasePayload() {
   }
   if (state.sampleDiseaseKey) {
     payload.disease_key = state.sampleDiseaseKey;
+  }
+  const skillSelectionMode = elements.skillSelectionMode.value || "primary_only";
+  payload.skill_selection_mode = skillSelectionMode;
+  const manualSecondarySkills = splitList(elements.manualSecondarySkills.value);
+  if (skillSelectionMode === "manual_secondary" && manualSecondarySkills.length) {
+    payload.manual_secondary_skill_candidates = manualSecondarySkills;
   }
   const selectedVisionMode = state.sampleVisionMode;
   if (selectedVisionMode) {
@@ -795,6 +805,7 @@ async function uploadFiles(fileList) {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
+  setSkillSelectionMode("primary_only");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -1925,6 +1936,9 @@ function renderRoutingClinicalSummary(payload) {
   }
   const parts = [];
   const selectedSkill = routing.selected_skill || hypothesis;
+  if (routing.skill_selection_mode) {
+    parts.push(`Skill 模式：${skillSelectionModeLabel(routing.skill_selection_mode)}`);
+  }
   if (selectedSkill) {
     parts.push(`主分析 Skill：${humanDiseaseName(selectedSkill)}`);
   }
@@ -1987,11 +2001,34 @@ function renderRoutingClinicalSummary(payload) {
       </div>
     `
     : "";
+  const secondarySkillRunPlan = routing.secondary_skill_run_plan || {};
+  const secondaryCandidates = Array.isArray(secondarySkillRunPlan.candidates)
+    ? secondarySkillRunPlan.candidates
+    : [];
+  const secondarySkillRunHtml = secondarySkillRunPlan.status ? `
+    <div class="hypothesis-queue secondary-skill-run-plan">
+      <strong>Secondary skill run</strong>
+      <p>${escapeHtml(secondarySkillRunPlan.reason || routingEvidenceStatusLabel(secondarySkillRunPlan.status))}</p>
+      ${secondaryCandidates.length ? `
+        <ul>
+          ${secondaryCandidates.map((item) => `
+            <li>
+              <span>${escapeHtml(item.review_status === "unreviewed" ? "未审核 Skill 可用于假设验证" : "正式 Skill")}</span>
+              <b>${escapeHtml(humanDiseaseName(item.disease_key || ""))}</b>
+              <em>${escapeHtml(item.use_scope || item.action || "")}</em>
+              <small>${escapeHtml(item.diagnosis_allowed === false ? "不能作为正式确诊依据" : "可进入受证据约束的二级诊断")}</small>
+            </li>
+          `).join("")}
+        </ul>
+      ` : ""}
+    </div>
+  ` : "";
   return `
     <div class="report-section report-path-summary">
       <h3>分析路径</h3>
       <p>${escapeHtml(parts.join("；"))}</p>
       ${hypothesisQueueHtml}
+      ${secondarySkillRunHtml}
     </div>
   `;
 }
@@ -2316,6 +2353,15 @@ function hypothesisRoleLabel(role) {
     differential: "鉴别保留",
   };
   return labels[role] || role || "候选";
+}
+
+function skillSelectionModeLabel(mode) {
+  const labels = {
+    primary_only: "主 Skill 单路",
+    manual_secondary: "主 Skill + 人工备用 Skill",
+    agent_auto_secondary: "Agent 自动多 Skill",
+  };
+  return labels[mode] || mode || "";
 }
 
 function humanDiseaseName(value) {
@@ -4823,6 +4869,15 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function setSkillSelectionMode(mode = "primary_only", manualSecondarySkills = []) {
+  state.sampleSkillSelectionMode = mode;
+  state.sampleManualSecondarySkills = Array.isArray(manualSecondarySkills)
+    ? manualSecondarySkills
+    : [];
+  elements.skillSelectionMode.value = mode;
+  elements.manualSecondarySkills.value = state.sampleManualSecondarySkills.join(", ");
+}
+
 function loadStandardSample() {
   elements.patientMessage.value = "请基于这次 FLAIR MRI 做胶质瘤辅助分析";
   elements.imagePath.value = "data/external/brats2021_00030/BraTS2021_00030_flair.nii.gz";
@@ -4831,6 +4886,7 @@ function loadStandardSample() {
   state.useSampleMask = true;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
+  setSkillSelectionMode("primary_only");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -4846,6 +4902,7 @@ function loadRealVlmMedSAM2Sample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "diffuse_glioma_brats";
   state.sampleVisionMode = "medsam2";
+  setSkillSelectionMode("primary_only");
   state.demoCaseSlug = "";
   state.realDemoMode = true;
   state.publicSafeDemoMode = false;
@@ -4861,6 +4918,7 @@ function loadXrayInsufficientSample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
+  setSkillSelectionMode("primary_only");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -4876,6 +4934,7 @@ function loadFhnNoMaskSample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "femoral_head_necrosis";
   state.sampleVisionMode = "no_mask_skill";
+  setSkillSelectionMode("primary_only");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -4891,6 +4950,7 @@ function loadAutoRoutingRiskCompareSample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "real_vlm_validation";
+  setSkillSelectionMode("agent_auto_secondary");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -4906,6 +4966,7 @@ function loadPublicSafeDemoInputs() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
+  setSkillSelectionMode("primary_only");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -5195,6 +5256,7 @@ elements.resetButton.addEventListener("click", () => {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
+  setSkillSelectionMode("primary_only");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;

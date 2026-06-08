@@ -178,10 +178,13 @@ class SkillRoutingDecision:
     confidence: float
     matched_clues: list[str] = field(default_factory=list)
     agent_scope: str = "orchestrator_api"
+    skill_selection_mode: str = "primary_only"
+    manual_secondary_skill_candidates: list[str] = field(default_factory=list)
     primary_hypothesis: str | None = None
     differential_skill_candidates: list[str] = field(default_factory=list)
     differential_candidate_ranking: list[dict[str, Any]] = field(default_factory=list)
     display_differential_skill_candidates: list[str] = field(default_factory=list)
+    secondary_skill_run_plan: dict[str, Any] = field(default_factory=dict)
     clinical_hypotheses: list[dict[str, Any]] = field(default_factory=list)
     skill_search_reason: str | None = None
     initial_evidence_status: str = "insufficient"
@@ -200,6 +203,11 @@ class SkillRoutingDecision:
         "load_existing_skill",
         "search_or_generate_skill",
     }
+    ALLOWED_SKILL_SELECTION_MODES: ClassVar[set[str]] = {
+        "primary_only",
+        "manual_secondary",
+        "agent_auto_secondary",
+    }
 
     def __post_init__(self) -> None:
         if self.source not in self.ALLOWED_SOURCES:
@@ -208,6 +216,8 @@ class SkillRoutingDecision:
             raise ValueError("routing confidence must be between 0 and 1")
         if self.agent_scope != "orchestrator_api":
             raise ValueError("skill routing decisions must stay in orchestrator_api scope")
+        if self.skill_selection_mode not in self.ALLOWED_SKILL_SELECTION_MODES:
+            raise ValueError(f"unsupported skill selection mode: {self.skill_selection_mode}")
         if self.initial_evidence_status not in self.ALLOWED_EVIDENCE_STATUSES:
             raise ValueError(
                 f"unsupported initial evidence status: {self.initial_evidence_status}"
@@ -229,6 +239,8 @@ class SkillRoutingDecision:
             "matched_clues": list(self.matched_clues),
             "agent_scope": self.agent_scope,
             "skill_builder_action": self.skill_builder_action or self._skill_builder_action(),
+            "skill_selection_mode": self.skill_selection_mode,
+            "manual_secondary_skill_candidates": list(self.manual_secondary_skill_candidates),
             "primary_hypothesis": self.primary_hypothesis,
             "differential_skill_candidates": list(self.differential_skill_candidates),
             "differential_candidate_ranking": [
@@ -237,6 +249,7 @@ class SkillRoutingDecision:
             "display_differential_skill_candidates": list(
                 self.display_differential_skill_candidates
             ),
+            "secondary_skill_run_plan": dict(self.secondary_skill_run_plan),
             "clinical_hypotheses": [dict(item) for item in self.clinical_hypotheses],
             "skill_search_reason": self.skill_search_reason,
             "initial_evidence_status": self.initial_evidence_status,
