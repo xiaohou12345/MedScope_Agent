@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import mimetypes
 import os
+import time
 from pathlib import Path
 from typing import Any, Protocol
 from urllib import request
 
 from PIL import Image
 
+from llm.model_call_logger import elapsed_ms, log_model_call, new_call_id
 from llm.model_client import ApiRouteLog
+from llm.response_stream import parse_openai_compatible_sse_response
 
 
 class VisionClient(Protocol):
@@ -32,9 +36,15 @@ class OpenAICompatibleVisionClient:
         self,
         route_log: ApiRouteLog | None = None,
         timeout_seconds: int = 90,
+        responses_stream: bool | None = None,
     ) -> None:
         self.route_log = route_log or ApiRouteLog.from_file()
         self.timeout_seconds = timeout_seconds
+        self.responses_stream = (
+            _env_flag("MEDSCOPE_VISION_RESPONSES_STREAM", default=False)
+            if responses_stream is None
+            else responses_stream
+        )
 
     def chat_completions_url(self) -> str:
         base_url = self.route_log.base_url_for_active_route().rstrip("/")
@@ -45,6 +55,16 @@ class OpenAICompatibleVisionClient:
         if base_url.endswith("/v1"):
             return f"{base_url}/chat/completions"
         return f"{base_url}/v1/chat/completions"
+
+    def responses_url(self) -> str:
+        base_url = self.route_log.base_url_for_active_route().rstrip("/")
+        if base_url.endswith("/v1/responses"):
+            return base_url
+        if base_url.endswith("/responses"):
+            return base_url
+        if base_url.endswith("/v1"):
+            return f"{base_url}/responses"
+        return f"{base_url}/v1/responses"
 
     def chat_with_image(
         self,
@@ -60,6 +80,37 @@ class OpenAICompatibleVisionClient:
             raise RuntimeError(f"Missing {api_key_env}; configure the active vision route first.")
         image = Path(image_path)
         data_url = self._image_data_url(image)
+        image_summary = self._image_summary(image)
+        if self.route_log.api_endpoint_for_active_route() == "responses":
+            return self._chat_with_image_responses_api(
+                image_summary=image_summary,
+                data_url=data_url,
+                system_prompt=system_prompt,
+                user_payload=user_payload,
+                task=task,
+                api_key=api_key,
+            )
+        return self._chat_with_image_chat_completions_api(
+            image_summary=image_summary,
+            data_url=data_url,
+            system_prompt=system_prompt,
+            user_payload=user_payload,
+            task=task,
+            api_key=api_key,
+        )
+
+    def _chat_with_image_chat_completions_api(
+        self,
+        *,
+        image_summary: dict[str, Any],
+        data_url: str,
+        system_prompt: str,
+        user_payload: dict[str, Any],
+        task: str,
+        api_key: str,
+    ) -> str:
+        started_at = time.time()
+        call_id = new_call_id()
         payload = {
             "model": self.route_log.vision_model_for_active_route(),
             "messages": [
@@ -81,23 +132,232 @@ class OpenAICompatibleVisionClient:
             "metadata": {"task": task},
             "temperature": 0,
         }
+        url = self.chat_completions_url()
         req = request.Request(
-            self.chat_completions_url(),
+            url,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
+                "User-Agent": self.route_log.user_agent_for_active_route(),
             },
             method="POST",
         )
-        with request.urlopen(req, timeout=self.timeout_seconds) as response:
-            raw = json.loads(response.read().decode("utf-8"))
-        return raw["choices"][0]["message"]["content"]
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                raw_text = response.read().decode("utf-8")
+                raw = json.loads(raw_text)
+            content = raw["choices"][0]["message"]["content"]
+            log_model_call(
+                self._build_call_log_record(
+                    call_id=call_id,
+                    task=task,
+                    endpoint="chat_completions",
+                    url=url,
+                    image_summary=image_summary,
+                    request_payload=payload,
+                    response_raw=raw,
+                    response_content=content,
+                    duration_ms=elapsed_ms(started_at),
+                    status="ok",
+                )
+            )
+            return content
+        except Exception as exc:
+            log_model_call(
+                self._build_call_log_record(
+                    call_id=call_id,
+                    task=task,
+                    endpoint="chat_completions",
+                    url=url,
+                    image_summary=image_summary,
+                    request_payload=payload,
+                    response_raw=locals().get("raw"),
+                    response_text=locals().get("raw_text"),
+                    duration_ms=elapsed_ms(started_at),
+                    status="error",
+                    error=exc,
+                )
+            )
+            raise
+
+    def _chat_with_image_responses_api(
+        self,
+        *,
+        image_summary: dict[str, Any],
+        data_url: str,
+        system_prompt: str,
+        user_payload: dict[str, Any],
+        task: str,
+        api_key: str,
+    ) -> str:
+        started_at = time.time()
+        call_id = new_call_id()
+        payload = {
+            "model": self.route_log.vision_model_for_active_route(),
+            "input": [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": system_prompt,
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": json.dumps(user_payload, ensure_ascii=False, indent=2),
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": data_url,
+                        },
+                    ],
+                },
+            ],
+            "metadata": {"task": task},
+            "store": False,
+            "stream": self.responses_stream,
+        }
+        url = self.responses_url()
+        req = request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream" if self.responses_stream else "application/json",
+                "User-Agent": self.route_log.user_agent_for_active_route(),
+            },
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                if self.responses_stream:
+                    content, raw = parse_openai_compatible_sse_response(response)
+                    if not content:
+                        raise ValueError("Responses stream did not contain output text")
+                else:
+                    raw_text = response.read().decode("utf-8")
+                    raw = json.loads(raw_text)
+                    content = self._content_from_responses_api(raw)
+            log_model_call(
+                self._build_call_log_record(
+                    call_id=call_id,
+                    task=task,
+                    endpoint="responses",
+                    url=url,
+                    image_summary=image_summary,
+                    request_payload=payload,
+                    response_raw=raw,
+                    response_content=content,
+                    duration_ms=elapsed_ms(started_at),
+                    status="ok",
+                )
+            )
+            return content
+        except Exception as exc:
+            log_model_call(
+                self._build_call_log_record(
+                    call_id=call_id,
+                    task=task,
+                    endpoint="responses",
+                    url=url,
+                    image_summary=image_summary,
+                    request_payload=payload,
+                    response_raw=locals().get("raw"),
+                    response_text=locals().get("raw_text"),
+                    duration_ms=elapsed_ms(started_at),
+                    status="error",
+                    error=exc,
+                )
+            )
+            raise
+
+    def _content_from_responses_api(self, raw: dict[str, Any]) -> str:
+        output_text = raw.get("output_text")
+        if isinstance(output_text, str):
+            return output_text
+        texts: list[str] = []
+        for item in raw.get("output") or []:
+            for content in item.get("content") or []:
+                text = content.get("text")
+                if isinstance(text, str):
+                    texts.append(text)
+        if texts:
+            return "\n".join(texts)
+        raise ValueError("Responses API payload did not contain output text")
 
     def _image_data_url(self, image_path: Path) -> str:
         mime_type = mimetypes.guess_type(str(image_path))[0] or "image/png"
         encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
         return f"data:{mime_type};base64,{encoded}"
+
+    def _image_summary(self, image_path: Path) -> dict[str, Any]:
+        payload = image_path.read_bytes()
+        summary: dict[str, Any] = {
+            "image_path": str(image_path),
+            "mime_type": mimetypes.guess_type(str(image_path))[0] or "image/png",
+            "byte_length": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+        try:
+            with Image.open(image_path) as image:
+                summary["width"] = int(image.width)
+                summary["height"] = int(image.height)
+                summary["mode"] = image.mode
+        except Exception as exc:
+            summary["image_metadata_error"] = str(exc)
+        return summary
+
+    def _build_call_log_record(
+        self,
+        *,
+        call_id: str,
+        task: str,
+        endpoint: str,
+        url: str,
+        image_summary: dict[str, Any],
+        request_payload: dict[str, Any],
+        duration_ms: int,
+        status: str,
+        response_raw: dict[str, Any] | None = None,
+        response_content: str | None = None,
+        response_text: str | None = None,
+        error: Exception | None = None,
+    ) -> dict[str, Any]:
+        record: dict[str, Any] = {
+            "call_id": call_id,
+            "task": task,
+            "client": self.__class__.__name__,
+            "modality": "vision",
+            "route": self.route_log.active_route,
+            "model": self.route_log.vision_model_for_active_route(),
+            "endpoint": endpoint,
+            "url": url,
+            "timeout_seconds": self.timeout_seconds,
+            "duration_ms": duration_ms,
+            "status": status,
+            "image": image_summary,
+            "request": {
+                "payload": request_payload,
+            },
+            "response": {
+                "content": response_content,
+                "raw": response_raw,
+                "raw_text": response_text,
+            },
+        }
+        if error is not None:
+            record["error"] = {
+                "type": error.__class__.__name__,
+                "message": str(error),
+            }
+        return record
 
 
 class VisionPromptGenerator:
@@ -395,3 +655,10 @@ class VisionPromptGenerator:
     def _image_size(self, image_path: Path) -> tuple[int, int]:
         with Image.open(image_path) as image:
             return image.size
+
+
+def _env_flag(name: str, *, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

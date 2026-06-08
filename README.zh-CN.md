@@ -56,6 +56,10 @@ MedScope 不是简单把系统拆成很多 Agent。更准确的说法是：
 - `Skill Builder / Guideline Component`：条件触发组件。已有 skill 时加载和校验；缺 skill 时才检索指南、抽取规则、生成候选或正式 skill。
 - `Memory / Audit Layer`：基础设施，不参与医学判断，只保存四类 memory、evidence bundle、runtime trace、audit 和 replay。
 
+疾病特定实验不应混入默认服务路径。当前 ONFH Xray ROI/VLM 评测脚本的边界和推荐入口见
+[docs/ONFH_EXPERIMENTS.md](docs/ONFH_EXPERIMENTS.md) 和
+[scripts/ONFH_README.md](scripts/ONFH_README.md)。
+
 底层的 `Evidence Gateway` 才是系统扩展性的核心：
 
 - 管理 skill 和 visual protocol。
@@ -156,6 +160,17 @@ KY_USER_AGENT="MedScope-Agent/0.1"
 ```
 
 Agent 代码不应直接写 provider-specific 逻辑，只通过 `llm/` 中的统一接口调用。
+
+如果某个 OpenAI-compatible 路由需要 Responses API 的 SSE 流式返回，可以通过环境变量单独开启：
+
+```bash
+MEDSCOPE_RESPONSES_STREAM=1
+MEDSCOPE_VISION_RESPONSES_STREAM=1
+```
+
+真实模型调用默认会写本地审计日志到 `output/fake/model_call_logs`。可以用
+`MEDSCOPE_MODEL_CALL_LOG_DIR` 修改目录，也可以用 `MEDSCOPE_DISABLE_MODEL_CALL_LOG=1`
+关闭。日志会隐藏密钥，并把 base64 图像内容替换成摘要，不保存完整编码图像。
 
 ## MedSAM2 配置
 

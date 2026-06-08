@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 from urllib import request
+
+from llm.model_call_logger import elapsed_ms, log_model_call, new_call_id
+from llm.response_stream import parse_openai_compatible_sse_response
 
 
 @dataclass(frozen=True)
@@ -113,9 +117,19 @@ class ApiRouteLog:
 class OpenAICompatibleModelClient:
     """Minimal OpenAI-compatible client used by DMX or self-hosted KY routes."""
 
-    def __init__(self, route_log: ApiRouteLog | None = None, timeout_seconds: int = 60) -> None:
+    def __init__(
+        self,
+        route_log: ApiRouteLog | None = None,
+        timeout_seconds: int = 60,
+        responses_stream: bool | None = None,
+    ) -> None:
         self.route_log = route_log or ApiRouteLog.from_file()
         self.timeout_seconds = timeout_seconds
+        self.responses_stream = (
+            _env_flag("MEDSCOPE_RESPONSES_STREAM", default=False)
+            if responses_stream is None
+            else responses_stream
+        )
 
     def chat_completions_url(self) -> str:
         base_url = self.route_log.base_url_for_active_route().rstrip("/")
@@ -162,13 +176,16 @@ class OpenAICompatibleModelClient:
         task: str,
         api_key: str,
     ) -> ChatResponse:
+        started_at = time.time()
+        call_id = new_call_id()
         payload = {
             "model": self.route_log.model_for_active_route(),
             "messages": messages,
             "metadata": {"task": task},
         }
+        url = self.chat_completions_url()
         req = request.Request(
-            self.chat_completions_url(),
+            url,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -177,15 +194,43 @@ class OpenAICompatibleModelClient:
             },
             method="POST",
         )
-        with request.urlopen(req, timeout=self.timeout_seconds) as response:
-            raw = json.loads(response.read().decode("utf-8"))
-        content = raw["choices"][0]["message"]["content"]
-        return ChatResponse(
-            content=content,
-            model=self.route_log.model_for_active_route(),
-            route=self.route_log.active_route,
-            raw=raw,
-        )
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                raw = json.loads(response.read().decode("utf-8"))
+            content = raw["choices"][0]["message"]["content"]
+            log_model_call(
+                self._build_call_log_record(
+                    call_id=call_id,
+                    task=task,
+                    endpoint="chat_completions",
+                    url=url,
+                    request_payload=payload,
+                    response_raw=raw,
+                    response_content=content,
+                    duration_ms=elapsed_ms(started_at),
+                    status="ok",
+                )
+            )
+            return ChatResponse(
+                content=content,
+                model=self.route_log.model_for_active_route(),
+                route=self.route_log.active_route,
+                raw=raw,
+            )
+        except Exception as exc:
+            log_model_call(
+                self._build_call_log_record(
+                    call_id=call_id,
+                    task=task,
+                    endpoint="chat_completions",
+                    url=url,
+                    request_payload=payload,
+                    duration_ms=elapsed_ms(started_at),
+                    status="error",
+                    error=exc,
+                )
+            )
+            raise
 
     def _chat_with_responses_api(
         self,
@@ -193,31 +238,110 @@ class OpenAICompatibleModelClient:
         task: str,
         api_key: str,
     ) -> ChatResponse:
+        started_at = time.time()
+        call_id = new_call_id()
         payload = {
             "model": self.route_log.model_for_active_route(),
             "input": self._responses_input_from_messages(messages),
             "store": False,
-            "stream": False,
+            "stream": self.responses_stream,
         }
+        url = self.responses_url()
         req = request.Request(
-            self.responses_url(),
+            url,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "Accept": "application/json",
+                "Accept": "text/event-stream" if self.responses_stream else "application/json",
                 "User-Agent": self.route_log.user_agent_for_active_route(),
             },
             method="POST",
         )
-        with request.urlopen(req, timeout=self.timeout_seconds) as response:
-            raw = json.loads(response.read().decode("utf-8"))
-        return ChatResponse(
-            content=self._content_from_responses_api(raw),
-            model=self.route_log.model_for_active_route(),
-            route=self.route_log.active_route,
-            raw=raw,
-        )
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                if self.responses_stream:
+                    content, raw = parse_openai_compatible_sse_response(response)
+                    if not content:
+                        raise ValueError("Responses stream did not contain output text")
+                else:
+                    raw = json.loads(response.read().decode("utf-8"))
+                    content = self._content_from_responses_api(raw)
+            log_model_call(
+                self._build_call_log_record(
+                    call_id=call_id,
+                    task=task,
+                    endpoint="responses",
+                    url=url,
+                    request_payload=payload,
+                    response_raw=raw,
+                    response_content=content,
+                    duration_ms=elapsed_ms(started_at),
+                    status="ok",
+                )
+            )
+            return ChatResponse(
+                content=content,
+                model=self.route_log.model_for_active_route(),
+                route=self.route_log.active_route,
+                raw=raw,
+            )
+        except Exception as exc:
+            log_model_call(
+                self._build_call_log_record(
+                    call_id=call_id,
+                    task=task,
+                    endpoint="responses",
+                    url=url,
+                    request_payload=payload,
+                    response_raw=locals().get("raw"),
+                    duration_ms=elapsed_ms(started_at),
+                    status="error",
+                    error=exc,
+                )
+            )
+            raise
+
+    def _build_call_log_record(
+        self,
+        *,
+        call_id: str,
+        task: str,
+        endpoint: str,
+        url: str,
+        request_payload: dict[str, Any],
+        duration_ms: int,
+        status: str,
+        response_raw: dict[str, Any] | None = None,
+        response_content: str | None = None,
+        error: Exception | None = None,
+    ) -> dict[str, Any]:
+        record: dict[str, Any] = {
+            "call_id": call_id,
+            "task": task,
+            "client": self.__class__.__name__,
+            "modality": "text",
+            "route": self.route_log.active_route,
+            "model": self.route_log.model_for_active_route(),
+            "endpoint": endpoint,
+            "url": url,
+            "timeout_seconds": self.timeout_seconds,
+            "duration_ms": duration_ms,
+            "status": status,
+            "request": {
+                "payload": request_payload,
+            },
+            "response": {
+                "content": response_content,
+                "raw": response_raw,
+            },
+        }
+        if error is not None:
+            record["error"] = {
+                "type": error.__class__.__name__,
+                "message": str(error),
+            }
+        return record
 
     def _responses_input_from_messages(self, messages: list[dict[str, str]]) -> str:
         lines: list[str] = []
@@ -252,3 +376,10 @@ class RecordingModelClient:
     def chat(self, messages: list[dict[str, str]], task: str) -> ChatResponse:
         self.calls.append({"messages": messages, "task": task})
         return self.response
+
+
+def _env_flag(name: str, *, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

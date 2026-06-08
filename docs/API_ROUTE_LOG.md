@@ -40,6 +40,35 @@ python -m scripts.api_smoke_test --real
 
 当前仓库测试不会触发真实网络请求。`tests/test_llm_routing.py` 使用 `RecordingModelClient` 验证 Agent 是否走统一模型接口。
 
+## Responses API 与调用日志
+
+`DMX_API_ENDPOINT` / `KY_API_ENDPOINT` 支持两种值：
+
+- `chat_completions`：默认 OpenAI-compatible chat completions 路径。
+- `responses`：OpenAI-compatible Responses API 路径。
+
+某些中转网关要求 Responses API 使用 SSE 流式返回。此时不要改业务代码，改环境变量：
+
+```bash
+MEDSCOPE_RESPONSES_STREAM=1
+MEDSCOPE_VISION_RESPONSES_STREAM=1
+```
+
+真实模型调用默认写入本地审计日志：
+
+```text
+output/fake/model_call_logs/model_calls.jsonl
+output/fake/model_call_logs/<task>_<call_id>.json
+```
+
+相关环境变量：
+
+- `MEDSCOPE_MODEL_CALL_LOG_DIR`：覆盖日志目录。
+- `MEDSCOPE_DISABLE_MODEL_CALL_LOG=1`：关闭模型调用日志。
+
+日志会脱敏 `api_key`、`authorization`、`token` 等字段，并把 base64 图像 data URL
+替换成 mime、字节数和 sha256 摘要，避免把完整图像编码写进日志。
+
 ## 最近一次检查
 
 检查时间：2026-05-24
