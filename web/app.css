@@ -58,6 +58,40 @@ textarea {
   padding: 16px 18px;
 }
 
+.workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.workspace-tab {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--muted);
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.workspace-tab.active,
+.workspace-tab:hover {
+  border-color: var(--accent);
+  background: #eef6f8;
+  color: var(--accent-dark);
+}
+
+.workspace-view {
+  display: grid;
+  gap: 16px;
+}
+
+.workspace-view[hidden] {
+  display: none;
+}
+
 h1,
 h2,
 p {
@@ -1928,7 +1962,284 @@ body.lightbox-open {
   line-height: 1.45;
 }
 
+.architecture-roadmap-view {
+  min-width: 0;
+}
+
+.architecture-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px;
+}
+
+.architecture-hero h2 {
+  margin-bottom: 4px;
+  font-size: 24px;
+}
+
+.architecture-subtitle {
+  color: var(--accent-dark);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.architecture-summary,
+.architecture-caption {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.architecture-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.15fr) minmax(320px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.architecture-diagram-panel,
+.architecture-detail-panel,
+.optimization-panel,
+.roadmap-todo-panel {
+  min-width: 0;
+}
+
+.architecture-diagram {
+  margin: 0;
+}
+
+.architecture-flow-diagram {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) auto minmax(150px, 1fr) auto minmax(130px, 1fr) auto minmax(160px, 1fr);
+  grid-auto-rows: minmax(56px, auto);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfc;
+  padding: 14px;
+}
+
+.architecture-flow-diagram button {
+  width: 100%;
+  min-height: 56px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: normal;
+}
+
+.architecture-flow-diagram button:hover,
+.architecture-flow-diagram button.selected {
+  border-color: var(--accent);
+  background: #eef6f8;
+  color: var(--accent-dark);
+}
+
+.flow-arrow {
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.flow-support {
+  grid-column: span 3;
+}
+
+.architecture-module-list,
+.optimization-direction-list,
+.roadmap-todo-view {
+  display: grid;
+  gap: 10px;
+}
+
+.architecture-module-card,
+.optimization-card {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 12px;
+  text-align: left;
+  white-space: normal;
+}
+
+.architecture-module-card:hover,
+.architecture-module-card.selected,
+.optimization-card:hover,
+.optimization-card.selected {
+  border-color: var(--accent);
+  background: #eef6f8;
+}
+
+.architecture-module-card strong,
+.optimization-card strong,
+.roadmap-todo-card strong {
+  font-size: 14px;
+}
+
+.architecture-module-card span,
+.optimization-card em,
+.roadmap-todo-card p {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.architecture-detail-view,
+.optimization-direction-detail {
+  margin-top: 12px;
+}
+
+.architecture-detail-card,
+.optimization-detail-card,
+.roadmap-todo-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 14px;
+}
+
+.architecture-detail-heading,
+.roadmap-todo-card > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.architecture-detail-heading h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.architecture-detail-card p,
+.optimization-detail-card p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.roadmap-section {
+  display: grid;
+  gap: 6px;
+}
+
+.roadmap-section strong,
+.roadmap-note strong {
+  font-size: 13px;
+}
+
+.roadmap-section ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.optimization-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.status-pill,
+.roadmap-priority {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.status-done {
+  border-color: #9cc9b2;
+  background: #eef8f2;
+  color: var(--ok);
+}
+
+.status-in_progress {
+  border-color: #9bc8d6;
+  background: #eef6f8;
+  color: var(--accent-dark);
+}
+
+.status-parked {
+  border-color: #d8c5a5;
+  background: #fff7ea;
+  color: var(--warn);
+}
+
+.status-frozen {
+  border-color: #c4ccd4;
+  background: #eef1f4;
+  color: #45515c;
+}
+
+.status-deferred {
+  border-color: #c7bdd8;
+  background: #f6f1fb;
+  color: #5d4679;
+}
+
+.roadmap-progress {
+  position: relative;
+  min-height: 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #eef1f4;
+}
+
+.roadmap-progress span {
+  display: block;
+  height: 100%;
+  min-height: 18px;
+  background: var(--accent);
+}
+
+.roadmap-progress b {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.roadmap-note {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
 @media (max-width: 980px) {
+  .architecture-grid,
+  .architecture-flow-diagram,
+  .optimization-layout,
   .research-review-grid,
   .skill-version-grid,
   .skill-target-table div,
@@ -1936,5 +2247,17 @@ body.lightbox-open {
   .skill-review-layout,
   .doctor-edit-grid {
     grid-template-columns: 1fr;
+  }
+
+  .architecture-hero {
+    flex-direction: column;
+  }
+
+  .flow-arrow {
+    display: none;
+  }
+
+  .flow-support {
+    grid-column: auto;
   }
 }

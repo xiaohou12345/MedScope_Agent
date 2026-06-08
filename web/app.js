@@ -22,11 +22,24 @@ const state = {
   selectedSkillDetail: {},
   uploadedImagePaths: [],
   uploadedImageNames: [],
+  activeWorkspaceView: "clinical",
+  selectedArchitectureModule: "clinical_orchestrator",
+  selectedOptimizationDirection: "guideline_skill_structure",
 };
 
 const elements = {
   statusText: document.getElementById("statusText"),
   healthButton: document.getElementById("healthButton"),
+  clinicalDemoTab: document.getElementById("clinicalDemoTab"),
+  architectureRoadmapTab: document.getElementById("architectureRoadmapTab"),
+  clinicalDemoView: document.getElementById("clinicalDemoView"),
+  architectureRoadmapPanel: document.getElementById("architectureRoadmapPanel"),
+  architectureDiagramView: document.getElementById("architectureDiagramView"),
+  architectureModuleList: document.getElementById("architectureModuleList"),
+  architectureDetailView: document.getElementById("architectureDetailView"),
+  optimizationDirectionList: document.getElementById("optimizationDirectionList"),
+  optimizationDirectionDetail: document.getElementById("optimizationDirectionDetail"),
+  roadmapTodoView: document.getElementById("roadmapTodoView"),
   sampleGliomaButton: document.getElementById("sampleGliomaButton"),
   publicSafeDemoButton: document.getElementById("publicSafeDemoButton"),
   realVlmMedSAM2Button: document.getElementById("realVlmMedSAM2Button"),
@@ -70,6 +83,387 @@ const skillComparisonFallbackLabels = {
   finding_list_baseline: "版本 1：历史 finding-list baseline",
   evidence_protocol_v1: "版本 2：Evidence protocol + quantitative protocol",
 };
+
+const architectureRoadmapData = {
+  statusLabels: {
+    done: "done",
+    in_progress: "in_progress",
+    parked: "parked",
+    frozen: "frozen",
+    deferred: "deferred",
+  },
+  modules: [
+    {
+      key: "clinical_orchestrator",
+      title: "Clinical Orchestrator",
+      short: "入口分诊、clinical hypothesis 生成、skill routing、流程协调。",
+      positioning: "入口分诊、clinical hypothesis 生成、skill routing、流程协调。",
+      inputs: ["患者主诉", "图像模态", "部位", "疾病线索"],
+      outputs: ["primary_hypothesis", "selected_skill", "differential_candidates", "routing_reason"],
+      boundaries: ["不直接诊断", "不把 routing 结果升级为确诊结论"],
+      status: "in_progress",
+      todo: ["扩展 body-part + modality + symptom routing registry", "统一 routing output 格式"],
+    },
+    {
+      key: "vision_evidence_agent",
+      title: "Vision Evidence Agent",
+      short: "把医学图像转成结构化视觉证据。",
+      positioning: "把 raw medical image 转成 visual_evidence、candidate mask、measurement、quality、completeness。",
+      inputs: ["raw_image", "selected_skill", "visual_protocol"],
+      outputs: ["visual_evidence", "candidate mask", "measurement", "quality", "completeness"],
+      boundaries: ["不直接输出诊断", "不把弱视觉候选证据升级为确定病灶"],
+      status: "in_progress",
+      todo: ["继续优化病灶候选定位", "补 mask QC、ROI / contour / landmark", "真实量化执行暂缓到 VisionAgent 稳定后"],
+    },
+    {
+      key: "diagnosis_reasoning_agent",
+      title: "Diagnosis Reasoning Agent",
+      short: "只基于 evidence_bundle 和 guideline skill 生成 bounded diagnosis report。",
+      positioning: "只消费结构化 evidence_bundle 与 guideline_rules，输出受证据约束的诊断报告。",
+      inputs: ["patient_info", "selected_skill", "evidence_bundle", "guideline_rules"],
+      outputs: ["支持证据", "缺失证据", "非特异征象", "诊断边界", "建议"],
+      boundaries: ["不直接看原图", "不重新选 skill", "不补全未被 evidence_bundle 支持的字段"],
+      status: "in_progress",
+      todo: ["验证 annotation-derived evidence bundle 下的推理正确性", "继续收紧缺失证据表达"],
+    },
+    {
+      key: "skill_builder_guideline_agent",
+      title: "Skill Builder / Guideline Agent",
+      short: "条件触发，缺少 skill 时检索指南并生成 candidate skill。",
+      positioning: "缺少 skill 或需要更新时，检索指南并生成 candidate skill、visual protocol 和 proposal artifact。",
+      inputs: ["disease", "modality", "guideline source"],
+      outputs: ["candidate skill", "visual protocol", "proposal artifact"],
+      boundaries: ["不自动修改正式 guideline skill", "proposal-only 必须经过 Evidence Gateway"],
+      status: "in_progress",
+      todo: ["保持 proposal-only", "完善指南来源追溯", "继续强化 Evidence Gateway 安全边界"],
+    },
+    {
+      key: "memory_audit_layer",
+      title: "Memory & Audit Layer",
+      short: "横向基础设施层，记录 patient/image/skill/reasoning/evidence bundle store。",
+      positioning: "横向基础设施层，不是 Agent，支持 replay、audit、QA 追溯。",
+      inputs: ["patient memory", "image memory", "skill memory", "reasoning memory", "evidence bundle store"],
+      outputs: ["memory audit", "case replay trace", "QA trace"],
+      boundaries: ["不参与诊断推理", "不覆盖 evidence_bundle 的证据边界"],
+      status: "in_progress",
+      todo: ["增强前端 audit 展示可读性", "把四类 memory 的来源和时间线展示得更清楚"],
+    },
+    {
+      key: "evidence_bundle",
+      title: "evidence_bundle",
+      short: "DiagnosisAgent 的唯一证据输入。",
+      positioning: "核心证据对象，负责把患者上下文、视觉证据、质量、缺失项和来源 trace 放在同一个契约里。",
+      inputs: ["patient_context", "visual_evidence", "measurements", "quality", "missing_evidence", "limitations", "source trace"],
+      outputs: ["bounded diagnosis evidence", "missing evidence matrix", "audit-ready source trace"],
+      boundaries: ["不包含未被观测支持的诊断结论", "不把 research evidence 当 guideline evidence"],
+      status: "in_progress",
+      todo: ["完善 annotation-derived evidence bundle", "补 clinical context 来源追溯"],
+    },
+  ],
+  optimizationDirections: [
+    {
+      key: "guideline_skill_structure",
+      title: "Guideline Skill 结构扩展",
+      progress: 84,
+      status: "in_progress",
+      summary: "v1 基本完成，v2 可继续。",
+      completed: [
+        "finding list -> evidence protocol",
+        "imaging evidence protocol",
+        "quantitative evidence protocol",
+        "differential protocol",
+        "clinical context protocol",
+        "integrated reasoning protocol",
+        "量化拆分为 image-feature quantification 和 geometric / morphologic measurement",
+      ],
+      todo: [
+        "统一 schema / validator",
+        "继续沉淀通用 skill protocol 模板",
+        "未来接入 annotation-derived evidence bundle",
+      ],
+      limits: [
+        "真实 ROI / contour / landmark / view quality gate 仍主要是协议层",
+        "真实临床可靠测量引擎还未完成",
+      ],
+      recovery: "等 VisionAgent 稳定后恢复 Real X-ray Case Comparison。",
+      safety: "协议只定义证据需求，不替代真实测量引擎。",
+    },
+    {
+      key: "clinical_context",
+      title: "患者临床信息结合",
+      progress: 76,
+      status: "in_progress",
+      summary: "v1 已收敛，可做 v2；clinical risk changes suspicion level only。",
+      completed: [
+        "patient prompt / risk factors 进入 clinical context bundle",
+        "risk factor 只能作为 suspicion modifier",
+        "不能替代影像证据确诊",
+      ],
+      todo: [
+        "结构化抽取疼痛部位、左右侧、持续时间、活动后加重",
+        "抽取激素使用、饮酒史、外伤史",
+        "missing context 标记 unknown",
+        "report / memory / QA 中显示来源和限制",
+      ],
+      limits: ["不做完整问诊系统", "不做复杂风险评分模型"],
+      recovery: "当病例展示需要更强临床上下文时推进 v2。",
+      safety: "临床风险只能改变怀疑程度，不能替代影像或指南证据。",
+    },
+    {
+      key: "skill_routing",
+      title: "系统生成候选假设 / Skill Routing",
+      progress: 84,
+      status: "done",
+      summary: "v1 完成，暂时不需要重做。",
+      completed: [
+        "用户不明确说 FHN 时，可根据髋痛 + X-ray 生成 primary hypothesis",
+        "自动选择 FHN skill",
+        "保留 differential candidates",
+        "前端提示 routing 不是诊断结论",
+      ],
+      todo: [
+        "统一 routing output 格式",
+        "轻量补 body-part + modality + symptom routing registry",
+        "未来可做 Differential Skill Run v1",
+      ],
+      limits: ["不做完整多疾病排序", "不做多 skill 自动诊断", "不自动运行所有 differential candidates"],
+      recovery: "当主线 demo 稳定后，再扩展 differential skill run。",
+      safety: "routing 是流程选择，不是最终诊断。",
+    },
+    {
+      key: "research_evidence",
+      title: "论文证据安全补充 Guideline Skill",
+      progress: 88,
+      status: "frozen",
+      summary: "v1 收敛，暂时冻结；research evidence is not guideline evidence。",
+      completed: [
+        "Research Evidence Builder",
+        "Research Evidence Proposal",
+        "PubMed metadata / abstract retrieval",
+        "supplied metadata fallback",
+        "Evidence Gateway",
+        "source quality / freshness / applicability / conflict gate",
+        "human review checklist",
+        "controlled skill extension draft",
+        "formal patch preview",
+        "前端 Research Evidence Review",
+        "proposal-only",
+        "formal_update=false",
+      ],
+      todo: [
+        "Research Evidence Ingestion production v2",
+        "全文 PDF parser",
+        "正式人工审批系统",
+      ],
+      limits: [
+        "不做 production PubMed 检索质量评估",
+        "不做 skill registry 写入",
+        "不做真实 apply controlled extension",
+      ],
+      recovery: "等 Guideline Skill 主线和 annotation-derived evidence bundle 稳定后再恢复。",
+      safety: "research evidence is not guideline evidence；不进入 diagnosis rules；不自动修改正式 skill。",
+    },
+  ],
+  todos: [
+    {
+      title: "Annotation-derived Evidence Bundle v1",
+      priority: "高优先级",
+      status: "in_progress",
+      description: "使用已有 ONFH X-ray COCO / 人工标注生成结构化 evidence bundle，绕开 VisionAgent 自动分割不稳定问题，验证 DiagnosisAgent 在可靠 evidence 下的推理正确性。",
+    },
+    {
+      title: "Clinical Context Evidence v2",
+      priority: "中优先级",
+      status: "deferred",
+      description: "进一步结构化患者症状、不良习惯、风险因素和缺失信息。",
+    },
+    {
+      title: "FHN X-ray Quantification / Measurement Protocol v2",
+      priority: "中低优先级",
+      status: "deferred",
+      description: "等 ROI / contour / landmark / mask QC 更稳定后，再推进真实塌陷程度、坏死面积比例、骨小梁紊乱程度等量化执行。",
+    },
+    {
+      title: "Real X-ray Case Comparison",
+      priority: "暂存",
+      status: "parked",
+      description: "旧 finding-list skill vs 新 evidence-protocol skill 的病例级对比暂存，原因是 VisionAgent 真实定位、分割、量化还不稳定。",
+    },
+    {
+      title: "Research Evidence Ingestion production v2",
+      priority: "冻结",
+      status: "frozen",
+      description: "论文证据 v1 已收敛，production PubMed/PDF/approval workflow 暂缓。",
+    },
+  ],
+};
+
+function setWorkspaceView(viewName) {
+  const isArchitecture = viewName === "architecture";
+  state.activeWorkspaceView = isArchitecture ? "architecture" : "clinical";
+  elements.clinicalDemoView.hidden = isArchitecture;
+  elements.architectureRoadmapPanel.hidden = !isArchitecture;
+  elements.clinicalDemoView.classList.toggle("active", !isArchitecture);
+  elements.architectureRoadmapPanel.classList.toggle("active", isArchitecture);
+  elements.clinicalDemoTab.classList.toggle("active", !isArchitecture);
+  elements.architectureRoadmapTab.classList.toggle("active", isArchitecture);
+  elements.clinicalDemoTab.setAttribute("aria-selected", String(!isArchitecture));
+  elements.architectureRoadmapTab.setAttribute("aria-selected", String(isArchitecture));
+  if (isArchitecture) {
+    renderArchitectureRoadmap();
+    if (window.location.hash !== "#architecture-roadmap") {
+      window.history.replaceState(null, "", "#architecture-roadmap");
+    }
+    return;
+  }
+  if (window.location.hash === "#architecture-roadmap") {
+    window.history.replaceState(null, "", window.location.pathname);
+  }
+}
+
+function renderArchitectureRoadmap() {
+  renderArchitectureDiagram();
+  renderArchitectureModules();
+  renderOptimizationDirections();
+  renderRoadmapTodos();
+}
+
+function renderArchitectureDiagram() {
+  elements.architectureDiagramView.innerHTML = `
+    <div class="architecture-flow-diagram" role="img" aria-label="MedScope guideline-aware evidence pipeline">
+      <button type="button" data-architecture-module="clinical_orchestrator">Clinical Orchestrator</button>
+      <span class="flow-arrow">-></span>
+      <button type="button" data-architecture-module="vision_evidence_agent">Vision Evidence Agent</button>
+      <span class="flow-arrow">-></span>
+      <button type="button" data-architecture-module="evidence_bundle">evidence_bundle</button>
+      <span class="flow-arrow">-></span>
+      <button type="button" data-architecture-module="diagnosis_reasoning_agent">Diagnosis Reasoning Agent</button>
+      <button type="button" data-architecture-module="skill_builder_guideline_agent" class="flow-support">Skill Builder / Guideline Agent</button>
+      <button type="button" data-architecture-module="memory_audit_layer" class="flow-support">Memory & Audit Layer</button>
+    </div>
+  `;
+}
+
+function renderArchitectureModules() {
+  elements.architectureModuleList.innerHTML = architectureRoadmapData.modules.map((module) => `
+    <button
+      type="button"
+      class="architecture-module-card ${module.key === state.selectedArchitectureModule ? "selected" : ""}"
+      data-architecture-module="${escapeHtml(module.key)}"
+    >
+      <strong>${escapeHtml(module.title)}</strong>
+      <span>${escapeHtml(module.short)}</span>
+      ${renderStatusBadge(module.status)}
+    </button>
+  `).join("");
+  selectArchitectureModule(state.selectedArchitectureModule, {skipListRender: true});
+}
+
+function selectArchitectureModule(moduleKey, options = {}) {
+  const module = architectureRoadmapData.modules.find((item) => item.key === moduleKey)
+    || architectureRoadmapData.modules[0];
+  state.selectedArchitectureModule = module.key;
+  if (!options.skipListRender) {
+    Array.from(document.querySelectorAll("[data-architecture-module]")).forEach((node) => {
+      node.classList.toggle("selected", node.dataset.architectureModule === module.key);
+    });
+  }
+  elements.architectureDetailView.innerHTML = `
+    <article class="architecture-detail-card">
+      <div class="architecture-detail-heading">
+        <h3>${escapeHtml(module.title)}</h3>
+        ${renderStatusBadge(module.status)}
+      </div>
+      <p>${escapeHtml(module.positioning)}</p>
+      ${renderRoadmapSection("输入", module.inputs)}
+      ${renderRoadmapSection("输出", module.outputs)}
+      ${renderRoadmapSection("不做什么 / 安全边界", module.boundaries)}
+      ${renderRoadmapSection("TODO / 后续优化", module.todo)}
+    </article>
+  `;
+}
+
+function renderOptimizationDirections() {
+  elements.optimizationDirectionList.innerHTML = architectureRoadmapData.optimizationDirections.map((direction) => `
+    <button
+      type="button"
+      class="optimization-card ${direction.key === state.selectedOptimizationDirection ? "selected" : ""}"
+      data-optimization-direction="${escapeHtml(direction.key)}"
+    >
+      <span>${renderStatusBadge(direction.status)}</span>
+      <strong>${escapeHtml(direction.title)}</strong>
+      <em>${escapeHtml(direction.summary)}</em>
+      ${renderProgress(direction.progress)}
+    </button>
+  `).join("");
+  selectOptimizationDirection(state.selectedOptimizationDirection, {skipListRender: true});
+}
+
+function selectOptimizationDirection(directionKey, options = {}) {
+  const direction = architectureRoadmapData.optimizationDirections.find((item) => item.key === directionKey)
+    || architectureRoadmapData.optimizationDirections[0];
+  state.selectedOptimizationDirection = direction.key;
+  if (!options.skipListRender) {
+    Array.from(document.querySelectorAll("[data-optimization-direction]")).forEach((node) => {
+      node.classList.toggle("selected", node.dataset.optimizationDirection === direction.key);
+    });
+  }
+  elements.optimizationDirectionDetail.innerHTML = `
+    <article class="optimization-detail-card">
+      <div class="architecture-detail-heading">
+        <h3>${escapeHtml(direction.title)}</h3>
+        ${renderStatusBadge(direction.status)}
+      </div>
+      <p>${escapeHtml(direction.summary)}</p>
+      ${renderProgress(direction.progress)}
+      ${renderRoadmapSection("已完成内容", direction.completed)}
+      ${renderRoadmapSection("TODO", direction.todo)}
+      ${renderRoadmapSection("暂存 / 冻结内容", direction.limits)}
+      <section class="roadmap-note"><strong>后续恢复条件</strong><p>${escapeHtml(direction.recovery)}</p></section>
+      <section class="roadmap-note"><strong>安全边界</strong><p>${escapeHtml(direction.safety)}</p></section>
+    </article>
+  `;
+}
+
+function renderRoadmapTodos() {
+  elements.roadmapTodoView.innerHTML = architectureRoadmapData.todos.map((todo) => `
+    <article class="roadmap-todo-card">
+      <div>
+        <span class="roadmap-priority">${escapeHtml(todo.priority)}</span>
+        ${renderStatusBadge(todo.status)}
+      </div>
+      <strong>${escapeHtml(todo.title)}</strong>
+      <p>${escapeHtml(todo.description)}</p>
+    </article>
+  `).join("");
+}
+
+function renderRoadmapSection(title, items) {
+  const normalized = Array.isArray(items) ? items : [];
+  return `
+    <section class="roadmap-section">
+      <strong>${escapeHtml(title)}</strong>
+      <ul>
+        ${normalized.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+      </ul>
+    </section>
+  `;
+}
+
+function renderStatusBadge(status) {
+  const label = architectureRoadmapData.statusLabels[status] || status || "unknown";
+  return `<span class="status-pill status-${escapeHtml(status)}">${escapeHtml(label)}</span>`;
+}
+
+function renderProgress(progress) {
+  const value = Math.max(0, Math.min(100, Number(progress) || 0));
+  return `
+    <div class="roadmap-progress" aria-label="progress ${value}%">
+      <span style="width: ${value}%"></span>
+      <b>${value}%</b>
+    </div>
+  `;
+}
 
 function setStatus(text, kind = "") {
   elements.statusText.textContent = text;
@@ -1969,6 +2363,17 @@ function renderRoutingClinicalSummary(payload) {
   const collapsedRoutingHypotheses = hypotheses.filter((item) => (
     !visibleRoutingHypotheses.includes(item)
   ));
+  const manualSecondaryCandidateKeys = uniqueStrings([
+    ...displayCandidates,
+    ...candidates,
+    ...hypotheses
+      .filter((item) => item.role === "differential")
+      .map((item) => item.disease_key || item.target || ""),
+  ]).filter((candidate) => candidate && candidate !== selectedSkill);
+  const manualSecondaryCandidateHtml = renderManualSecondaryCandidateList(
+    manualSecondaryCandidateKeys,
+    selectedSecondarySkills,
+  );
   const hypothesisQueueHtml = hypotheses.length
     ? `
       <div class="hypothesis-queue">
@@ -2031,7 +2436,44 @@ function renderRoutingClinicalSummary(payload) {
       <h3>分析路径</h3>
       <p>${escapeHtml(parts.join("；"))}</p>
       ${hypothesisQueueHtml}
+      ${manualSecondaryCandidateHtml}
       ${secondarySkillRunHtml}
+    </div>
+  `;
+}
+
+function uniqueStrings(values) {
+  const seen = new Set();
+  return values.filter((value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized || seen.has(normalized)) {
+      return false;
+    }
+    seen.add(normalized);
+    return true;
+  });
+}
+
+function renderManualSecondaryCandidateList(candidateKeys, selectedSecondarySkills = []) {
+  const keys = Array.isArray(candidateKeys) ? candidateKeys : [];
+  if (!keys.length) {
+    return "";
+  }
+  return `
+    <div class="hypothesis-queue manual-secondary-candidates">
+      <strong>可追加备用复查</strong>
+      <ul>
+        ${keys.map((candidateKey) => `
+          <li>
+            <b>${escapeHtml(humanDiseaseName(candidateKey))}</b>
+            ${renderManualSecondaryAction(
+              {disease_key: candidateKey, role: "differential"},
+              selectedSecondarySkills,
+            )}
+          </li>
+        `).join("")}
+      </ul>
+      <p class="muted">点击候选后会切换到人工备用 Skill 模式；如果本地没有正式 Skill，会先走 SkillBuilder proposal，并仅用于 hypothesis validation。</p>
     </div>
   `;
 }
@@ -5156,6 +5598,11 @@ function resetViews() {
   elements.intentBadge.textContent = "-";
 }
 
+elements.clinicalDemoTab.addEventListener("click", () => setWorkspaceView("clinical"));
+elements.architectureRoadmapTab.addEventListener("click", () => setWorkspaceView("architecture"));
+window.addEventListener("hashchange", () => {
+  setWorkspaceView(window.location.hash === "#architecture-roadmap" ? "architecture" : "clinical");
+});
 elements.healthButton.addEventListener("click", checkHealth);
 elements.sampleGliomaButton.addEventListener("click", runStandardSample);
 elements.publicSafeDemoButton.addEventListener("click", runPublicSafeDemo);
@@ -5204,6 +5651,16 @@ elements.dropZone.addEventListener("drop", async (event) => {
 });
 
 document.addEventListener("click", (event) => {
+  const architectureModuleButton = event.target.closest("[data-architecture-module]");
+  if (architectureModuleButton) {
+    selectArchitectureModule(architectureModuleButton.dataset.architectureModule);
+    return;
+  }
+  const optimizationDirectionButton = event.target.closest("[data-optimization-direction]");
+  if (optimizationDirectionButton) {
+    selectOptimizationDirection(optimizationDirectionButton.dataset.optimizationDirection);
+    return;
+  }
   const secondarySkillButton = event.target.closest("[data-secondary-skill-key]");
   if (secondarySkillButton) {
     selectManualSecondarySkill(secondarySkillButton.dataset.secondarySkillKey);
@@ -5329,6 +5786,8 @@ elements.resetButton.addEventListener("click", () => {
 });
 
 updateQaControls();
+renderArchitectureRoadmap();
+setWorkspaceView(window.location.hash === "#architecture-roadmap" ? "architecture" : "clinical");
 checkHealth();
 loadResearchEvidenceReview();
 loadSkillProtocolComparison();

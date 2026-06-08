@@ -17,6 +17,12 @@
           <button id="healthButton" type="button">检查连接</button>
         </header>
 
+        <nav class="workspace-tabs" aria-label="MedScope workspace">
+          <button id="clinicalDemoTab" class="workspace-tab active" type="button">Clinical Demo</button>
+          <button id="architectureRoadmapTab" class="workspace-tab" type="button">Architecture / Roadmap</button>
+        </nav>
+
+        <section id="clinicalDemoView" class="workspace-view active">
         <div class="layout">
           <form id="caseForm" class="panel input-panel">
             <div class="panel-title">
@@ -178,9 +184,60 @@
             </div>
           </section>
         </details>
+        </section>
+
+        <section id="architectureRoadmapPanel" class="workspace-view architecture-roadmap-view" hidden>
+          <section class="panel architecture-hero">
+            <div>
+              <h2>MedScope</h2>
+              <p class="architecture-subtitle">Guideline-aware Evidence Pipeline</p>
+              <p class="architecture-summary">核心不是堆叠多个 Agent，而是围绕 evidence_bundle 建立受医疗安全边界约束的临床证据流水线。</p>
+            </div>
+            <span class="status-pill status-in_progress">展示前端 v1</span>
+          </section>
+
+          <section class="architecture-grid">
+            <section class="panel architecture-diagram-panel">
+              <div class="panel-title">
+                <h2>系统流程图</h2>
+                <span>后续可替换为正式图片</span>
+              </div>
+              <figure id="architectureDiagramView" class="architecture-diagram" data-flow-image-src=""></figure>
+              <p class="architecture-caption">该图展示 MedScope 当前主线：Clinical Orchestrator → Vision Evidence Agent → evidence_bundle → Diagnosis Reasoning Agent，并由 Memory & Audit Layer 记录全链路。</p>
+            </section>
+
+            <section class="panel architecture-detail-panel">
+              <div class="panel-title">
+                <h2>模块详情</h2>
+                <span>点击模块卡片查看</span>
+              </div>
+              <div id="architectureModuleList" class="architecture-module-list"></div>
+              <div id="architectureDetailView" class="architecture-detail-view"></div>
+            </section>
+          </section>
+
+          <section class="panel optimization-panel">
+            <div class="panel-title">
+              <h2>Optimization Directions / 四个优化方向</h2>
+              <span>进度、边界和恢复条件</span>
+            </div>
+            <div class="optimization-layout">
+              <div id="optimizationDirectionList" class="optimization-direction-list"></div>
+              <div id="optimizationDirectionDetail" class="optimization-direction-detail"></div>
+            </div>
+          </section>
+
+          <section class="panel roadmap-todo-panel">
+            <div class="panel-title">
+              <h2>TODO / Next Steps</h2>
+              <span>按当前优先级展示</span>
+            </div>
+            <div id="roadmapTodoView" class="roadmap-todo-view"></div>
+          </section>
+        </section>
       </section>
     </main>
 
-    <script src="/static/app.js?v=manual-secondary-select-20260608"></script>
+    <script src="/static/app.js?v=manual-secondary-visible-20260608"></script>
   </body>
 </html>

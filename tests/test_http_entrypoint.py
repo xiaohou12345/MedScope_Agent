@@ -150,14 +150,67 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(content_type, "text/html; charset=utf-8")
         text = body.decode("utf-8")
         self.assertIn('/static/app.css?v=skill-comparison-v2-20260606', text)
-        self.assertIn('/static/app.js?v=manual-secondary-select-20260608', text)
+        self.assertIn('/static/app.js?v=manual-secondary-visible-20260608', text)
         self.assertNotIn("skill-review-20260528", text)
         css_status, _, css_type = dispatch_static_request("/static/app.css?v=skill-comparison-v2-20260606")
-        js_status, _, js_type = dispatch_static_request("/static/app.js?v=manual-secondary-select-20260608")
+        js_status, _, js_type = dispatch_static_request("/static/app.js?v=manual-secondary-visible-20260608")
         self.assertEqual(css_status, 200)
         self.assertEqual(css_type, "text/css; charset=utf-8")
         self.assertEqual(js_status, 200)
         self.assertEqual(js_type, "application/javascript; charset=utf-8")
+
+    def test_root_exposes_architecture_roadmap_workspace_without_backend_route(self):
+        status, body, content_type = dispatch_static_request("/")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/html; charset=utf-8")
+        html = body.decode("utf-8")
+        self.assertIn("clinicalDemoTab", html)
+        self.assertIn("architectureRoadmapTab", html)
+        self.assertIn("clinicalDemoView", html)
+        self.assertIn("architectureRoadmapPanel", html)
+        self.assertIn("Architecture / Roadmap", html)
+        self.assertIn("Guideline-aware Evidence Pipeline", html)
+        self.assertIn("architectureDiagramView", html)
+        self.assertIn("architectureModuleList", html)
+        self.assertIn("architectureDetailView", html)
+        self.assertIn("optimizationDirectionList", html)
+        self.assertIn("optimizationDirectionDetail", html)
+        self.assertIn("roadmapTodoView", html)
+
+    def test_frontend_architecture_roadmap_static_data_covers_modules_directions_and_statuses(self):
+        js_status, js_body, js_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(js_status, 200)
+        self.assertEqual(js_type, "application/javascript; charset=utf-8")
+        js = js_body.decode("utf-8")
+        self.assertIn("architectureRoadmapData", js)
+        self.assertIn("renderArchitectureRoadmap", js)
+        self.assertIn("selectArchitectureModule", js)
+        self.assertIn("selectOptimizationDirection", js)
+        for module_name in [
+            "Clinical Orchestrator",
+            "Vision Evidence Agent",
+            "Diagnosis Reasoning Agent",
+            "Skill Builder / Guideline Agent",
+            "Memory & Audit Layer",
+            "evidence_bundle",
+        ]:
+            self.assertIn(module_name, js)
+        for direction_name in [
+            "Guideline Skill 结构扩展",
+            "患者临床信息结合",
+            "系统生成候选假设 / Skill Routing",
+            "论文证据安全补充 Guideline Skill",
+        ]:
+            self.assertIn(direction_name, js)
+        for status_name in ["done", "in_progress", "parked", "frozen", "deferred"]:
+            self.assertIn(status_name, js)
+        self.assertIn("Research Evidence Ingestion production v2", js)
+        self.assertIn("Real X-ray Case Comparison", js)
+        self.assertIn("Annotation-derived Evidence Bundle v1", js)
+        self.assertIn("research evidence is not guideline evidence", js)
+        self.assertIn("clinical risk changes suspicion level only", js)
 
     def test_frontend_uses_agent_safe_vision_routing_without_manual_mode_picker(self):
         status, body, content_type = dispatch_static_request("/")
@@ -414,6 +467,9 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("Secondary skill run", routing_slice)
         self.assertIn("未审核 Skill 可用于假设验证", routing_slice)
         self.assertIn("不能作为正式确诊依据", routing_slice)
+        self.assertIn("renderManualSecondaryCandidateList", routing_slice)
+        self.assertIn("可追加备用复查", routing_slice)
+        self.assertIn("manualSecondaryCandidateKeys", routing_slice)
         legacy_slice = text[
             text.index("function renderLegacyReportSections"):
             text.index("function renderRoutingClinicalSummary")
