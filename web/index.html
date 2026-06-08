@@ -58,10 +58,11 @@
               </select>
             </label>
 
-            <label>
-              人工备用 Skill
-              <input id="manualSecondarySkills" name="manual_secondary_skill_candidates" placeholder="例如 osteoarthritis_or_degenerative_hip_disease" />
-            </label>
+            <div id="manualSecondarySkillSelection" class="mode-control">
+              <strong>已选择备用复查</strong>
+              <span>先运行主 Skill 分析；系统给出候选假设后，可在报告中点击“加入备用复查”。</span>
+            </div>
+            <input type="hidden" id="manualSecondarySkills" name="manual_secondary_skill_candidates" value="" />
 
             <input id="imagePath" name="image_path" type="hidden" value="" />
             <label>
@@ -180,6 +181,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=skill-selection-mode-20260608"></script>
+    <script src="/static/app.js?v=manual-secondary-select-20260608"></script>
   </body>
 </html>

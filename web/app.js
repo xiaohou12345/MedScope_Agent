@@ -1960,6 +1960,7 @@ function renderRoutingClinicalSummary(payload) {
   const hypotheses = Array.isArray(routing.clinical_hypotheses)
     ? routing.clinical_hypotheses
     : [];
+  const selectedSecondarySkills = selectedManualSecondarySkills();
   const visibleRoutingHypotheses = hypotheses.filter((item) => (
     item.role === "primary"
     || item.display_group === "strong_differential"
@@ -1979,6 +1980,7 @@ function renderRoutingClinicalSummary(payload) {
               <b>${escapeHtml(humanDiseaseName(item.disease_key || item.target || ""))}</b>
               <em>${escapeHtml(routingEvidenceStatusLabel(item.status || ""))}</em>
               ${item.reason ? `<small>${escapeHtml(item.reason)}</small>` : ""}
+              ${renderManualSecondaryAction(item, selectedSecondarySkills)}
             </li>
           `).join("")}
         </ul>
@@ -1992,6 +1994,7 @@ function renderRoutingClinicalSummary(payload) {
                   <b>${escapeHtml(humanDiseaseName(item.disease_key || item.target || ""))}</b>
                   <em>${escapeHtml(routingEvidenceStatusLabel(item.status || ""))}</em>
                   ${item.reason ? `<small>${escapeHtml(item.reason)}</small>` : ""}
+                  ${renderManualSecondaryAction(item, selectedSecondarySkills)}
                 </li>
               `).join("")}
             </ul>
@@ -2030,6 +2033,22 @@ function renderRoutingClinicalSummary(payload) {
       ${hypothesisQueueHtml}
       ${secondarySkillRunHtml}
     </div>
+  `;
+}
+
+function renderManualSecondaryAction(item, selectedSecondarySkills = []) {
+  const diseaseKey = item.disease_key || item.target || "";
+  if (!diseaseKey || item.role !== "differential") {
+    return "";
+  }
+  const selected = selectedSecondarySkills.includes(diseaseKey);
+  return `
+    <button
+      type="button"
+      class="secondary-skill-action"
+      data-secondary-skill-key="${escapeHtml(diseaseKey)}"
+      ${selected ? "disabled" : ""}
+    >${selected ? "已选择备用复查" : "加入备用复查"}</button>
   `;
 }
 
@@ -4876,6 +4895,43 @@ function setSkillSelectionMode(mode = "primary_only", manualSecondarySkills = []
     : [];
   elements.skillSelectionMode.value = mode;
   elements.manualSecondarySkills.value = state.sampleManualSecondarySkills.join(", ");
+  renderManualSecondarySkillSelection();
+}
+
+function selectedManualSecondarySkills() {
+  return splitList(elements.manualSecondarySkills.value);
+}
+
+function selectManualSecondarySkill(skillKey) {
+  const normalized = String(skillKey || "").trim();
+  if (!normalized) {
+    return;
+  }
+  const selected = selectedManualSecondarySkills();
+  if (!selected.includes(normalized)) {
+    selected.push(normalized);
+  }
+  elements.manualSecondarySkills.value = selected.slice(0, 2).join(", ");
+  elements.skillSelectionMode.value = "manual_secondary";
+  renderManualSecondarySkillSelection();
+  renderReport(state.lastPayload);
+  setStatus("已加入备用复查，点击“运行分析”会按人工备用 Skill 模式重新分析", "ok");
+}
+
+function renderManualSecondarySkillSelection() {
+  const selected = selectedManualSecondarySkills();
+  const target = document.getElementById("manualSecondarySkillSelection");
+  if (!target) {
+    return;
+  }
+  target.innerHTML = `
+    <strong>已选择备用复查</strong>
+    ${selected.length ? `
+      <span>${selected.map(humanDiseaseName).map(escapeHtml).join("、")}</span>
+    ` : `
+      <span>先运行主 Skill 分析；系统给出候选假设后，可在报告中点击“加入备用复查”。</span>
+    `}
+  `;
 }
 
 function loadStandardSample() {
@@ -5148,6 +5204,11 @@ elements.dropZone.addEventListener("drop", async (event) => {
 });
 
 document.addEventListener("click", (event) => {
+  const secondarySkillButton = event.target.closest("[data-secondary-skill-key]");
+  if (secondarySkillButton) {
+    selectManualSecondarySkill(secondarySkillButton.dataset.secondarySkillKey);
+    return;
+  }
   const card = event.target.closest("[data-lightbox-src]");
   if (card) {
     openImageLightbox({
