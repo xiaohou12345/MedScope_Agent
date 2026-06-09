@@ -43,11 +43,6 @@ The project is best described as a two-layer architecture rather than a flat lis
 - `Skill Builder / Guideline Component`: implemented mainly under `tools/skill_builder_tool.py` and guideline tools. It loads existing skills or builds candidate guideline/hypothesis skills.
 - `Memory / Audit Layer`: implemented by `memory/memory_manager.py`. It persists evidence, reports, runtime traces, replay data, and QA history.
 
-Disease-specific experiments should stay outside the default service path. The
-current ONFH Xray ROI/VLM evaluation utilities are mapped in
-[docs/ONFH_EXPERIMENTS.md](docs/ONFH_EXPERIMENTS.md) and
-[scripts/ONFH_README.md](scripts/ONFH_README.md).
-
 ### Agentic Runtime / Evidence Gateway
 
 The lower layer behaves like a controlled runtime for medical evidence tasks:
@@ -130,41 +125,6 @@ export DMX_API_KEY="..."
 # or
 export KY_API_KEY="..."
 ```
-
-You can also create a local `.env.local` in the repository root. It is ignored by git and loaded automatically by the HTTP server. Supported route overrides:
-
-```bash
-MEDSCOPE_ACTIVE_ROUTE=dmx
-DMX_API_KEY="..."
-DMX_BASE_URL="https://your-openai-compatible-host.example.com"
-DMX_MODEL="your-chat-model"
-DMX_VISION_MODEL="your-vision-model"
-DMX_API_ENDPOINT="chat_completions"  # or responses
-DMX_USER_AGENT="MedScope-Agent/0.1"
-
-# or a self-hosted KY route
-MEDSCOPE_ACTIVE_ROUTE=ky
-KY_API_KEY="..."
-KY_BASE_URL="http://127.0.0.1:8000/v1/chat/completions"
-KY_MODEL="your-chat-model"
-KY_VISION_MODEL="your-vision-model"
-KY_API_ENDPOINT="chat_completions"  # or responses
-KY_USER_AGENT="MedScope-Agent/0.1"
-```
-
-When a route requires the OpenAI-compatible Responses API with SSE, enable
-streaming without changing the default clients:
-
-```bash
-MEDSCOPE_RESPONSES_STREAM=1
-MEDSCOPE_VISION_RESPONSES_STREAM=1
-```
-
-Real model calls are audit-logged by default under
-`output/fake/model_call_logs`. Override the destination with
-`MEDSCOPE_MODEL_CALL_LOG_DIR`, or disable this local audit trail with
-`MEDSCOPE_DISABLE_MODEL_CALL_LOG=1`. Logs redact secrets and summarize base64
-image payloads instead of storing the full encoded image.
 
 MedSAM2 is optional and configured through environment variables:
 

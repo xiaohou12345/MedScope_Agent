@@ -43,9 +43,9 @@ TARGET_COLORS = {
 }
 
 STAGE_SEVERITY = {
-    "normal": 0,
-    "I/II": 1,
-    "III+": 2,
+    "未发现异常": 0,
+    "2期": 1,
+    "3期": 2,
 }
 
 SIDE_VALUES = ("左", "右")
@@ -58,7 +58,7 @@ class OnfhCocoMockVisualRunner:
         self,
         export_dir: Path | str = DEFAULT_EXPORT_DIR,
         side_mapping: str = "ap_flip",
-        include_mri_gt_in_visual: bool = True,
+        include_mri_gt_in_visual: bool = False,
     ) -> None:
         self.export_dir = Path(export_dir)
         if side_mapping not in {"no_flip", "ap_flip"}:
@@ -83,14 +83,12 @@ class OnfhCocoMockVisualRunner:
         }
         self.mri_tags_by_patient_key = self._build_mri_tags_by_patient_key()
         self.mri_stage_by_patient_side = self._build_mri_stage_by_patient_side()
+        self.xray_stage_by_image_side = self._build_xray_stage_by_image_side()
 
     def runnable_xray_rows(self) -> list[Any]:
         rows = []
         for row in self.manifest[self.manifest["modality"].eq("Xray")].itertuples(index=False):
-            patient_key = self._patient_key(row.category, row.patient)
-            if int(row.image_id) not in self.annotations_by_image_id:
-                continue
-            if patient_key not in self.mri_tags_by_patient_key:
+            if int(row.image_id) not in self.xray_stage_by_image_side:
                 continue
             rows.append(row)
         return rows
@@ -100,10 +98,8 @@ class OnfhCocoMockVisualRunner:
         for row in self.manifest[self.manifest["modality"].eq("Xray")].itertuples(index=False):
             patient_key = self._patient_key(row.category, row.patient)
             reasons = []
-            if int(row.image_id) not in self.annotations_by_image_id:
-                reasons.append("no_xray_mask")
-            if patient_key not in self.mri_tags_by_patient_key:
-                reasons.append("no_same_patient_mri_tag")
+            if int(row.image_id) not in self.xray_stage_by_image_side:
+                reasons.append("no_xray_gt_tag")
             if reasons:
                 skipped.append(
                     {
@@ -128,18 +124,13 @@ class OnfhCocoMockVisualRunner:
         row = self._row_for_image_path(image_path)
         image_id = int(row.image_id)
         annotations = self.annotations_by_image_id.get(image_id, [])
-        if not annotations:
-            return {
-                "status": "skipped_no_xray_mask",
-                "image_path": str(image_path),
-                "visual_analysis_result": None,
-            }
         patient_key = self._patient_key(row.category, row.patient)
         gt_mri_tags = self.mri_tags_by_patient_key.get(patient_key, [])
         gt_mri_stage_by_side = self.mri_stage_by_patient_side.get(patient_key, {})
-        if not gt_mri_tags:
+        gt_xray_stage_by_side = self.xray_stage_by_image_side.get(image_id, {})
+        if not gt_xray_stage_by_side:
             return {
-                "status": "skipped_no_same_patient_mri_tag",
+                "status": "skipped_no_xray_gt_tag",
                 "image_path": str(image_path),
                 "visual_analysis_result": None,
             }
@@ -183,7 +174,6 @@ class OnfhCocoMockVisualRunner:
             "requested_targets": requested_targets,
             "requested_features": [
                 "mock_xray_coco_mask",
-                "same_patient_mri_gt_tags",
                 "lesion_area_ratio",
                 "bbox",
             ],
@@ -213,7 +203,14 @@ class OnfhCocoMockVisualRunner:
                 "disease_target": "femoral_head_necrosis",
                 "measurements": measurements,
                 "completeness": {
-                    "xray_mask": {"status": "present", "reason": "Reviewed COCO mask exists."},
+                    "xray_mask": {
+                        "status": "present" if annotations else "absent",
+                        "reason": (
+                            "Reviewed COCO mask exists."
+                            if annotations
+                            else "No reviewed COCO mask for this Xray image; findings are empty."
+                        ),
+                    },
                 },
                 "findings": findings,
                 "structured_visual_facts": structured_facts,
@@ -221,7 +218,7 @@ class OnfhCocoMockVisualRunner:
                     {
                         "task_name": "mock_xray_coco_segmentation",
                         "target": "xray_onfh_findings",
-                        "status": "completed",
+                        "status": "completed" if findings else "no_reviewed_xray_mask",
                         "mask_path": str(mask_path),
                         "overlay_path": str(overlay_path),
                         "measurements": {"instance_count": len(findings), "area_px": total_area},
@@ -240,6 +237,7 @@ class OnfhCocoMockVisualRunner:
             "patient_key": patient_key,
             "gt_mri_tags": gt_mri_tags,
             "gt_mri_stage_by_side": gt_mri_stage_by_side,
+            "gt_xray_stage_by_side": gt_xray_stage_by_side,
             "finding_count": len(findings),
             "mask_path": str(mask_path),
             "overlay_path": str(overlay_path),
@@ -384,6 +382,45 @@ class OnfhCocoMockVisualRunner:
                 payload["frame_count"] = len(payload["frames"])
         return result
 
+    def _build_xray_stage_by_image_side(self) -> dict[int, dict[str, dict[str, Any]]]:
+        xray_tags = self.tags[self.tags["modality"].eq("Xray")].copy()
+        result: dict[int, dict[str, dict[str, Any]]] = {}
+        for row in xray_tags.itertuples(index=False):
+            side = self._side_from_tag_label(row.tag_label)
+            stage = self._stage_from_tag_label(row.tag_label)
+            if side not in SIDE_VALUES or stage is None:
+                continue
+            image_id = int(row.image_id)
+            payload = result.setdefault(image_id, {}).setdefault(
+                side,
+                {
+                    "stage": stage,
+                    "stage_values": [],
+                    "tag_labels": [],
+                    "frames": [],
+                    "aggregation": "max_severity",
+                },
+            )
+            if stage not in payload["stage_values"]:
+                payload["stage_values"].append(stage)
+            tag_label = str(row.tag_label)
+            if tag_label not in payload["tag_labels"]:
+                payload["tag_labels"].append(tag_label)
+            frame = int(row.frame)
+            if frame not in payload["frames"]:
+                payload["frames"].append(frame)
+            if STAGE_SEVERITY[stage] > STAGE_SEVERITY[payload["stage"]]:
+                payload["stage"] = stage
+        for sides in result.values():
+            for payload in sides.values():
+                payload["stage_values"] = sorted(
+                    payload["stage_values"],
+                    key=lambda value: STAGE_SEVERITY[value],
+                )
+                payload["frames"] = sorted(payload["frames"])
+                payload["frame_count"] = len(payload["frames"])
+        return result
+
     def _patient_key(self, category: Any, patient: Any) -> str:
         return f"{category}-{patient}"
 
@@ -404,11 +441,11 @@ class OnfhCocoMockVisualRunner:
     def _stage_from_tag_label(self, tag_label: Any) -> str | None:
         label = str(tag_label)
         if "III" in label:
-            return "III+"
-        if "I /II" in label or "I/II" in label:
-            return "I/II"
-        if "未见" in label:
-            return "normal"
+            return "3期"
+        if "II" in label or "I /II" in label or "I/II" in label:
+            return "2期"
+        if "未见" in label or "无明显异常" in label:
+            return "未发现异常"
         return None
 
 
@@ -454,6 +491,7 @@ def run_eval(
         evidence = result.get("visual_input_contract", {}).get("visual_evidence", {})
         local_gt_mri_tags = runner.mri_tags_by_patient_key.get(patient_key, [])
         local_gt_mri_stage_by_side = runner.mri_stage_by_patient_side.get(patient_key, {})
+        local_gt_xray_stage_by_side = runner.xray_stage_by_image_side.get(int(row.image_id), {})
         case_results.append(
             {
                 "case_id": result.get("case_id"),
@@ -467,7 +505,10 @@ def run_eval(
                 "case_memory_path": result.get("case_memory_path"),
                 "diagnostic_tendency": (result.get("report") or {}).get("diagnostic_tendency"),
                 "report_stage_text": (result.get("report") or {}).get("分期判断"),
+                "agent_final_stage": _stage_from_agent_report(result.get("report") or {}),
+                "agent_loose_stage": _stage_from_agent_report(result.get("report") or {}, loose=True),
                 "finding_count": len(evidence.get("findings", [])),
+                "gt_xray_stage_by_side": local_gt_xray_stage_by_side,
                 "gt_mri_tags": local_gt_mri_tags,
                 "gt_mri_stage_by_side": local_gt_mri_stage_by_side,
                 "mask_path": result.get("image_outputs", {}).get("mask_path")
@@ -505,9 +546,9 @@ def run_eval(
         "side_mapping": side_mapping,
         "include_mri_gt_in_visual": include_mri_gt_in_visual,
         "gt_usage": (
-            "MRI GT tags are included in visual evidence."
+            "Xray GT tags are used for primary metrics. MRI GT tags are included in visual evidence."
             if include_mri_gt_in_visual
-            else "MRI GT tags are used only after service returns for local metrics."
+            else "Xray GT tags are used for primary metrics. MRI GT tags are retained only as reference metadata."
         ),
         "runnable_xray_images": len(runner.runnable_xray_rows()),
         "evaluated_images": len(case_results),
@@ -544,9 +585,12 @@ def _build_side_level_eval(case_results: list[dict[str, Any]]) -> list[dict[str,
             ]
             targets = sorted({str(finding.get("target")) for finding in side_findings})
             labels = sorted({str(finding.get("display_name")) for finding in side_findings})
-            pred_stage = _stage_from_xray_targets(targets)
-            gt_payload = (case.get("gt_mri_stage_by_side") or {}).get(side) or {}
-            gt_stage = gt_payload.get("stage")
+            agent_final_stage = _normalize_stage(case.get("agent_final_stage"))
+            agent_loose_stage = _normalize_stage(case.get("agent_loose_stage"))
+            gt_xray_payload = (case.get("gt_xray_stage_by_side") or {}).get(side) or {}
+            gt_mri_payload = (case.get("gt_mri_stage_by_side") or {}).get(side) or {}
+            gt_xray_stage = gt_xray_payload.get("stage")
+            gt_mri_stage = gt_mri_payload.get("stage")
             side_area_px = sum(int(item.get("area_px") or 0) for item in side_measurements)
             image_area_px = int(case.get("image_area_px") or 0)
             union_bbox = _union_bbox(
@@ -566,9 +610,17 @@ def _build_side_level_eval(case_results: list[dict[str, Any]]) -> list[dict[str,
                     "image_height": case.get("image_height"),
                     "image_area_px": image_area_px,
                     "patient_side": side,
-                    "pred_stage_from_xray_mask": pred_stage,
-                    "gt_mri_stage": gt_stage,
-                    "correct": bool(pred_stage == gt_stage) if gt_stage else False,
+                    "agent_final_stage": agent_final_stage,
+                    "agent_loose_stage": agent_loose_stage,
+                    "gt_xray_stage": gt_xray_stage,
+                    "correct": bool(agent_final_stage == gt_xray_stage) if gt_xray_stage else False,
+                    "loose_correct": bool(agent_loose_stage == gt_xray_stage) if gt_xray_stage else False,
+                    "abstained": agent_final_stage == "abstain",
+                    "loose_abstained": agent_loose_stage == "abstain",
+                    "gt_mri_stage_reference": gt_mri_stage,
+                    "correct_vs_mri_reference": (
+                        bool(agent_final_stage == gt_mri_stage) if gt_mri_stage else False
+                    ),
                     "has_xray_side_mask": bool(side_findings),
                     "xray_targets": "|".join(targets),
                     "xray_labels": "|".join(labels),
@@ -586,9 +638,12 @@ def _build_side_level_eval(case_results: list[dict[str, Any]]) -> list[dict[str,
                         f"{float(item.get('area_ratio_in_image') or 0.0):.8g}"
                         for item in side_measurements
                     ),
-                    "gt_stage_values": "|".join(gt_payload.get("stage_values") or []),
-                    "gt_tag_labels": "|".join(gt_payload.get("tag_labels") or []),
-                    "gt_frame_count": gt_payload.get("frame_count", 0),
+                    "gt_xray_stage_values": "|".join(gt_xray_payload.get("stage_values") or []),
+                    "gt_xray_tag_labels": "|".join(gt_xray_payload.get("tag_labels") or []),
+                    "gt_xray_frame_count": gt_xray_payload.get("frame_count", 0),
+                    "gt_mri_stage_values_reference": "|".join(gt_mri_payload.get("stage_values") or []),
+                    "gt_mri_tag_labels_reference": "|".join(gt_mri_payload.get("tag_labels") or []),
+                    "gt_mri_frame_count_reference": gt_mri_payload.get("frame_count", 0),
                     "report_stage_text": case.get("report_stage_text"),
                     "mask_path": case.get("mask_path"),
                     "overlay_path": case.get("overlay_path"),
@@ -658,45 +713,79 @@ def _union_bbox(bboxes: list[list[Any]]) -> list[float] | None:
     return [min_x, min_y, max_x - min_x, max_y - min_y]
 
 
-def _stage_from_xray_targets(targets: list[str]) -> str:
-    target_set = set(targets)
-    if "subchondral_fracture" in target_set:
-        return "III+"
-    if target_set & {"sclerotic_band", "cystic_change", "mixed_density_region"}:
-        return "I/II"
-    return "normal"
+def _stage_from_agent_report(report: dict[str, Any], loose: bool = False) -> str:
+    stage_text = str(report.get("分期判断") or "")
+    tendency = str(report.get("diagnostic_tendency") or report.get("诊断倾向") or "")
+    text = f"{tendency}\n{stage_text}"
+    return _normalize_stage(text, loose=loose)
+
+
+def _normalize_stage(value: Any, loose: bool = False) -> str:
+    text = str(value or "")
+    if not text.strip():
+        return "abstain"
+    if text in {"未发现异常", "2期", "3期", "abstain"}:
+        return text
+    if text in {"normal", "无异常", "无明显异常"}:
+        return "未发现异常"
+    if text in {"I/II", "II", "II期", "ARCO II", "ARCO II期"}:
+        return "2期"
+    if text in {"III+", "III", "III期", "ARCO III", "ARCO III期"}:
+        return "3期"
+    if not loose and ("暂无法" in text or "不能可靠" in text or "证据不足" in text):
+        return "abstain"
+    if "III" in text or "3期" in text or "三期" in text or "软骨下骨折" in text:
+        return "3期"
+    if "II" in text or "2期" in text or "二期" in text or "I-II" in text or "I/II" in text:
+        return "2期"
+    if "塌陷" in text and not any(phrase in text for phrase in ("未见塌陷", "无塌陷", "塌陷阴性")):
+        return "3期"
+    if "未见" in text or "无明显异常" in text or "未发现异常" in text or "normal" in text.lower():
+        return "未发现异常"
+    return "abstain"
 
 
 def _side_level_metrics(rows: list[dict[str, Any]], *, side_mapping: str) -> dict[str, Any]:
-    evaluable = [row for row in rows if row.get("gt_mri_stage")]
-    correct = [row for row in evaluable if row.get("correct")]
-    by_stage: dict[str, dict[str, int]] = {}
-    confusion: dict[str, dict[str, int]] = {}
-    for row in evaluable:
-        gt_stage = str(row.get("gt_mri_stage"))
-        pred_stage = str(row.get("pred_stage_from_xray_mask"))
-        bucket = by_stage.setdefault(gt_stage, {"total": 0, "correct": 0})
-        bucket["total"] += 1
-        if row.get("correct"):
-            bucket["correct"] += 1
-        confusion.setdefault(gt_stage, {})
-        confusion[gt_stage][pred_stage] = confusion[gt_stage].get(pred_stage, 0) + 1
-    for payload in by_stage.values():
-        payload["accuracy"] = payload["correct"] / payload["total"] if payload["total"] else 0.0
+    evaluable = [row for row in rows if row.get("gt_xray_stage")]
+    
+    def _compute_metrics(pred_col: str, correct_col: str, abstain_col: str) -> dict[str, Any]:
+        correct = [row for row in evaluable if row.get(correct_col)]
+        non_abstain = [row for row in evaluable if not row.get(abstain_col)]
+        non_abstain_correct = [row for row in non_abstain if row.get(correct_col)]
+        by_stage: dict[str, dict[str, int]] = {}
+        confusion: dict[str, dict[str, int]] = {}
+        for row in evaluable:
+            gt_stage = str(row.get("gt_xray_stage"))
+            pred_stage = str(row.get(pred_col))
+            bucket = by_stage.setdefault(gt_stage, {"total": 0, "correct": 0})
+            bucket["total"] += 1
+            if row.get(correct_col):
+                bucket["correct"] += 1
+            confusion.setdefault(gt_stage, {})
+            confusion[gt_stage][pred_stage] = confusion[gt_stage].get(pred_stage, 0) + 1
+        for payload in by_stage.values():
+            payload["accuracy"] = payload["correct"] / payload["total"] if payload["total"] else 0.0
+        return {
+            "evaluable_side_cases": len(evaluable),
+            "correct": len(correct),
+            "accuracy": len(correct) / len(evaluable) if evaluable else None,
+            "abstained": len(evaluable) - len(non_abstain),
+            "coverage": len(non_abstain) / len(evaluable) if evaluable else None,
+            "non_abstain_correct": len(non_abstain_correct),
+            "non_abstain_accuracy": (
+                len(non_abstain_correct) / len(non_abstain) if non_abstain else None
+            ),
+            "by_gt_stage": by_stage,
+            "confusion": confusion,
+        }
+
     return {
         "side_cases": len(rows),
-        "evaluable_side_cases": len(evaluable),
-        "correct": len(correct),
-        "accuracy": len(correct) / len(evaluable) if evaluable else None,
-        "by_gt_stage": by_stage,
-        "confusion": confusion,
-        "prediction_rule": (
-            "subchondral_fracture -> III+; "
-            "sclerotic_band/cystic_change/mixed_density_region -> I/II; "
-            "no side mask -> normal"
-        ),
-        "gt_rule": "MRI tags aggregated per patient side by max severity: normal < I/II < III+.",
+        "prediction_rule": "Primary prediction is parsed from the original MedScope final report.",
+        "gt_rule": "Xray tags are aggregated per image side by max severity: 未发现异常 < 2期 < 3期.",
         "side_mapping": _side_mapping_description(side_mapping),
+        "agent_final_metrics": _compute_metrics("agent_final_stage", "correct", "abstained"),
+        "agent_loose_metrics": _compute_metrics("agent_loose_stage", "loose_correct", "loose_abstained"),
     }
 
 
@@ -723,9 +812,12 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--no-mri-gt-in-visual",
+        "--include-mri-gt-in-visual",
         action="store_true",
-        help="Do not include same-patient MRI GT tags inside mock visual evidence; use them only for metrics.",
+        help=(
+            "Include same-patient MRI GT tags inside mock visual evidence. "
+            "This is disabled by default and should only be used for leakage/debug checks."
+        ),
     )
     return parser.parse_args()
 
@@ -737,7 +829,7 @@ def main() -> None:
         output_dir=args.output_dir,
         limit=args.limit,
         side_mapping=args.side_mapping,
-        include_mri_gt_in_visual=not args.no_mri_gt_in_visual,
+        include_mri_gt_in_visual=args.include_mri_gt_in_visual,
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 

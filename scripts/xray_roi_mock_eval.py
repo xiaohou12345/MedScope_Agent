@@ -145,6 +145,8 @@ def _build_mock_roi_rows(
                 "roi_bbox_x2": roi.get("roi_bbox_x2"),
                 "roi_bbox_y2": roi.get("roi_bbox_y2"),
                 "gt_mri_stage": gt_stage,
+                "xray_tag_stage": roi.get("xray_tag_stage"),
+                "xray_tag_labels": roi.get("xray_tag_labels"),
                 "gt_stage_values": roi.get("gt_stage_values"),
                 "gt_tag_labels": roi.get("gt_tag_labels"),
                 "gt_frame_count": roi.get("gt_frame_count"),

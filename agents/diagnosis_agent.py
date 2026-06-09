@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
@@ -1364,7 +1363,7 @@ class DiagnosisDoctorAgent:
         if any(term in blocked_scope for term in ["无病", "排除", "正常", "阴性"]):
             markers.extend(["无病", "排除", "正常", "阴性"])
         if any(term in blocked_scope for term in ["未见异常", "X 光", "X光"]):
-            markers.append("无需补充检查")
+            markers.extend(["未见异常", "未见明显异常", "无需补充检查"])
         if any(term in blocked_scope for term in ["强化", "T1ce", "增强"]):
             markers.extend(["无强化", "未见强化", "没有强化", "强化阴性", "增强肿瘤为 0", "0 ml"])
         if any(term in blocked_scope for term in ["缺失", "missing_input", "missing", "缺少"]):
@@ -1383,59 +1382,11 @@ class DiagnosisDoctorAgent:
                 index = report_text.find(marker, search_from)
                 if index == -1:
                     break
-                if self._is_nonzero_decimal_zero_marker(report_text, index, marker):
-                    search_from = index + len(marker)
-                    continue
-                prefix = report_text[max(0, index - 80) : index]
+                prefix = report_text[max(0, index - 32) : index]
                 if not any(negation in prefix for negation in negation_markers):
-                    context = report_text[max(0, index - 80) : index + len(marker) + 80]
-                    if self._is_limited_negative_observation(marker, context):
-                        search_from = index + len(marker)
-                        continue
                     return True
                 search_from = index + len(marker)
         return False
-
-    def _is_nonzero_decimal_zero_marker(self, report_text: str, index: int, marker: str) -> bool:
-        if marker not in {"为 0", "为0"}:
-            return False
-        match = re.match(r"为\s*0\.([0-9]+)", report_text[index:])
-        return bool(match and any(ch != "0" for ch in match.group(1)))
-
-    def _is_limited_negative_observation(self, marker: str, context: str) -> bool:
-        if marker not in {
-            "阴性",
-            "正常",
-            "未见",
-            "未见异常",
-            "未见明显异常",
-            "未发现",
-            "为 0",
-            "为0",
-            "0 ml",
-            "0ml",
-        }:
-            return False
-        limitation_markers = [
-            "证据不足",
-            "不能据此",
-            "不能将",
-            "不能解释",
-            "不能作为",
-            "不能替代",
-            "不能完成",
-            "不作为",
-            "未评估",
-            "需",
-            "建议",
-            "MRI",
-            "mri",
-            "进一步",
-        ]
-        if not any(item in context for item in limitation_markers):
-            return False
-        hard_negative_markers = ["无病", "无需补充检查", "可以排除", "可排除"]
-        return not any(item in context for item in hard_negative_markers)
 
     def _report_mentions_visual_target(self, report_text: str, target: str) -> bool:
         return any(alias in report_text for alias in self._visual_target_aliases(target))

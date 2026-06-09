@@ -13,36 +13,60 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from agents.candidate_diagnosis_agent import CandidateDiagnosisAgent
+from llm.model_client import OpenAICompatibleModelClient
+from llm.prompt_runner import PromptRunner
 from tools.skill_builder_tool import SkillBuilderTool
 
 
 STAGES = {"normal", "I/II", "III+"}
 ABSTAIN_STAGE = "evidence_insufficient"
 REPORTABLE_STAGES = STAGES | {ABSTAIN_STAGE}
+XRAY_STAGES = {"normal", "II", "III"}
 
 
 def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     rows_df = pd.read_csv(args.mock_roi_rows_csv).fillna("")
-    agent = CandidateDiagnosisAgent()
+    normalizer = _normalizer_for_schema(args.stage_schema)
+    agent = _build_agent(use_prompt_runner=args.use_prompt_runner, timeout_seconds=args.llm_timeout_seconds)
     disease_skill = SkillBuilderTool().load_guideline_skill("femoral_head_necrosis")
 
     rows: list[dict[str, Any]] = []
-    for source_row in rows_df.to_dict(orient="records"):
+    source_rows = rows_df.to_dict(orient="records")
+    if args.limit is not None:
+        source_rows = source_rows[: args.limit]
+
+    for source_row in source_rows:
         visual_result = _visual_result_from_row(source_row)
-        report = agent.generate_report(
-            case_id=str(source_row.get("roi_component_id") or source_row.get("case_id") or ""),
-            patient_info={
-                "patient_id": source_row.get("patient_key"),
-                "patient_side": source_row.get("patient_side"),
-            },
-            visual_result=visual_result,
-            disease_skill=disease_skill,
-        )
+        patient_info = {
+            "patient_id": source_row.get("patient_key"),
+            "patient_side": source_row.get("patient_side"),
+        }
+        if args.lite:
+            report = agent.generate_lite_report(
+                case_id=str(source_row.get("roi_component_id") or source_row.get("case_id") or ""),
+                patient_info=patient_info,
+                findings=_findings_for_stage_schema(
+                    source_row=source_row,
+                    visual_result=visual_result,
+                    stage_schema=args.stage_schema,
+                ),
+                modality=str(visual_result.get("modality") or "xray"),
+                stage_schema=args.stage_schema,
+            )
+        else:
+            report = agent.generate_report(
+                case_id=str(source_row.get("roi_component_id") or source_row.get("case_id") or ""),
+                patient_info=patient_info,
+                visual_result=visual_result,
+                disease_skill=disease_skill,
+                stage_schema=args.stage_schema,
+                final_stage_mode=args.final_stage_mode,
+            )
         agent_dx = report.get("onfh_agent_diagnosis") or {}
         visual_model = report.get("onfh_visual_model_result") or {}
-        gt_stage = _normalize_stage(source_row.get("gt_mri_stage"))
+        gt_stage = normalizer(source_row.get(args.gt_stage_column))
         rows.append(
             {
                 "roi_component_id": source_row.get("roi_component_id"),
@@ -52,24 +76,30 @@ def main() -> None:
                 "patient_side": source_row.get("patient_side"),
                 "crop_path": source_row.get("crop_path"),
                 "gt_mri_stage": gt_stage,
-                "mock_mask_stage": _normalize_stage(source_row.get("pred_stage_from_mock_mask")),
-                "visual_model_stage": _normalize_stage(visual_model.get("stage")),
-                "diagnosis_agent_stage": _normalize_stage(agent_dx.get("stage")),
-                "diagnosis_agent_candidate_stage": _normalize_stage(agent_dx.get("candidate_stage")),
+                "gt_stage_column": args.gt_stage_column,
+                "stage_schema": args.stage_schema,
+                "final_stage_mode": args.final_stage_mode,
+                "xray_tag_stage": source_row.get("xray_tag_stage"),
+                "xray_tag_labels": source_row.get("xray_tag_labels"),
+                "mock_mask_stage": normalizer(source_row.get("pred_stage_from_mock_mask")),
+                "visual_model_stage": normalizer(visual_model.get("stage")),
+                "diagnosis_agent_stage": normalizer(agent_dx.get("stage")),
+                "diagnosis_agent_candidate_stage": normalizer(agent_dx.get("candidate_stage")),
                 "diagnosis_agent_abstained": bool(agent_dx.get("abstained")),
                 "diagnosis_agent_confidence": agent_dx.get("confidence"),
                 "diagnosis_agent_uncertainty_status": agent_dx.get("uncertainty_status"),
                 "diagnosis_agent_report_stage_text": agent_dx.get("report_stage_text"),
                 "diagnosis_agent_diagnostic_tendency": agent_dx.get("diagnostic_tendency"),
+                "lite_mode": bool(report.get("lite_mode")),
                 "basis_targets": "|".join(visual_model.get("basis_targets") or []),
                 "basis_text": "|".join(visual_model.get("basis_text") or [])[:1000],
                 "mock_xray_targets": source_row.get("mock_xray_targets"),
                 "mock_xray_labels": source_row.get("mock_xray_labels"),
                 "mock_xray_instance_count": source_row.get("mock_xray_instance_count"),
-                "mock_mask_stage_correct": _normalize_stage(source_row.get("pred_stage_from_mock_mask")) == gt_stage,
-                "visual_model_stage_correct": _normalize_stage(visual_model.get("stage")) == gt_stage,
-                "diagnosis_agent_stage_correct": _normalize_stage(agent_dx.get("stage")) == gt_stage,
-                "diagnosis_agent_candidate_stage_correct": _normalize_stage(
+                "mock_mask_stage_correct": normalizer(source_row.get("pred_stage_from_mock_mask")) == gt_stage,
+                "visual_model_stage_correct": normalizer(visual_model.get("stage")) == gt_stage,
+                "diagnosis_agent_stage_correct": normalizer(agent_dx.get("stage")) == gt_stage,
+                "diagnosis_agent_candidate_stage_correct": normalizer(
                     agent_dx.get("candidate_stage")
                 )
                 == gt_stage,
@@ -81,11 +111,11 @@ def main() -> None:
     rows_csv = args.output_dir / "mock_roi_diagnosis_agent_rows.csv"
     out_rows.to_csv(rows_csv, index=False)
 
-    metrics_df = _metrics_table(out_rows)
+    metrics_df = _metrics_table(out_rows, normalizer=normalizer)
     metrics_csv = args.output_dir / "mock_roi_diagnosis_agent_metrics.csv"
     metrics_df.to_csv(metrics_csv, index=False)
 
-    patient_rows, patient_metrics = _patient_side_tables(out_rows)
+    patient_rows, patient_metrics = _patient_side_tables(out_rows, normalizer=normalizer)
     patient_rows_csv = args.output_dir / "mock_roi_diagnosis_agent_patient_side_rows.csv"
     patient_metrics_csv = args.output_dir / "mock_roi_diagnosis_agent_patient_side_metrics.csv"
     patient_rows.to_csv(patient_rows_csv, index=False)
@@ -94,6 +124,11 @@ def main() -> None:
     summary = {
         "status": "ok",
         "mode": "mock_roi_diagnosis_agent_eval",
+        "lite_mode": bool(args.lite),
+        "use_prompt_runner": bool(args.use_prompt_runner),
+        "stage_schema": args.stage_schema,
+        "final_stage_mode": args.final_stage_mode,
+        "gt_stage_column": args.gt_stage_column,
         "mock_roi_rows_csv": str(args.mock_roi_rows_csv),
         "output_dir": str(args.output_dir),
         "rows_csv": str(rows_csv),
@@ -121,7 +156,48 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("output/fake/onfh_mock_roi_diagnosis_agent_eval_20260608"),
     )
+    parser.add_argument(
+        "--lite",
+        action="store_true",
+        help="Use findings-only CandidateDiagnosisAgent lite mode instead of the full base report path.",
+    )
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--use-prompt-runner",
+        action="store_true",
+        help="Inject PromptRunner(OpenAICompatibleModelClient) for full mode. Lite mode remains local findings-only.",
+    )
+    parser.add_argument("--llm-timeout-seconds", type=int, default=180)
+    parser.add_argument(
+        "--stage-schema",
+        choices=["mri_arco_3class", "xray_arco_3class"],
+        default="mri_arco_3class",
+    )
+    parser.add_argument(
+        "--gt-stage-column",
+        choices=["gt_mri_stage", "xray_tag_stage"],
+        default="gt_mri_stage",
+    )
+    parser.add_argument(
+        "--final-stage-mode",
+        choices=["conservative", "llm_final"],
+        default="conservative",
+        help="Only affects full mode. llm_final scores provisional stages parsed from the full diagnosis report.",
+    )
     return parser.parse_args()
+
+
+def _build_agent(*, use_prompt_runner: bool, timeout_seconds: int) -> CandidateDiagnosisAgent:
+    if not use_prompt_runner:
+        return CandidateDiagnosisAgent()
+    return CandidateDiagnosisAgent(
+        prompt_runner=PromptRunner(
+            model_client=OpenAICompatibleModelClient(
+                timeout_seconds=timeout_seconds,
+                responses_stream=True,
+            )
+        )
+    )
 
 
 def _visual_result_from_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -156,9 +232,9 @@ def _visual_result_from_row(row: dict[str, Any]) -> dict[str, Any]:
         "body_part": "hip",
         "image_outputs": {
             "original_image_path": image_path,
-            "mask_path": str(row.get("mask_path") or ""),
-            "overlay_path": str(row.get("overlay_path") or ""),
-            "visualization_path": str(row.get("overlay_path") or ""),
+            "mask_path": str(row.get("mask_path") or image_path),
+            "overlay_path": str(row.get("overlay_path") or image_path),
+            "visualization_path": str(row.get("overlay_path") or image_path),
         },
         "requested_targets": sorted({finding["target"] for finding in findings}),
         "visual_evidence": {
@@ -193,7 +269,40 @@ def _visual_result_from_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _metrics_table(rows_df: pd.DataFrame) -> pd.DataFrame:
+def _findings_for_stage_schema(
+    *,
+    source_row: dict[str, Any],
+    visual_result: dict[str, Any],
+    stage_schema: str,
+) -> list[dict[str, Any]]:
+    findings = list((visual_result.get("visual_evidence") or {}).get("findings") or [])
+    if findings or stage_schema != "xray_arco_3class":
+        return findings
+    if _normalize_xray_stage(source_row.get("xray_tag_stage")) != "normal":
+        return findings
+    return [
+        {
+            "finding_id": f"mock_roi_{source_row.get('roi_component_id')}_negative_xray",
+            "target": "no_xray_onfh_finding",
+            "display_name": "Xray 未见明确 ONFH 征象",
+            "status": "negative",
+            "diagnosis_usable": True,
+            "independent_evidence": True,
+            "summary_text": (
+                f"{source_row.get('patient_side')} reviewed Xray mask 未标出硬化带、"
+                "囊性变、软骨下骨折或塌陷候选征象"
+            ),
+            "measurements": {
+                "patient_side": source_row.get("patient_side"),
+                "roi_component_id": source_row.get("roi_component_id"),
+                "mock_xray_instance_count": 0,
+            },
+        }
+    ]
+
+
+def _metrics_table(rows_df: pd.DataFrame, *, normalizer=None) -> pd.DataFrame:
+    normalizer = normalizer or _normalize_stage
     rows = []
     for field in [
         "mock_mask_stage",
@@ -201,17 +310,22 @@ def _metrics_table(rows_df: pd.DataFrame) -> pd.DataFrame:
         "diagnosis_agent_stage",
         "diagnosis_agent_candidate_stage",
     ]:
-        rows.append({"scope": "roi_visible_side", "prediction": field, **_metrics(rows_df, field)})
+        rows.append({"scope": "roi_visible_side", "prediction": field, **_metrics(rows_df, field, normalizer=normalizer)})
     return pd.DataFrame(rows)
 
 
-def _patient_side_tables(rows_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _patient_side_tables(
+    rows_df: pd.DataFrame,
+    *,
+    normalizer=None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    normalizer = normalizer or _normalize_stage
     records = []
     for (patient_key, patient_side), group in rows_df.groupby(["patient_key", "patient_side"]):
         record = {
             "patient_key": patient_key,
             "patient_side": patient_side,
-            "gt_mri_stage": _max_stage(group["gt_mri_stage"]),
+            "gt_mri_stage": _max_stage(group["gt_mri_stage"], normalizer=normalizer),
             "source_roi_count": len(group),
             "roi_component_ids": "|".join(str(v) for v in group["roi_component_id"].dropna()),
         }
@@ -221,7 +335,7 @@ def _patient_side_tables(rows_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFr
             "diagnosis_agent_stage",
             "diagnosis_agent_candidate_stage",
         ]:
-            record[field] = _max_stage(group[field])
+            record[field] = _max_stage(group[field], normalizer=normalizer)
             record[f"{field}_correct"] = record[field] == record["gt_mri_stage"]
         records.append(record)
     patient_rows = pd.DataFrame(records)
@@ -236,16 +350,17 @@ def _patient_side_tables(rows_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFr
             {
                 "scope": "patient_side_dedup",
                 "prediction": field,
-                **_metrics(patient_rows, field),
+                **_metrics(patient_rows, field, normalizer=normalizer),
             }
         )
     return patient_rows, pd.DataFrame(metric_rows)
 
 
-def _metrics(rows_df: pd.DataFrame, pred_col: str) -> dict[str, Any]:
+def _metrics(rows_df: pd.DataFrame, pred_col: str, *, normalizer=None) -> dict[str, Any]:
+    normalizer = normalizer or _normalize_stage
     total = len(rows_df)
-    pred = rows_df[pred_col].map(_normalize_stage)
-    gt = rows_df["gt_mri_stage"].map(_normalize_stage)
+    pred = rows_df[pred_col].map(normalizer)
+    gt = rows_df["gt_mri_stage"].map(normalizer)
     abstain = pred.eq(ABSTAIN_STAGE)
     covered = ~abstain
     covered_total = int(covered.sum())
@@ -280,12 +395,14 @@ def _metrics(rows_df: pd.DataFrame, pred_col: str) -> dict[str, Any]:
     }
 
 
-def _max_stage(values: Any) -> str:
+def _max_stage(values: Any, *, normalizer=None) -> str:
+    normalizer = normalizer or _normalize_stage
     best = ABSTAIN_STAGE
     best_rank = -1
+    rank_map = _rank_for_normalizer(normalizer)
     for value in values:
-        stage = _normalize_stage(value)
-        rank = {ABSTAIN_STAGE: -1, "normal": 0, "I/II": 1, "III+": 2}.get(stage, -1)
+        stage = normalizer(value)
+        rank = rank_map.get(stage, -1)
         if rank > best_rank:
             best = stage
             best_rank = rank
@@ -301,6 +418,31 @@ def _normalize_stage(value: Any) -> str:
     if "I/II" in text or "I /II" in text or "II" in text or "硬化" in text or "囊" in text:
         return "I/II"
     return "normal" if text == "normal" else "evidence_insufficient"
+
+
+def _normalize_xray_stage(value: Any) -> str:
+    text = str(value or "").strip()
+    if text in {"normal", "II", "III", "evidence_insufficient"}:
+        return text
+    if "III" in text or "塌陷" in text or "新月" in text or "软骨下" in text:
+        return "III"
+    if "I/II" in text or "I /II" in text or "II" in text or "硬化" in text or "囊" in text:
+        return "II"
+    if text == "normal" or "无明显异常" in text or "未见" in text:
+        return "normal"
+    return "evidence_insufficient"
+
+
+def _normalizer_for_schema(stage_schema: str):
+    if stage_schema == "xray_arco_3class":
+        return _normalize_xray_stage
+    return _normalize_stage
+
+
+def _rank_for_normalizer(normalizer) -> dict[str, int]:
+    if normalizer is _normalize_xray_stage:
+        return {ABSTAIN_STAGE: -1, "normal": 0, "II": 1, "III": 2}
+    return {ABSTAIN_STAGE: -1, "normal": 0, "I/II": 1, "III+": 2}
 
 
 def _float(value: Any) -> float:

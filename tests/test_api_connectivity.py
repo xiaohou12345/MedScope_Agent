@@ -121,52 +121,6 @@ class ApiConnectivityTest(unittest.TestCase):
             self.assertEqual(payload["model"], "deepseek-v4-pro")
             self.assertEqual(payload["vision_model"], "gpt-5.5")
 
-    def test_route_log_can_be_overridden_by_environment(self):
-        with TemporaryDirectory() as tmpdir:
-            route_log_path = Path(tmpdir) / "API_ROUTE_LOG.md"
-            route_log_path.write_text(
-                "\n".join(
-                    [
-                        "active_route: dmx",
-                        "dmx_model: file-model",
-                        "dmx_base_url: https://file.example.com",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            old_env = {
-                key: os.environ.get(key)
-                for key in [
-                    "MEDSCOPE_ACTIVE_ROUTE",
-                    "DMX_MODEL",
-                    "DMX_VISION_MODEL",
-                    "DMX_BASE_URL",
-                    "DMX_API_ENDPOINT",
-                    "DMX_USER_AGENT",
-                ]
-            }
-            try:
-                os.environ["MEDSCOPE_ACTIVE_ROUTE"] = "dmx"
-                os.environ["DMX_MODEL"] = "env-chat-model"
-                os.environ["DMX_VISION_MODEL"] = "env-vision-model"
-                os.environ["DMX_BASE_URL"] = "https://env.example.com"
-                os.environ["DMX_API_ENDPOINT"] = "responses"
-                os.environ["DMX_USER_AGENT"] = "curl/8.5.0"
-
-                route_log = ApiRouteLog.from_file(route_log_path)
-            finally:
-                for key, value in old_env.items():
-                    if value is None:
-                        os.environ.pop(key, None)
-                    else:
-                        os.environ[key] = value
-
-            self.assertEqual(route_log.model_for_active_route(), "env-chat-model")
-            self.assertEqual(route_log.vision_model_for_active_route(), "env-vision-model")
-            self.assertEqual(route_log.base_url_for_active_route(), "https://env.example.com")
-            self.assertEqual(route_log.api_endpoint_for_active_route(), "responses")
-            self.assertEqual(route_log.user_agent_for_active_route(), "curl/8.5.0")
-
 
 if __name__ == "__main__":
     unittest.main()

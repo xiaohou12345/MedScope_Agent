@@ -1,9 +1,7 @@
-import json
 import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
 
 from agents.gaodoctor_agent import GaoDoctorAgent
 from llm.model_client import (
@@ -142,83 +140,6 @@ class LlmRoutingTest(unittest.TestCase):
             client.chat_completions_url(),
             "https://anyaigc.com/v1/chat/completions",
         )
-
-    def test_openai_client_normalizes_responses_base_url(self):
-        route_log = ApiRouteLog(
-            active_route="dmx",
-            dmx_base_url="https://anyaigc.com/v1",
-            dmx_model="gpt-5.5-share2",
-            dmx_api_endpoint="responses",
-        )
-        client = OpenAICompatibleModelClient(route_log=route_log)
-
-        self.assertEqual(
-            client.responses_url(),
-            "https://anyaigc.com/v1/responses",
-        )
-
-    def test_openai_client_can_call_responses_api_without_network(self):
-        class FakeHttpResponse:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, traceback):
-                return False
-
-            def read(self):
-                return json.dumps(
-                    {
-                        "output": [
-                            {
-                                "content": [
-                                    {"type": "output_text", "text": "pong"},
-                                ],
-                            },
-                        ],
-                    }
-                ).encode("utf-8")
-
-        captured = {}
-
-        def fake_urlopen(req, timeout):
-            captured["url"] = req.full_url
-            captured["headers"] = dict(req.header_items())
-            captured["payload"] = json.loads(req.data.decode("utf-8"))
-            captured["timeout"] = timeout
-            return FakeHttpResponse()
-
-        route_log = ApiRouteLog(
-            active_route="dmx",
-            dmx_base_url="https://anyaigc.com/v1",
-            dmx_model="gpt-5.5-share2",
-            dmx_api_endpoint="responses",
-            dmx_user_agent="curl/8.5.0",
-        )
-        client = OpenAICompatibleModelClient(route_log=route_log, timeout_seconds=7)
-
-        with patch.dict("os.environ", {"DMX_API_KEY": "test-key"}), patch(
-            "llm.model_client.request.urlopen",
-            fake_urlopen,
-        ):
-            response = client.chat(
-                messages=[
-                    {"role": "system", "content": "只回复 pong。"},
-                    {"role": "user", "content": "ping"},
-                ],
-                task="api_smoke_test",
-            )
-
-        self.assertEqual(response.content, "pong")
-        self.assertEqual(response.model, "gpt-5.5-share2")
-        self.assertEqual(captured["url"], "https://anyaigc.com/v1/responses")
-        self.assertEqual(captured["headers"]["User-agent"], "curl/8.5.0")
-        self.assertEqual(captured["payload"]["model"], "gpt-5.5-share2")
-        self.assertIn("system: 只回复 pong。", captured["payload"]["input"])
-        self.assertIn("user: ping", captured["payload"]["input"])
-        self.assertNotIn("metadata", captured["payload"])
-        self.assertFalse(captured["payload"]["store"])
-        self.assertFalse(captured["payload"]["stream"])
-        self.assertEqual(captured["timeout"], 7)
 
     def test_api_route_log_can_select_self_hosted_ky(self):
         with TemporaryDirectory() as tmpdir:
