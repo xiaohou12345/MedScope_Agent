@@ -38,17 +38,19 @@
    - **VLM 幻觉 (High False Positive):** 在“未发现异常”的病例中，Real VLM 和 Mixed 组均产生了极高的误诊率（约 80%），这表明 VLM 模型在没有任何病理征象的情况下倾向于过度报告征象。
    - **VLM 漏诊 (High False Negative):** Real VLM 组在 3 期塌陷病例上的极低识别率证明其未能捕捉到“塌陷”这一关键晚期特征。
 
-## 近期修复记录 (2026-06-09)
+## 实验适配记录 (2026-06-09)
 
-在实验评估过程中，发现 Xray findings 到诊断 evidence 的映射存在逻辑偏差，已完成以下适配：
+在实验评估过程中，发现 Xray findings 到诊断 evidence 的映射存在逻辑偏差，已完成以下评估脚本侧适配。注意：这不是改写 `DiagnosisDoctorAgent` 的 ONFH 硬编码分期规则，而是让评估 runner 输出该诊断链路已经能识别的 evidence 形态。
 
 1. **结构性破坏特征映射:**
-   - 将 `subchondral_fracture` (软骨下骨折) 和 `crescent_sign` (新月征) 作为 Xray 结构性改变 findings 处理，并在评估 runner 中映射为可被诊断链路识别的塌陷/结构性改变 evidence。
-   - 这样可以避免关键 3期相关 findings 在后续诊断链路中被当作证据不足而丢失。
+   - `DiagnosisDoctorAgent` 的规则本体只直接识别 `target == "collapse"` 作为塌陷候选。
+   - 因此，评估 runner 将 `subchondral_fracture` (软骨下骨折) 和 `crescent_sign` (新月征) 这类 Xray 结构性改变 findings 映射为诊断链路可识别的 `collapse`/结构性改变 evidence。
+   - 这样可以避免关键 3期相关 findings 在后续诊断链路中被当作无关 target 而丢失。
 
-2. **描述逻辑优化:** 
-   - 修正了二期病例的负向描述模板。原先的 `"未见明确塌陷及软骨下骨折"` 描述会导致评估脚本的正则解析器误将二期识别为三期（因为命中了“软骨下骨折”词条）。
-   - 现已替换为 `"未见明确塌陷等晚期征象"`，在保持医学逻辑严谨的前提下，通过了自动化评测的类别解析要求。
+2. **最终报告解析口径:**
+   - 本实验的主结果来自 `DiagnosisDoctorAgent`/`ReportAgent` 的最终报告文本。
+   - `agent_final_stage` 采用保守解析；`agent_loose_stage` 允许从同一份报告的分期倾向文本中解析 provisional stage。
+   - 这不是额外诊断 Agent，也不是独立 visual-stage 旁路；它只是对最终报告文本的评分解析口径。
 
 ## 原流程规则逻辑 (Rule-based Logic)
 
@@ -59,13 +61,13 @@
 | 征象分类 | 适配前 | 适配后 |
 | :--- | :--- | :--- |
 | **塌陷/骨折/新月征** | 部分 Xray target 无法被诊断规则识别 | 在视觉 runner 中映射为结构性改变/塌陷相关 evidence |
-| **报告文本** | 容易被证据不足或保守表述覆盖 | 最终报告中保留可解析的 ARCO II/III 倾向 |
+| **报告文本** | 保守报告可能同时包含分期倾向和证据限制 | 评分时区分 `agent_final_stage` 与 `agent_loose_stage` 两种解析口径 |
 | **诊断倾向** | 大量输出暂无法可靠分期 | 能基于结构化 findings 输出 Xray 三分类倾向 |
 
 ### 核心规则链与“三期”判断机制
-1. **结构性改变 (Advanced):** 识别 `collapse`, `subchondral_fracture`, `crescent_sign`。触发 `ARCO II/III 边界复核` 的报告生成。
-   - *说明：* Agent 本身不强制硬编码“这是三期”，而是根据征象描述“进入结构性改变期”。
-   - *解析：* 评估脚本通过解析报告中的关键词（如“III”、“塌陷”、“新月征”）自动将其映射为 GT 中的“3期”。
+1. **结构性改变 (Advanced):** `DiagnosisDoctorAgent` 本体识别 `collapse`。`subchondral_fracture`、`crescent_sign` 由评估 runner 映射到可识别的结构性改变/塌陷 evidence 后，触发 `ARCO II/III 边界复核` 的报告生成。
+   - *说明：* Agent 本身不强制硬编码“这是三期”，而是根据结构性改变 evidence 输出分期倾向。
+   - *解析：* 评估脚本从最终报告文本解析三分类预测。
 2. **早期病变 (FHN Support):** 识别 `sclerotic_band`, `cystic_change` 等。触发 `倾向 ARCO II`。
 3. **纹理模式 (Early Pattern):** 识别 `trabecular_blurring` + 症状。触发 `倾向 ARCO I-II`。
 4. **兜底 (Abstain):** 证据不足时统一输出 `暂无法可靠分期`。
