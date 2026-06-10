@@ -38,13 +38,14 @@
    - **VLM 幻觉 (High False Positive):** 在“未发现异常”的病例中，Real VLM 和 Mixed 组均产生了极高的误诊率（约 80%），这表明 VLM 模型在没有任何病理征象的情况下倾向于过度报告征象。
    - **VLM 漏诊 (High False Negative):** Real VLM 组在 3 期塌陷病例上的极低识别率证明其未能捕捉到“塌陷”这一关键晚期特征。
 
-## 实验适配记录 (2026-06-09)
+## 实验适配记录 (2026-06-09, 2026-06-10 对齐)
 
 在实验评估过程中，发现 Xray findings 到诊断 evidence 的映射存在逻辑偏差，已完成以下评估脚本侧适配。注意：这不是改写 `DiagnosisDoctorAgent` 的 ONFH 硬编码分期规则，而是让评估 runner 输出该诊断链路已经能识别的 evidence 形态。
 
 1. **结构性破坏特征映射:**
    - `DiagnosisDoctorAgent` 的规则本体只直接识别 `target == "collapse"` 作为塌陷候选。
-   - 因此，评估 runner 将 `subchondral_fracture` (软骨下骨折) 和 `crescent_sign` (新月征) 这类 Xray 结构性改变 findings 映射为诊断链路可识别的 `collapse`/结构性改变 evidence。
+   - 因此，评估 runner 将 `collapse`、`subchondral_fracture` (软骨下骨折) 和 `crescent_sign` (新月征) 统一归一为诊断链路可识别的 `collapse`/结构性改变 evidence。
+   - Pure Mock、Real VLM 和 Mixed 三条评估路径现在共用同一套结构性塌陷 target 集合，避免不同 runner 对 `collapse` 的处理不一致。
    - 这样可以避免关键 3期相关 findings 在后续诊断链路中被当作无关 target 而丢失。
 
 2. **最终报告解析口径:**
@@ -65,7 +66,7 @@
 | **诊断倾向** | 大量输出暂无法可靠分期 | 能基于结构化 findings 输出 Xray 三分类倾向 |
 
 ### 核心规则链与“三期”判断机制
-1. **结构性改变 (Advanced):** `DiagnosisDoctorAgent` 本体识别 `collapse`。`subchondral_fracture`、`crescent_sign` 由评估 runner 映射到可识别的结构性改变/塌陷 evidence 后，触发 `ARCO II/III 边界复核` 的报告生成。
+1. **结构性改变 (Advanced):** `DiagnosisDoctorAgent` 本体识别 `collapse`。`collapse`、`subchondral_fracture`、`crescent_sign` 由评估 runner 统一归一到可识别的结构性改变/塌陷 evidence 后，触发 `ARCO II/III 边界复核` 的报告生成。
    - *说明：* Agent 本身不强制硬编码“这是三期”，而是根据结构性改变 evidence 输出分期倾向。
    - *解析：* 评估脚本从最终报告文本解析三分类预测。
 2. **早期病变 (FHN Support):** 识别 `sclerotic_band`, `cystic_change` 等。触发 `倾向 ARCO II`。

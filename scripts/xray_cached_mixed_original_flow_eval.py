@@ -14,7 +14,11 @@ if str(PROJECT_ROOT) not in sys.path:
 from api.service import MedScopeService
 from agents.gaodoctor_agent import GaoDoctorAgent
 from scripts.no_mask_vision_prompt_demo import _load_dotenv_local
-from scripts.xray_mask_mock_eval import _stage_from_agent_report
+from scripts.xray_mask_mock_eval import (
+    _has_structural_collapse_target,
+    _stage_from_agent_report,
+    normalize_structural_collapse_findings,
+)
 
 DEFAULT_MOCK_ROWS_CSV = Path(
     "output/fake/xray_34tag_side_mock_roi_level_20260609/mock_roi_side_rows.csv"
@@ -31,7 +35,7 @@ class CachedFindingsVisualRunner:
         self.current_visual_output_mode = "unknown"
 
     def set_findings(self, findings: list[dict[str, Any]], visual_output_mode: str):
-        self.current_findings = findings
+        self.current_findings = normalize_structural_collapse_findings(findings)
         self.current_visual_output_mode = visual_output_mode
 
     def __call__(
@@ -81,7 +85,7 @@ class CachedFindingsVisualRunner:
                     "findings": self.current_findings,
                     "structured_visual_facts": self.current_findings,
                     "suspected_visual_findings": suspected,
-                    "collapse": bool(positive_targets & {"collapse", "subchondral_fracture", "crescent_sign"}),
+                    "collapse": _has_structural_collapse_target(self.current_findings),
                     "sclerosis": bool("sclerotic_band" in positive_targets),
                     "cystic_change": bool("cystic_change" in positive_targets),
                     "joint_space_narrowing": False,
@@ -140,6 +144,7 @@ def _mock_visual_result_from_row(row: dict[str, Any]) -> dict[str, Any]:
                 "summary_text": f"{row.get('patient_side')} {label} from reviewed mock GT mask",
             }
         )
+    findings = normalize_structural_collapse_findings(findings)
     image_path = str(row.get("crop_path") or row.get("image_path") or "mock_roi.png")
     suspected = [finding["summary_text"] for finding in findings]
     if not suspected:
@@ -155,7 +160,7 @@ def _mock_visual_result_from_row(row: dict[str, Any]) -> dict[str, Any]:
         },
         "requested_targets": sorted({finding["target"] for finding in findings}),
         "visual_evidence": {
-            "collapse": any(f["target"] in {"collapse", "subchondral_fracture"} for f in findings),
+            "collapse": _has_structural_collapse_target(findings),
             "sclerosis": any(f["target"] == "sclerotic_band" for f in findings),
             "cystic_change": any(f["target"] == "cystic_change" for f in findings),
             "joint_space_narrowing": False,
@@ -232,7 +237,7 @@ def _vlm_findings_for_side(vlm_row: pd.Series, mock_row: dict[str, Any]) -> list
                 },
             }
         )
-    return findings
+    return normalize_structural_collapse_findings(findings)
 
 
 def _normalize_gt_xray(value: Any) -> str:

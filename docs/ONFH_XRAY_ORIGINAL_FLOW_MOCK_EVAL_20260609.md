@@ -138,16 +138,16 @@ The current original-flow mock run was:
 ```bash
 python scripts/xray_mask_mock_eval.py \
   --export-dir /data/gongwenxin/datasets/onfh/cjfh/exports/onfh_mri_xray_coco_instances_clean_20260605 \
-  --output-dir output/fake/original_flow_full_mock_xray_gt_agent_final_20260609_xray3class \
+  --output-dir output/fake/original_flow_full_mock_xray_gt_agent_final_20260610_collapse_aligned \
   --side-mapping ap_flip
 ```
 
 Output files:
 
 ```text
-output/fake/original_flow_full_mock_xray_gt_agent_final_20260609_xray3class/summary.json
-output/fake/original_flow_full_mock_xray_gt_agent_final_20260609_xray3class/side_level_eval.csv
-output/fake/original_flow_full_mock_xray_gt_agent_final_20260609_xray3class/instance_level_visual_outputs.csv
+output/fake/original_flow_full_mock_xray_gt_agent_final_20260610_collapse_aligned/summary.json
+output/fake/original_flow_full_mock_xray_gt_agent_final_20260610_collapse_aligned/side_level_eval.csv
+output/fake/original_flow_full_mock_xray_gt_agent_final_20260610_collapse_aligned/instance_level_visual_outputs.csv
 ```
 
 ## Primary Metric Definition
@@ -220,6 +220,8 @@ GT 2期       -> abstain: 0, 3期: 7, 2期: 4
 ## Interpretation
 
 The initial experiments with the original service chain yielded 11.76% accuracy and 17.65% coverage because critical Xray mock targets such as `subchondral_fracture` were not being carried forward as diagnosis-usable structural evidence. After adapting this mapping, the service chain forwards these findings as "ARCO III" or "ARCO II" tendencies.
+
+The 2026-06-10 rerun aligned structural collapse handling across all active Xray evaluation paths. The shared runner-side rule treats `collapse`, `subchondral_fracture`, and `crescent_sign` as structural collapse evidence and normalizes them to the `collapse` target expected by `DiagnosisDoctorAgent`, while preserving the original target in metadata for audit.
 
 The `loose` parsing mechanism extracts these tendency texts from the same final report when the report includes conservative disclaimers. It yields 47% end-to-end accuracy and 73.5% coverage without replacing `DiagnosisDoctorAgent` or `ReportAgent`.
 

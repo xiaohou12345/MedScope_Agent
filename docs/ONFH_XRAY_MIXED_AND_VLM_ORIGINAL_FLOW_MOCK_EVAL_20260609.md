@@ -16,6 +16,8 @@ The evaluation relies on the same strict minimal-replacement paradigm:
 
 Due to recent ONFH Xray adaptations in the visual findings to diagnosis evidence mapping, the service flow can emit "ARCO II" or "ARCO III" tendencies from structured Xray findings instead of abstaining in most positive cases. Therefore, the "loose" parser produces identical results to the "final" strict parser in this run.
 
+The 2026-06-10 rerun uses the same structural collapse normalization as the pure Mock runner: `collapse`, `subchondral_fracture`, and `crescent_sign` are treated consistently as collapse/structural-change evidence before entering the original diagnosis/report chain.
+
 ## Data Source
 - **Number of evaluated Xray ROIs:** 34 side-level GT cases.
 - **GT Distribution (Xray Modality):**
@@ -29,8 +31,8 @@ Due to recent ONFH Xray adaptations in the visual findings to diagnosis evidence
 python scripts/xray_cached_mixed_original_flow_eval.py
 ```
 Output files:
-- `output/fake/xray_34tag_side_mixed_original_flow_20260609/eval_rows.csv`
-- `output/fake/xray_34tag_side_mixed_original_flow_20260609/summary.json`
+- `output/fake/xray_34tag_side_mixed_original_flow_20260610_collapse_aligned/eval_rows.csv`
+- `output/fake/xray_34tag_side_mixed_original_flow_20260610_collapse_aligned/summary.json`
 
 ## Results Summary
 

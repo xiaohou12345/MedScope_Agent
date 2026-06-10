@@ -49,6 +49,38 @@ STAGE_SEVERITY = {
 }
 
 SIDE_VALUES = ("左", "右")
+STRUCTURAL_COLLAPSE_TARGETS = frozenset(
+    {"collapse", "subchondral_fracture", "crescent_sign"}
+)
+
+
+def normalize_structural_collapse_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for finding in findings:
+        item = dict(finding)
+        target = str(item.get("target") or "")
+        if target in STRUCTURAL_COLLAPSE_TARGETS and target != "collapse":
+            item["original_target"] = target
+            item["target"] = "collapse"
+            measurements = dict(item.get("measurements") or {})
+            measurements.setdefault("original_target", target)
+            measurements["structural_collapse_target"] = target
+            item["measurements"] = measurements
+            item.setdefault("evidence_mapping", "structural_target_to_collapse")
+        normalized.append(item)
+    return normalized
+
+
+def _has_structural_collapse_target(findings: list[dict[str, Any]]) -> bool:
+    targets = {
+        str(finding.get("target") or finding.get("original_target") or "")
+        for finding in findings
+    }
+    targets.update(
+        str((finding.get("measurements") or {}).get("original_target") or "")
+        for finding in findings
+    )
+    return bool(targets & STRUCTURAL_COLLAPSE_TARGETS)
 
 
 class OnfhCocoMockVisualRunner:
@@ -140,14 +172,15 @@ class OnfhCocoMockVisualRunner:
         image = Image.open(row.absolute_path).convert("RGB")
         mask_path = output / f"image_{image_id}_mock_mask.png"
         overlay_path = output / f"image_{image_id}_mock_overlay.png"
-        findings = self._write_masks_and_build_findings(
+        raw_findings = self._write_masks_and_build_findings(
             image=image,
             annotations=annotations,
             mask_path=mask_path,
             overlay_path=overlay_path,
         )
+        findings = normalize_structural_collapse_findings(raw_findings)
         structured_facts = build_structured_visual_facts(findings)
-        total_area = sum(int(finding["measurements"]["area_px"]) for finding in findings)
+        total_area = sum(int(finding["measurements"]["area_px"]) for finding in raw_findings)
         image_area = max(int(row.width) * int(row.height), 1)
         requested_targets = sorted({str(finding["target"]) for finding in findings})
         suspected_findings = [
@@ -184,7 +217,7 @@ class OnfhCocoMockVisualRunner:
             },
             "visual_evidence": {
                 "femoral_head_shape": "未评估",
-                "collapse": any(f["target"] == "subchondral_fracture" for f in findings),
+                "collapse": _has_structural_collapse_target(findings),
                 "sclerosis": "候选阳性" if any(f["target"] == "sclerotic_band" for f in findings) else "未见标注",
                 "cystic_change": "候选阳性" if any(f["target"] == "cystic_change" for f in findings) else "未见标注",
                 "joint_space_narrowing": False,
@@ -221,7 +254,7 @@ class OnfhCocoMockVisualRunner:
                         "status": "completed" if findings else "no_reviewed_xray_mask",
                         "mask_path": str(mask_path),
                         "overlay_path": str(overlay_path),
-                        "measurements": {"instance_count": len(findings), "area_px": total_area},
+                        "measurements": {"instance_count": len(raw_findings), "area_px": total_area},
                         "quality": {"level": "gt_reviewed_mock"},
                         "completeness": {"status": "present"},
                         "diagnosis_usable": True,
@@ -238,7 +271,7 @@ class OnfhCocoMockVisualRunner:
             "gt_mri_tags": gt_mri_tags,
             "gt_mri_stage_by_side": gt_mri_stage_by_side,
             "gt_xray_stage_by_side": gt_xray_stage_by_side,
-            "finding_count": len(findings),
+            "finding_count": len(raw_findings),
             "mask_path": str(mask_path),
             "overlay_path": str(overlay_path),
             "visual_analysis_result": visual_analysis_result,
