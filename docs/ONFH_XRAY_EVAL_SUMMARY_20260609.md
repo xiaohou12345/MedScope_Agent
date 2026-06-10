@@ -1,14 +1,16 @@
 # ONFH Xray 原流程最小替换实验汇总 (2026-06-09)
 
 ## 实验目的
-本实验旨在评估 MedScope 诊断原流程（`GaoDoctorAgent` -> `DiagnosisDoctorAgent` -> `ReportAgent`）在接入不同质量的视觉证据来源时的端到端诊断能力，评估实验保持了原流程的完整性，仅通过注入视觉特征进行测试，不使用任何外部预测 Agent。
+本实验旨在评估 MedScope 诊断链路（`GaoDoctorAgent` -> `DiagnosisDoctorAgent` -> `ReportAgent`）在接入不同质量的 Xray 视觉 findings 时的端到端诊断能力。实验保留原服务入口和诊断/报告链路，仅替换视觉 evidence 来源，不使用额外的候选诊断 Agent 作为正式输出。
+
+这不是未改动 hsh 分支的原样输出，而是基于 hsh agent 框架的 ONFH Xray 三分类适配版：统一 Xray GT 标签空间、注入结构化 findings、并从最终报告中解析三分类分期。
 
 ## 实验矩阵
 共三类视觉特征来源的对比实验：
 
-1. **Pure Mock (医生标注 GT):** 仅使用经审核的 Xray COCO Mask 转换成的视觉特征。
-2. **Real VLM:** 仅使用由 VLM 在 ROI 图像上推理生成的原始特征。
-3. **Mixed (VLM + Mock GT):** 混合真实 VLM 发现与医生标注的 Mock GT 特征。
+1. **Pure Mock (医生标注 GT):** 仅使用经审核的 Xray COCO Mask 转换成的视觉 findings。
+2. **Real VLM:** 仅使用 VLM 在 ROI 图像上推理生成的视觉 findings。
+3. **Mixed (VLM + Mock GT):** 混合真实 VLM findings 与医生标注 Mock GT findings。
 
 ## 结果汇总 (基于 Xray 三分类 GT)
 
@@ -28,8 +30,9 @@
 
 ## 诊断瓶颈分析
 
-1. **原诊断流程 (DiagnosisDoctorAgent) 能力：** 
-   - 修复了对“软骨下骨折”和“新月征”等词汇的保守截断 Bug 后，原流程已具备准确分期能力，能够基于视觉征象给出“倾向 ARCO II/III”的报告，不再需要依赖外部的宽松解析插件。
+1. **诊断链路能力：**
+   - 在 Xray findings 到诊断 evidence 的映射完成适配后，原 service 诊断链路可以基于结构化视觉征象给出可评分的“2期/3期/未发现异常”三分类输出。
+   - 该结果仍依赖 findings 质量和 Xray 适配规则，不应解读为未改动原流程已经具备稳定准确分期能力。
    
 2. **当前视觉瓶颈：**
    - **VLM 幻觉 (High False Positive):** 在“未发现异常”的病例中，Real VLM 和 Mixed 组均产生了极高的误诊率（约 80%），这表明 VLM 模型在没有任何病理征象的情况下倾向于过度报告征象。
@@ -37,11 +40,11 @@
 
 ## 近期修复记录 (2026-06-09)
 
-在实验评估过程中，发现原流程对某些 Xray 特征的规则映射存在逻辑偏差，已完成以下修复：
+在实验评估过程中，发现 Xray findings 到诊断 evidence 的映射存在逻辑偏差，已完成以下适配：
 
-1. **结构性破坏特征分离:** 
-   - 将 `subchondral_fracture` (软骨下骨折) 和 `crescent_sign` (新月征) 从 `collapse` 塌陷特征集中分离出来，确立为独立的“结构性改变征象”。
-   - 更新了 `DiagnosisDoctorAgent` 的报告生成模板，现在能根据这些特征给出更具临床指导意义的建议，即提示处于“结构性改变期”，而非简单将其归类为晚期塌陷。
+1. **结构性破坏特征映射:**
+   - 将 `subchondral_fracture` (软骨下骨折) 和 `crescent_sign` (新月征) 作为 Xray 结构性改变 findings 处理，并在评估 runner 中映射为可被诊断链路识别的塌陷/结构性改变 evidence。
+   - 这样可以避免关键 3期相关 findings 在后续诊断链路中被当作证据不足而丢失。
 
 2. **描述逻辑优化:** 
    - 修正了二期病例的负向描述模板。原先的 `"未见明确塌陷及软骨下骨折"` 描述会导致评估脚本的正则解析器误将二期识别为三期（因为命中了“软骨下骨折”词条）。
@@ -53,11 +56,11 @@
 
 ### 逻辑变更对比
 
-| 征象分类 | 修改前 (原逻辑) | 修改后 (新逻辑) |
+| 征象分类 | 适配前 | 适配后 |
 | :--- | :--- | :--- |
-| **塌陷/骨折/新月征** | 统一归为 `collapse_candidates` | 拆分为 `collapse` (塌陷) 与 `fracture_candidates` (骨折/新月征) |
-| **报告文本** | 统称为“塌陷候选征象” | 明确区分“塌陷”与“软骨下骨折/新月征” |
-| **诊断倾向** | 强制提示晚期/需 MRI | 提示进入“结构性改变期”，分期依据更精细 |
+| **塌陷/骨折/新月征** | 部分 Xray target 无法被诊断规则识别 | 在视觉 runner 中映射为结构性改变/塌陷相关 evidence |
+| **报告文本** | 容易被证据不足或保守表述覆盖 | 最终报告中保留可解析的 ARCO II/III 倾向 |
+| **诊断倾向** | 大量输出暂无法可靠分期 | 能基于结构化 findings 输出 Xray 三分类倾向 |
 
 ### 核心规则链与“三期”判断机制
 1. **结构性改变 (Advanced):** 识别 `collapse`, `subchondral_fracture`, `crescent_sign`。触发 `ARCO II/III 边界复核` 的报告生成。
@@ -66,4 +69,3 @@
 2. **早期病变 (FHN Support):** 识别 `sclerotic_band`, `cystic_change` 等。触发 `倾向 ARCO II`。
 3. **纹理模式 (Early Pattern):** 识别 `trabecular_blurring` + 症状。触发 `倾向 ARCO I-II`。
 4. **兜底 (Abstain):** 证据不足时统一输出 `暂无法可靠分期`。
-

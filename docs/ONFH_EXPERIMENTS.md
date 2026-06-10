@@ -42,11 +42,6 @@ These files affect reusable runtime behavior:
   - Clarifies missing/unassessed evidence language.
   - Allows limited Xray observation only when paired with modality limitation and MRI follow-up.
 
-- `agents/candidate_diagnosis_agent.py`
-  - Experimental ONFH-only wrapper over `DiagnosisDoctorAgent`.
-  - Adds `onfh_visual_model_result` and `onfh_agent_diagnosis` fields.
-  - Does not replace the default diagnosis agent flow.
-
 ## Tests To Keep Green
 
 Run these after changing the ONFH or LLM plumbing:
@@ -54,12 +49,12 @@ Run these after changing the ONFH or LLM plumbing:
 ```bash
 /home/guanyandong/miniconda3/bin/python -m unittest \
   tests.test_diagnosis_llm_workflow \
-  tests.test_candidate_diagnosis_agent
+  tests.test_eval_pipeline_entrypoint
 ```
 
 The broader existing test suite is larger and may include environment-dependent
 tests. For this branch, the two tests above cover the changed diagnosis
-fallback behavior and the ONFH candidate wrapper.
+fallback behavior and the ONFH evaluation entrypoint.
 
 ## ONFH Evaluation Pipeline
 
@@ -72,49 +67,41 @@ python scripts/eval_pipeline.py run mock-agent
 python scripts/eval_pipeline.py run real-vlm-mock-agent
 ```
 
-The unified entrypoint intentionally exposes only the three agent routes. The
-individual preparation and summary scripts listed below are implementation
-utilities kept for debugging and cached-result reproduction.
+The unified entrypoint intentionally exposes only the three current original-flow
+agent routes.
 
 The current ONFH evaluation uses cached CSV/JSON outputs under `output/fake`.
 PPT/report generation is intentionally kept outside this repository.
 
-Main agent routes:
+Main original-flow routes:
 
 1. Real VLM agent route
-   - `scripts/xray_roi_agent_eval.py`
+   - `scripts/xray_cached_mixed_original_flow_eval.py --mode real-vlm`
    - Finding list source:
      real VLM observations from blinded femoral-head ROI crops.
    - Main cached output:
-     `output/fake/onfh_roi_formal_service_blinded_eval/formal_service_predictions.csv`
+     `output/fake/xray_34tag_side_mixed_original_flow_20260609/eval_rows.csv`
 
 2. Mock agent route
-   - `scripts/xray_mask_agent_eval.py`
+   - `scripts/xray_mask_mock_eval.py`
    - Finding list source:
      doctor-reviewed Xray mask evidence converted into structured findings.
    - Main cached output:
-     `output/fake/onfh_mock_roi_diagnosis_agent_eval_20260608/mock_roi_diagnosis_agent_rows.csv`
+     `output/fake/original_flow_full_mock_xray_gt_agent_final_20260609_xray3class/side_level_eval.csv`
 
 3. Real VLM + mock agent route
-   - `scripts/xray_roi_mask_agent_eval.py`
+   - `scripts/xray_cached_mixed_original_flow_eval.py --mode mixed`
    - Finding list source:
      real VLM ROI observations plus doctor-reviewed mock mask evidence.
    - Main cached output:
-     `output/fake/onfh_eval_summary_20260608/combined_gtmask_roi_vlm_visible_side_27.csv`
+     `output/fake/xray_34tag_side_mixed_original_flow_20260609/eval_rows.csv`
 
-Supporting utilities:
+Implementation utilities:
 
 - `scripts/xray_mask_mock_eval.py`
   - Builds mock visual evidence from doctor-reviewed Xray masks.
-- `scripts/xray_roi_mock_eval.py`
-  - Converts mock mask results to ROI-side rows and metrics.
-- `scripts/xray_roi_vlm_eval.py`
-  - Evaluates real VLM on ROI crops and can populate cached VLM findings.
-- `scripts/eval_summary.py`
-  - Builds final summary tables from cached outputs.
-  - Main outputs:
-    - `output/fake/onfh_eval_summary_20260608/onfh_experiment_summary_final_brief_20260608.csv`
-    - `output/fake/onfh_eval_summary_20260608/onfh_experiment_summary_final_detailed_20260608.csv`
+- `scripts/xray_cached_mixed_original_flow_eval.py`
+  - Runs the original service diagnosis chain with real VLM findings, or real VLM plus mock findings.
 
 ## Report Interpretation Rules
 
@@ -123,22 +110,13 @@ Supporting utilities:
   - Visual evidence: VLM candidate findings.
   - These findings are **not** doctor GT masks.
 
-- `mask agent candidate`
+- `mock mask agent`
   - Input: doctor-reviewed Xray GT mask converted to structured visual evidence.
   - This estimates a mask-evidence upper bound and should not be described as real VLM performance.
 
 - `real ROI + mask evidence agent`
   - Input: real ROI VLM findings plus doctor-reviewed Xray mask evidence.
-  - This is a cached combination of two evidence sources.
-
-## Scripts That Are Mainly Diagnostic
-
-These are useful for route debugging, but should not be treated as the current
-ONFH path:
-
-- `scripts/debug_vision_model_route.py`
-- `scripts/test_dmx_route.py`
-- `scripts/export_mock_agent_trace_log.py`
+  - This is a combination of two evidence sources.
 
 The old PPT builders, whole-image experiments, and candidate-stage rerun scripts
 were removed from this repository because they are not part of the ROI-only

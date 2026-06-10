@@ -10,16 +10,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 PIPELINE_STEPS = {
     "real-vlm-agent": {
-        "script": "scripts/xray_roi_agent_eval.py",
-        "description": "Agent route whose finding list comes from real VLM ROI observations.",
+        "script": "scripts/xray_cached_mixed_original_flow_eval.py",
+        "default_args": ["--mode", "real-vlm"],
+        "description": "Original service diagnosis chain whose finding list comes from real VLM ROI observations.",
     },
     "mock-agent": {
-        "script": "scripts/xray_mask_agent_eval.py",
-        "description": "Agent route whose finding list comes from doctor-reviewed mock mask evidence.",
+        "script": "scripts/xray_mask_mock_eval.py",
+        "description": "Original service diagnosis chain whose finding list comes from doctor-reviewed mock mask evidence.",
     },
     "real-vlm-mock-agent": {
-        "script": "scripts/xray_roi_mask_agent_eval.py",
-        "description": "Agent route whose finding list combines real VLM observations and mock mask evidence.",
+        "script": "scripts/xray_cached_mixed_original_flow_eval.py",
+        "default_args": ["--mode", "mixed"],
+        "description": "Original service diagnosis chain whose finding list combines real VLM observations and mock mask evidence.",
     },
 }
 

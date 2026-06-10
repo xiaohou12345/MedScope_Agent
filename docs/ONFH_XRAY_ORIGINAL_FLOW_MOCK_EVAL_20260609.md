@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This note records the ONFH Xray experiment that keeps the MedScope agent flow as close as possible to the repository's original pipeline, while replacing only the visual evidence source with reviewed CVAT/COCO Xray masks.
+This note records the ONFH Xray experiment that keeps the MedScope service and diagnosis/report chain as close as possible to the repository's original pipeline, while replacing only the visual evidence source with reviewed CVAT/COCO Xray masks.
 
-The main goal is to avoid mixing temporary side pipelines with formal agent outputs. In this experiment, the primary prediction is parsed from the final report produced by the original service flow. Visual finding to stage mappings are retained only as audit/debug columns.
+The main goal is to avoid mixing temporary side pipelines with formal agent outputs. In this experiment, the primary prediction is parsed from the final report produced by the service flow. Visual finding to stage mappings are retained only as audit/debug columns.
 
 ## Original Flow
 
@@ -159,7 +159,7 @@ agent_final_stage
 agent_loose_stage
 ```
 
-`agent_final_stage` is parsed strictly from the final report. `agent_loose_stage` allows a looser parsing of the report, extracting a provisional stage from the tendency text even if the agent ultimately abstains due to insufficient formal evidence.
+`agent_final_stage` is parsed from the final report. `agent_loose_stage` allows a looser parsing of the same final report text, extracting a provisional stage from the tendency text even if the report also contains conservative evidence-limit language. It does not call a separate diagnosis Agent.
 
 Primary GT:
 
@@ -190,7 +190,7 @@ evaluated_images: 19
 evaluable_side_cases: 34
 ```
 
-Final-report stage accuracy (Loose Parsing / Final):
+Final-report stage accuracy after ONFH Xray evidence-mapping adaptation:
 
 ```text
 correct: 16 / 34
@@ -219,9 +219,9 @@ GT 2期       -> abstain: 0, 3期: 7, 2期: 4
 
 ## Interpretation
 
-The initial experiments with the original flow yielded 11.76% accuracy and 17.65% coverage because the rule-based fallback in `DiagnosisDoctorAgent` was discarding critical Xray mock targets (e.g., `subchondral_fracture`) and defaulting to `abstain`. After fixing this mapping, the rule-based logic correctly forwards these indications as "ARCO III" or "ARCO II" tendency. 
+The initial experiments with the original service chain yielded 11.76% accuracy and 17.65% coverage because critical Xray mock targets such as `subchondral_fracture` were not being carried forward as diagnosis-usable structural evidence. After adapting this mapping, the service chain forwards these findings as "ARCO III" or "ARCO II" tendencies.
 
-The `loose` parsing mechanism (added in the latest iteration) extracts these tendency texts even when the formal report adds conservative disclaimers, successfully yielding a 47% end-to-end accuracy and 73.5% coverage from the original flow without bypassing the DiagnosisDoctorAgent.
+The `loose` parsing mechanism extracts these tendency texts from the same final report when the report includes conservative disclaimers. It yields 47% end-to-end accuracy and 73.5% coverage without replacing `DiagnosisDoctorAgent` or `ReportAgent`.
 
 ## Current Script Contract
 
