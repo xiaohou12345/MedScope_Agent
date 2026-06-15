@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 from pathlib import Path
@@ -16,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from agents.gaodoctor_agent import GaoDoctorAgent
 from api.service import MedScopeService
+from scripts.agent_trace_recorder import AgentTraceRecorder, make_trace_id
 from tools.structured_visual_fact_builder import build_structured_visual_facts
 
 
@@ -90,13 +92,13 @@ class OnfhCocoMockVisualRunner:
         self,
         export_dir: Path | str = DEFAULT_EXPORT_DIR,
         side_mapping: str = "ap_flip",
-        include_mri_gt_in_visual: bool = False,
     ) -> None:
         self.export_dir = Path(export_dir)
         if side_mapping not in {"no_flip", "ap_flip"}:
             raise ValueError(f"unsupported side_mapping: {side_mapping}")
         self.side_mapping = side_mapping
-        self.include_mri_gt_in_visual = include_mri_gt_in_visual
+        self.active_patient_side: str | None = None
+        self.active_source_image_path: str | None = None
         self.manifest = pd.read_csv(self.export_dir / "manifest.csv")
         self.instances = pd.read_csv(self.export_dir / "instances.csv")
         self.tags = pd.read_csv(self.export_dir / "image_tags.csv")
@@ -153,13 +155,23 @@ class OnfhCocoMockVisualRunner:
         patient_message: str,
         **_: Any,
     ) -> dict[str, Any]:
-        row = self._row_for_image_path(image_path)
+        row = self._row_for_image_path(self.active_source_image_path or image_path)
         image_id = int(row.image_id)
         annotations = self.annotations_by_image_id.get(image_id, [])
+        if self.active_patient_side:
+            annotations = self._annotations_for_patient_side(
+                annotations=annotations,
+                width=int(row.width),
+                patient_side=self.active_patient_side,
+            )
         patient_key = self._patient_key(row.category, row.patient)
         gt_mri_tags = self.mri_tags_by_patient_key.get(patient_key, [])
         gt_mri_stage_by_side = self.mri_stage_by_patient_side.get(patient_key, {})
         gt_xray_stage_by_side = self.xray_stage_by_image_side.get(image_id, {})
+        if self.active_patient_side:
+            gt_xray_stage_by_side = {
+                self.active_patient_side: gt_xray_stage_by_side[self.active_patient_side]
+            } if self.active_patient_side in gt_xray_stage_by_side else {}
         if not gt_xray_stage_by_side:
             return {
                 "status": "skipped_no_xray_gt_tag",
@@ -170,8 +182,9 @@ class OnfhCocoMockVisualRunner:
         output = Path(output_dir)
         output.mkdir(parents=True, exist_ok=True)
         image = Image.open(row.absolute_path).convert("RGB")
-        mask_path = output / f"image_{image_id}_mock_mask.png"
-        overlay_path = output / f"image_{image_id}_mock_overlay.png"
+        side_suffix = f"_{self.active_patient_side}" if self.active_patient_side else ""
+        mask_path = output / f"image_{image_id}{side_suffix}_mock_mask.png"
+        overlay_path = output / f"image_{image_id}{side_suffix}_mock_overlay.png"
         raw_findings = self._write_masks_and_build_findings(
             image=image,
             annotations=annotations,
@@ -187,21 +200,21 @@ class OnfhCocoMockVisualRunner:
             f"{finding['display_name']}：{finding['status']}，area={finding['measurements']['area_px']}px"
             for finding in findings
         ]
-        if self.include_mri_gt_in_visual:
-            suspected_findings.extend(f"同病人MRI_GT_TAG：{tag}" for tag in gt_mri_tags)
         measurements = {
-            "mock_source_export_dir": str(self.export_dir),
+            "mock_source_export_dir": "COCO_EXPORT_DIR" if self.active_source_image_path else str(self.export_dir),
             "xray_image_id": image_id,
-            "patient_key": patient_key,
+            "patient_key": (
+                f"xray_roi_{image_id}_{self.active_patient_side or 'image'}"
+                if self.active_source_image_path
+                else patient_key
+            ),
             "lesion_area_px": total_area,
             "lesion_area_ratio": total_area / image_area,
         }
-        if self.include_mri_gt_in_visual:
-            measurements["gt_mri_tags"] = gt_mri_tags
-            measurements["gt_mri_stage_by_side"] = gt_mri_stage_by_side
 
+        result_image_path = "roi.png" if self.active_source_image_path else str(row.absolute_path)
         visual_analysis_result = {
-            "image_path": str(row.absolute_path),
+            "image_path": result_image_path,
             "modality": "xray",
             "body_part": "hip",
             "requested_targets": requested_targets,
@@ -211,7 +224,7 @@ class OnfhCocoMockVisualRunner:
                 "bbox",
             ],
             "image_outputs": {
-                "original_image_path": str(row.absolute_path),
+                "original_image_path": result_image_path,
                 "mask_path": str(mask_path),
                 "overlay_path": str(overlay_path),
             },
@@ -281,6 +294,22 @@ class OnfhCocoMockVisualRunner:
             encoding="utf-8",
         )
         return summary
+
+    def _annotations_for_patient_side(
+        self,
+        *,
+        annotations: list[dict[str, Any]],
+        width: int,
+        patient_side: str,
+    ) -> list[dict[str, Any]]:
+        selected = []
+        for annotation in annotations:
+            bbox = [float(value) for value in annotation["bbox"]]
+            centroid_x = bbox[0] + bbox[2] / 2
+            image_side = "left" if centroid_x < width / 2 else "right"
+            if self._patient_side_from_image_side(image_side) == patient_side:
+                selected.append(annotation)
+        return selected
 
     def _row_for_image_path(self, image_path: Path | str) -> Any:
         path = Path(image_path)
@@ -487,60 +516,145 @@ def run_eval(
     export_dir: Path,
     output_dir: Path,
     limit: int | None,
+    image_ids: list[int] | None,
+    case_scope: str,
     side_mapping: str,
-    include_mri_gt_in_visual: bool,
+    patient_sides: list[str] | None,
+    use_llm: bool = False,
+    continue_on_error: bool = False,
 ) -> dict[str, Any]:
     runner = OnfhCocoMockVisualRunner(
         export_dir,
         side_mapping=side_mapping,
-        include_mri_gt_in_visual=include_mri_gt_in_visual,
     )
+    prompt_runner = None
+    diagnosis_agent = None
+    if use_llm:
+        from agents.diagnosis_agent import DiagnosisDoctorAgent
+        from llm.model_client import OpenAICompatibleModelClient
+        from scripts.no_mask_vision_prompt_demo import _load_dotenv_local
+        from scripts.recording_prompt_runner import RecordingPromptRunner
+
+        _load_dotenv_local()
+        prompt_runner = RecordingPromptRunner(OpenAICompatibleModelClient())
+        diagnosis_agent = DiagnosisDoctorAgent(prompt_runner=prompt_runner)
     service = MedScopeService(
-        gaodoctor_agent=GaoDoctorAgent(no_mask_visual_pipeline_runner=runner)
+        gaodoctor_agent=GaoDoctorAgent(
+            no_mask_visual_pipeline_runner=runner,
+            diagnosis_agent=diagnosis_agent,
+            prompt_runner=prompt_runner,
+        )
     )
     rows = runner.runnable_xray_rows()
+    if image_ids:
+        selected_image_ids = set(image_ids)
+        rows = [row for row in rows if int(row.image_id) in selected_image_ids]
     if limit is not None:
         rows = rows[:limit]
+    service_units = _build_service_units(
+        rows,
+        runner,
+        case_scope=case_scope,
+        patient_sides=patient_sides,
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
+    trace_recorder = AgentTraceRecorder(
+        output_dir / "agent_traces",
+        experiment_name="xray_mask_mock_original_flow",
+    )
     case_results = []
-    for row in rows:
+    failed_service_units: list[dict[str, Any]] = []
+    for unit in service_units:
+        row = unit["row"]
+        unit_side = unit.get("patient_side")
         patient_key = f"{row.category}-{row.patient}"
-        result = service.handle_request(
-            {
-                "patient_message": (
-                    "请用 clean COCO 里的 Xray 医生标注 mask 作为 mock 视觉模型输出，"
-                    "按正式股骨头坏死流程生成结构化影像证据和报告。"
+        runner.active_patient_side = str(unit_side) if unit_side else None
+        side_phrase = f"本次只评估{unit_side}侧股骨头 ROI。" if unit_side else ""
+        runner_image_path = str(row.absolute_path)
+        service_image_path = "roi.png" if use_llm else runner_image_path
+        service_payload = {
+            "patient_message": (
+                "请用 clean COCO 里的 Xray 医生标注 mask 作为 mock 视觉模型输出，"
+                "按正式股骨头坏死流程生成结构化影像证据和报告。"
+                f"{side_phrase}"
+            ),
+            "image_path": service_image_path,
+            "patient_info": {
+                "patient_id": (
+                    f"xray_roi_{int(row.image_id)}_{unit_side or 'unknown'}"
+                    if use_llm
+                    else f"{patient_key}-{unit_side}" if unit_side else patient_key
                 ),
-                "image_path": str(row.absolute_path),
-                "patient_info": {
-                    "patient_id": patient_key,
-                    "symptoms": ["髋关节疼痛"],
-                    "source": "onfh_clean_coco_mock_eval",
-                },
-                "disease_key": "femoral_head_necrosis",
-                "vision_mode": "no_mask_skill",
-            }
-        )
+                "symptoms": ["髋关节疼痛"],
+                "source": "onfh_clean_coco_mock_eval",
+                "patient_side": unit_side,
+                "case_scope": case_scope,
+            },
+            "disease_key": "femoral_head_necrosis",
+            "vision_mode": "no_mask_skill",
+        }
+        call_start = len(prompt_runner.calls) if prompt_runner else 0
+        try:
+            runner.active_source_image_path = runner_image_path
+            try:
+                result = service.handle_request(service_payload)
+            except Exception as exc:
+                live_model_calls = prompt_runner.take_new_calls(call_start) if prompt_runner else []
+                failed_service_units.append(
+                    {
+                        "image_id": int(row.image_id),
+                        "patient_key": patient_key,
+                        "patient_side": unit_side,
+                        "case_scope": case_scope,
+                        "image_path": str(row.absolute_path),
+                        "error_type": exc.__class__.__name__,
+                        "error": str(exc),
+                        "live_model_call_count": len(live_model_calls),
+                        "live_model_calls": live_model_calls,
+                    }
+                )
+                if continue_on_error:
+                    continue
+                raise
+        finally:
+            runner.active_patient_side = None
+            runner.active_source_image_path = None
+        live_model_calls = prompt_runner.take_new_calls(call_start) if prompt_runner else []
         evidence = result.get("visual_input_contract", {}).get("visual_evidence", {})
         local_gt_mri_tags = runner.mri_tags_by_patient_key.get(patient_key, [])
         local_gt_mri_stage_by_side = runner.mri_stage_by_patient_side.get(patient_key, {})
         local_gt_xray_stage_by_side = runner.xray_stage_by_image_side.get(int(row.image_id), {})
+        if unit_side:
+            local_gt_xray_stage_by_side = {
+                str(unit_side): local_gt_xray_stage_by_side[str(unit_side)]
+            } if str(unit_side) in local_gt_xray_stage_by_side else {}
+        agent_final_stage = _stage_from_agent_report(result.get("report") or {})
+        agent_loose_stage = _stage_from_agent_report(result.get("report") or {}, loose=True)
+        agent_xray_3class_stage = _stage_from_agent_report_xray_3class(
+            result.get("report") or {},
+            patient_side=str(unit_side) if unit_side else None,
+        )
         case_results.append(
             {
                 "case_id": result.get("case_id"),
                 "analysis_status": result.get("analysis_status"),
                 "patient_key": patient_key,
+                "case_scope": case_scope,
+                "patient_side": unit_side,
                 "image_id": int(row.image_id),
-                "image_path": str(row.absolute_path),
+                "image_path": runner_image_path,
                 "image_width": int(row.width),
                 "image_height": int(row.height),
                 "image_area_px": int(row.width) * int(row.height),
                 "case_memory_path": result.get("case_memory_path"),
                 "diagnostic_tendency": (result.get("report") or {}).get("diagnostic_tendency"),
                 "report_stage_text": (result.get("report") or {}).get("分期判断"),
-                "agent_final_stage": _stage_from_agent_report(result.get("report") or {}),
-                "agent_loose_stage": _stage_from_agent_report(result.get("report") or {}, loose=True),
+                "agent_final_stage": agent_final_stage,
+                "agent_loose_stage": agent_loose_stage,
+                "agent_xray_3class_stage": agent_xray_3class_stage,
                 "finding_count": len(evidence.get("findings", [])),
+                "live_model_call_count": len(live_model_calls),
+                "live_model_calls": live_model_calls,
                 "gt_xray_stage_by_side": local_gt_xray_stage_by_side,
                 "gt_mri_tags": local_gt_mri_tags,
                 "gt_mri_stage_by_side": local_gt_mri_stage_by_side,
@@ -553,6 +667,95 @@ def run_eval(
         )
     side_level_rows = _build_side_level_eval(case_results)
     instance_level_rows = _build_instance_level_visual_outputs(case_results)
+    case_by_id = {str(case.get("case_id")): case for case in case_results}
+    for side_row in side_level_rows:
+        gt_xray_stage = side_row.get("gt_xray_stage")
+        if not gt_xray_stage:
+            continue
+        image_id = int(side_row.get("image_id") or 0)
+        case = case_by_id.get(str(side_row.get("case_id") or ""))
+        if not case:
+            continue
+        side = str(side_row.get("patient_side") or "")
+        service_payload = {
+            "patient_message": (
+                "请用 clean COCO 里的 Xray 医生标注 mask 作为 mock 视觉模型输出，"
+                "按正式股骨头坏死流程生成结构化影像证据和报告。"
+            ),
+            "image_path": str(case.get("image_path") or ""),
+            "patient_info": {
+                "patient_id": case.get("patient_key"),
+                "symptoms": ["髋关节疼痛"],
+                "source": "onfh_clean_coco_mock_eval",
+                "case_scope": case.get("case_scope"),
+                "patient_side": side,
+            },
+            "disease_key": "femoral_head_necrosis",
+            "vision_mode": "no_mask_skill",
+        }
+        side_findings = [
+            finding for finding in case.get("findings", [])
+            if isinstance(finding, dict)
+            and (finding.get("measurements") or {}).get("patient_side") == side
+        ]
+        trace_recorder.add_case(
+            trace_id=make_trace_id("mock", image_id, side, case.get("patient_key")),
+            case_id=case.get("case_id"),
+            patient_key=str(case.get("patient_key") or ""),
+            image_path="roi.png" if use_llm else str(case.get("image_path") or ""),
+            source="mock_xray_coco_mask_roi_side" if case_scope == "roi_side" else "mock_xray_coco_mask_side",
+            service_payload=service_payload,
+            visual_runner_input={
+                "runner": "OnfhCocoMockVisualRunner",
+                "export_dir": str(export_dir),
+                "image_id": image_id,
+                "patient_side": side,
+                "image_path": "roi.png" if use_llm else str(case.get("image_path") or ""),
+                "mock_source_image_path": str(case.get("image_path") or ""),
+                "side_mapping": side_mapping,
+                "case_scope": case_scope,
+            },
+            visual_runner_output={
+                "visual_analysis_result": _side_scoped_visual_trace(
+                    case=case,
+                    side_row=side_row,
+                    side=side,
+                    side_findings=side_findings,
+                ),
+                "finding_count": len(side_findings),
+                "side_targets": side_row.get("xray_targets"),
+                "side_labels": side_row.get("xray_labels"),
+                "mask_path": side_row.get("mask_path"),
+                "overlay_path": side_row.get("overlay_path"),
+            },
+            service_result={
+                "case_id": case.get("case_id"),
+                "analysis_status": case.get("analysis_status"),
+                "case_memory_path": case.get("case_memory_path"),
+                "report": {
+                    "diagnostic_tendency": case.get("diagnostic_tendency"),
+                    "分期判断": case.get("report_stage_text"),
+                },
+            },
+            evaluation={
+                "image_id": image_id,
+                "patient_side": side,
+                "gt_xray_stage": gt_xray_stage,
+                "gt_xray_tag_labels": side_row.get("gt_xray_tag_labels"),
+                "gt_xray_stage_values": side_row.get("gt_xray_stage_values"),
+                "agent_final_stage": side_row.get("agent_final_stage"),
+                "agent_loose_stage": side_row.get("agent_loose_stage"),
+                "agent_xray_3class_stage": side_row.get("agent_xray_3class_stage"),
+                "correct": side_row.get("correct"),
+                "loose_correct": side_row.get("loose_correct"),
+                "xray_3class_correct": side_row.get("xray_3class_correct"),
+                "abstained": side_row.get("abstained"),
+                "loose_abstained": side_row.get("loose_abstained"),
+                "xray_3class_abstained": side_row.get("xray_3class_abstained"),
+                "report_stage_text": side_row.get("report_stage_text"),
+            },
+            model_calls=case.get("live_model_calls", []),
+        )
     side_level_csv_path = output_dir / "side_level_eval.csv"
     side_level_json_path = output_dir / "side_level_eval.json"
     instance_level_csv_path = output_dir / "instance_level_visual_outputs.csv"
@@ -568,8 +771,13 @@ def run_eval(
         encoding="utf-8",
     )
     side_level_metrics = _side_level_metrics(side_level_rows, side_mapping=side_mapping)
+    trace_summary = trace_recorder.write()
     public_case_results = [
-        {key: value for key, value in case.items() if key != "findings"}
+        {
+            key: value
+            for key, value in case.items()
+            if key not in {"findings", "live_model_calls"}
+        }
         for case in case_results
     ]
     summary = {
@@ -577,19 +785,26 @@ def run_eval(
         "export_dir": str(export_dir),
         "output_dir": str(output_dir),
         "side_mapping": side_mapping,
-        "include_mri_gt_in_visual": include_mri_gt_in_visual,
-        "gt_usage": (
-            "Xray GT tags are used for primary metrics. MRI GT tags are included in visual evidence."
-            if include_mri_gt_in_visual
-            else "Xray GT tags are used for primary metrics. MRI GT tags are retained only as reference metadata."
-        ),
+        "use_llm": use_llm,
+        "case_scope": case_scope,
+        "gt_usage": "Xray GT tags are used for primary metrics. MRI GT tags are retained only as reference metadata.",
         "runnable_xray_images": len(runner.runnable_xray_rows()),
-        "evaluated_images": len(case_results),
+        "selected_image_ids": image_ids or [],
+        "selected_patient_sides": patient_sides or [],
+        "evaluated_images": len(rows),
+        "evaluated_cases": len(case_results),
+        "evaluated_service_units": len(service_units),
+        "failed_service_units": [
+            {key: value for key, value in item.items() if key != "live_model_calls"}
+            for item in failed_service_units
+        ],
+        "failed_service_unit_count": len(failed_service_units),
         "skipped_xray_images": runner.skipped_xray_rows(),
         "side_level_eval_csv": str(side_level_csv_path),
         "side_level_eval_json": str(side_level_json_path),
         "instance_level_visual_outputs_csv": str(instance_level_csv_path),
         "instance_level_visual_outputs_json": str(instance_level_json_path),
+        "agent_trace_export": trace_summary,
         "side_level_metrics": side_level_metrics,
         "cases": public_case_results,
     }
@@ -597,6 +812,60 @@ def run_eval(
     summary["summary_path"] = str(summary_path)
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     return summary
+
+
+def _side_scoped_visual_trace(
+    *,
+    case: dict[str, Any],
+    side_row: dict[str, Any],
+    side: str,
+    side_findings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Return only the current side's visual evidence for audit traces.
+
+    Xray/MRI GT labels are scoring references and must not be embedded in the
+    visual-evidence event, otherwise the trace looks like the vision stage saw
+    labels from both sides.
+    """
+    return {
+        "case_id": case.get("case_id"),
+        "analysis_status": case.get("analysis_status"),
+        "patient_key": case.get("patient_key"),
+        "image_id": case.get("image_id"),
+        "patient_side": side,
+        "image_width": case.get("image_width"),
+        "image_height": case.get("image_height"),
+        "image_area_px": case.get("image_area_px"),
+        "finding_count": len(side_findings),
+        "mask_path": side_row.get("mask_path"),
+        "overlay_path": side_row.get("overlay_path"),
+        "side_targets": side_row.get("xray_targets"),
+        "side_labels": side_row.get("xray_labels"),
+        "side_findings": side_findings,
+    }
+
+
+def _build_service_units(
+    rows: list[Any],
+    runner: OnfhCocoMockVisualRunner,
+    *,
+    case_scope: str,
+    patient_sides: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    if case_scope == "image":
+        return [{"row": row, "patient_side": None} for row in rows]
+    if case_scope != "roi_side":
+        raise ValueError(f"unsupported case_scope: {case_scope}")
+    units: list[dict[str, Any]] = []
+    selected_sides = set(patient_sides or SIDE_VALUES)
+    for row in rows:
+        image_id = int(row.image_id)
+        for side in SIDE_VALUES:
+            if side not in selected_sides:
+                continue
+            if side in runner.xray_stage_by_image_side.get(image_id, {}):
+                units.append({"row": row, "patient_side": side})
+    return units
 
 
 def _build_side_level_eval(case_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -607,7 +876,9 @@ def _build_side_level_eval(case_results: list[dict[str, Any]]) -> list[dict[str,
             for finding in case.get("findings", [])
             if isinstance(finding, dict)
         ]
-        for side in SIDE_VALUES:
+        case_side = case.get("patient_side")
+        sides_to_eval = [str(case_side)] if case_side in SIDE_VALUES else list(SIDE_VALUES)
+        for side in sides_to_eval:
             side_findings = [
                 finding for finding in findings
                 if (finding.get("measurements") or {}).get("patient_side") == side
@@ -620,6 +891,14 @@ def _build_side_level_eval(case_results: list[dict[str, Any]]) -> list[dict[str,
             labels = sorted({str(finding.get("display_name")) for finding in side_findings})
             agent_final_stage = _normalize_stage(case.get("agent_final_stage"))
             agent_loose_stage = _normalize_stage(case.get("agent_loose_stage"))
+            report_for_side = {
+                "diagnostic_tendency": case.get("diagnostic_tendency"),
+                "分期判断": case.get("report_stage_text"),
+            }
+            agent_xray_3class_stage = _stage_from_agent_report_xray_3class(
+                report_for_side,
+                patient_side=side,
+            )
             gt_xray_payload = (case.get("gt_xray_stage_by_side") or {}).get(side) or {}
             gt_mri_payload = (case.get("gt_mri_stage_by_side") or {}).get(side) or {}
             gt_xray_stage = gt_xray_payload.get("stage")
@@ -645,11 +924,16 @@ def _build_side_level_eval(case_results: list[dict[str, Any]]) -> list[dict[str,
                     "patient_side": side,
                     "agent_final_stage": agent_final_stage,
                     "agent_loose_stage": agent_loose_stage,
+                    "agent_xray_3class_stage": agent_xray_3class_stage,
                     "gt_xray_stage": gt_xray_stage,
                     "correct": bool(agent_final_stage == gt_xray_stage) if gt_xray_stage else False,
                     "loose_correct": bool(agent_loose_stage == gt_xray_stage) if gt_xray_stage else False,
+                    "xray_3class_correct": (
+                        bool(agent_xray_3class_stage == gt_xray_stage) if gt_xray_stage else False
+                    ),
                     "abstained": agent_final_stage == "abstain",
                     "loose_abstained": agent_loose_stage == "abstain",
+                    "xray_3class_abstained": agent_xray_3class_stage == "abstain",
                     "gt_mri_stage_reference": gt_mri_stage,
                     "correct_vs_mri_reference": (
                         bool(agent_final_stage == gt_mri_stage) if gt_mri_stage else False
@@ -753,6 +1037,129 @@ def _stage_from_agent_report(report: dict[str, Any], loose: bool = False) -> str
     return _normalize_stage(text, loose=loose)
 
 
+def _stage_from_agent_report_xray_3class(
+    report: dict[str, Any],
+    *,
+    patient_side: str | None = None,
+) -> str:
+    stage_text = str(report.get("分期判断") or "")
+    tendency = str(report.get("diagnostic_tendency") or report.get("诊断倾向") or "")
+    text = f"{tendency}\n{stage_text}"
+    if patient_side:
+        # Prefer the structured stage field for side-aware scoring. The broader
+        # diagnostic tendency can contain comparative phrases such as "left is
+        # more advanced than right", which are not a right-side stage statement.
+        for source_text in (stage_text, text):
+            side_text = _extract_side_specific_report_text(source_text, patient_side)
+            if not side_text:
+                continue
+            side_stage = _normalize_stage_xray_3class(side_text)
+            if side_stage != "abstain":
+                return side_stage
+    return _normalize_stage_xray_3class(text)
+
+
+def _extract_side_specific_report_text(text: str, patient_side: str) -> str:
+    other_side = "右" if patient_side == "左" else "左"
+    side_markers = (f"{patient_side}髋", f"{patient_side}侧", f"{patient_side}股骨头")
+    other_markers = (f"{other_side}髋", f"{other_side}侧", f"{other_side}股骨头")
+    candidates: list[str] = []
+    for marker in side_markers:
+        start = text.find(marker)
+        if start < 0:
+            continue
+        end_positions = [
+            pos
+            for other in other_markers
+            for pos in [text.find(other, start + len(marker))]
+            if pos >= 0
+        ]
+        sentence_positions = [
+            pos
+            for sep in ("。", "\n")
+            for pos in [text.find(sep, start + len(marker))]
+            if pos >= 0
+        ]
+        end = min(end_positions + sentence_positions) if (end_positions or sentence_positions) else len(text)
+        candidates.append(text[start:end])
+    return "\n".join(candidates)
+
+
+def _normalize_stage_xray_3class(value: Any) -> str:
+    text = str(value or "")
+    if not text.strip():
+        return "abstain"
+    if text in {"未发现异常", "2期", "3期"}:
+        return text
+    if text in {"normal", "无异常", "无明显异常"}:
+        return "未发现异常"
+    if text in {"III+", "III", "III期", "ARCO III", "ARCO III期"}:
+        return "3期"
+    if text in {"I/II", "II", "II期", "ARCO II", "ARCO II期"}:
+        return "2期"
+    if _has_affirmed_stage3_xray_evidence(text):
+        return "3期"
+    if _has_affirmed_stage2_xray_evidence(text):
+        return "2期"
+    if _has_broad_uncertainty(text):
+        return "abstain"
+    if "未见" in text or "无明显异常" in text or "未发现异常" in text or "normal" in text.lower():
+        return "未发现异常"
+    return "abstain"
+
+
+def _has_affirmed_stage3_xray_evidence(text: str) -> bool:
+    positive_terms = ("ARCO III", "III期", "3期", "三期", "软骨下骨折", "新月征", "塌陷")
+    if not any(term in text for term in positive_terms):
+        return False
+    if "不能按塌陷阴性处理" in text:
+        return True
+    negative_phrases = (
+        "未见明确塌陷",
+        "未形成可确认的塌陷",
+        "未形成可确认的塌陷分期证据",
+        "未见塌陷",
+        "无塌陷",
+        "塌陷阴性",
+        "未见软骨下骨折",
+        "无软骨下骨折",
+        "未见新月征",
+        "无新月征",
+    )
+    return not any(phrase in text for phrase in negative_phrases)
+
+
+def _has_affirmed_stage2_xray_evidence(text: str) -> bool:
+    positive_terms = ("ARCO II", "II期", "2期", "二期", "I/II", "I-II", "硬化带", "囊性变", "嚢性变")
+    if not any(term in text for term in positive_terms):
+        return False
+    if _has_affirmed_stage3_xray_evidence(text):
+        return False
+    negative_phrases = (
+        "未见硬化带",
+        "无硬化带",
+        "硬化带阴性",
+        "未见囊性变",
+        "无囊性变",
+        "囊性变阴性",
+        "未见嚢性变",
+        "无嚢性变",
+    )
+    return not any(phrase in text for phrase in negative_phrases)
+
+
+def _has_broad_uncertainty(text: str) -> bool:
+    uncertainty_terms = ("暂无法", "不能可靠", "证据不足")
+    if not any(term in text for term in uncertainty_terms):
+        return False
+    # In the Xray 3-class task, uncertainty about ARCO IV does not invalidate
+    # an explicit ARCO III prediction because IV is outside the label space.
+    iv_terms = ("IV", "4期", "四期")
+    if any(term in text for term in iv_terms) and _has_affirmed_stage3_xray_evidence(text):
+        return False
+    return True
+
+
 def _normalize_stage(value: Any, loose: bool = False) -> str:
     text = str(value or "")
     if not text.strip():
@@ -815,10 +1222,19 @@ def _side_level_metrics(rows: list[dict[str, Any]], *, side_mapping: str) -> dic
     return {
         "side_cases": len(rows),
         "prediction_rule": "Primary prediction is parsed from the original MedScope final report.",
+        "xray_3class_prediction_rule": (
+            "Xray 3-class parsing treats explicit ARCO III evidence as 3期 even if the report "
+            "says ARCO IV cannot be assessed, because IV is outside the current label space."
+        ),
         "gt_rule": "Xray tags are aggregated per image side by max severity: 未发现异常 < 2期 < 3期.",
         "side_mapping": _side_mapping_description(side_mapping),
         "agent_final_metrics": _compute_metrics("agent_final_stage", "correct", "abstained"),
         "agent_loose_metrics": _compute_metrics("agent_loose_stage", "loose_correct", "loose_abstained"),
+        "agent_xray_3class_metrics": _compute_metrics(
+            "agent_xray_3class_stage",
+            "xray_3class_correct",
+            "xray_3class_abstained",
+        ),
     }
 
 
@@ -836,6 +1252,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--limit", type=int, default=None, help="Limit evaluated Xray images.")
     parser.add_argument(
+        "--image-id",
+        type=int,
+        action="append",
+        default=None,
+        help="Evaluate only the specified Xray image_id. Can be repeated.",
+    )
+    parser.add_argument(
+        "--case-scope",
+        choices=["image", "roi_side"],
+        default="image",
+        help=(
+            "image: run one MedScope case per Xray image, then score sides. "
+            "roi_side: run one MedScope case per patient-side ROI."
+        ),
+    )
+    parser.add_argument(
         "--side-mapping",
         choices=["no_flip", "ap_flip"],
         default="ap_flip",
@@ -845,12 +1277,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--include-mri-gt-in-visual",
-        action="store_true",
+        "--patient-side",
+        choices=list(SIDE_VALUES),
+        action="append",
+        default=None,
         help=(
-            "Include same-patient MRI GT tags inside mock visual evidence. "
-            "This is disabled by default and should only be used for leakage/debug checks."
+            "Evaluate only the specified patient side in roi_side mode. "
+            "Can be repeated. Defaults to all sides."
         ),
+    )
+    parser.add_argument(
+        "--use-llm",
+        action="store_true",
+        help="Use PromptRunner-backed diagnosis/explanation calls and record them in agent traces.",
+    )
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Record failed service units and continue the batch instead of aborting.",
     )
     return parser.parse_args()
 
@@ -861,8 +1305,12 @@ def main() -> None:
         export_dir=args.export_dir,
         output_dir=args.output_dir,
         limit=args.limit,
+        image_ids=args.image_id,
+        case_scope=args.case_scope,
         side_mapping=args.side_mapping,
-        include_mri_gt_in_visual=args.include_mri_gt_in_visual,
+        patient_sides=args.patient_side,
+        use_llm=args.use_llm,
+        continue_on_error=args.continue_on_error,
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
