@@ -12,17 +12,17 @@ from scripts.no_mask_vision_prompt_demo import (
     run_no_mask_vision_prompt_demo,
 )
 from tools.structured_visual_fact_builder import build_structured_visual_facts
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 
 
-DEFAULT_OUTPUT_DIR = Path("output/fake/no_mask_skill_visual_pipeline_demo")
+DEFAULT_OUTPUT_DIR = Path("output/fake/no_mask_knowledge_visual_pipeline_demo")
 
 
-def run_no_mask_skill_visual_pipeline_demo(
+def run_no_mask_knowledge_visual_pipeline_demo(
     *,
     image_path: Path | str,
     output_dir: Path | str = DEFAULT_OUTPUT_DIR,
-    disease_skill: dict[str, Any] | None = None,
+    disease_knowledge: dict[str, Any] | None = None,
     disease_key: str | None = None,
     patient_message: str,
     client: Any | None = None,
@@ -31,10 +31,10 @@ def run_no_mask_skill_visual_pipeline_demo(
     image = Path(image_path)
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    skill = disease_skill or SkillBuilderTool().load_guideline_skill(
+    knowledge = disease_knowledge or KnowledgeBuilderTool().load_guideline_knowledge(
         disease_key or "femoral_head_necrosis"
     )
-    visual_protocol = skill.get("visual_protocol") or {}
+    visual_protocol = knowledge.get("visual_protocol") or {}
     anatomy_reference = dict(visual_protocol.get("anatomy_reference") or {})
     finding_targets = [
         dict(target)
@@ -59,10 +59,10 @@ def run_no_mask_skill_visual_pipeline_demo(
                 patient_message=patient_message,
                 anatomy_reference=anatomy_reference,
             ),
-            disease_skill=_anatomy_reference_skill(skill, anatomy_reference),
+            disease_knowledge=_anatomy_reference_knowledge(knowledge, anatomy_reference),
             client=client,
             source_metadata={
-                "source": "skill.visual_protocol.anatomy_reference",
+                "source": "knowledge.visual_protocol.anatomy_reference",
                 "target": anatomy_reference.get("target"),
             },
         )
@@ -95,18 +95,18 @@ def run_no_mask_skill_visual_pipeline_demo(
             if segmentable_targets and observation_only_targets
             else segmentable_targets or finding_targets
         )
-        segment_skill = _skill_with_finding_targets(
-            skill=skill,
+        segment_knowledge = _knowledge_with_finding_targets(
+            knowledge=knowledge,
             finding_targets=prompt_targets,
         )
         finding_prompt = run_no_mask_vision_prompt_demo(
             image_path=image,
             output_dir=output / "finding_prompt",
             patient_message=patient_message,
-            disease_skill=segment_skill,
+            disease_knowledge=segment_knowledge,
             client=client,
             source_metadata={
-                "source": "skill.visual_protocol.finding_targets.segmentable",
+                "source": "knowledge.visual_protocol.finding_targets.segmentable",
                 "disease_target": visual_protocol.get("disease_target"),
             },
         )
@@ -149,13 +149,13 @@ def run_no_mask_skill_visual_pipeline_demo(
             image_path=image,
             output_dir=output / "observation_prompt",
             patient_message=patient_message,
-            disease_skill=_skill_with_finding_targets(
-                skill=skill,
+            disease_knowledge=_knowledge_with_finding_targets(
+                knowledge=knowledge,
                 finding_targets=observation_only_targets,
             ),
             client=client,
             source_metadata={
-                "source": "skill.visual_protocol.finding_targets.observation_only",
+                "source": "knowledge.visual_protocol.finding_targets.observation_only",
                 "disease_target": visual_protocol.get("disease_target"),
             },
         )
@@ -273,14 +273,14 @@ def _merge_prompt_summaries(
     return merged
 
 
-def _anatomy_reference_skill(
-    disease_skill: dict[str, Any],
+def _anatomy_reference_knowledge(
+    disease_knowledge: dict[str, Any],
     anatomy_reference: dict[str, Any],
 ) -> dict[str, Any]:
     return {
-        "disease_name": f"{disease_skill.get('disease_name', '目标疾病')}解剖参照",
+        "disease_name": f"{disease_knowledge.get('disease_name', '目标疾病')}解剖参照",
         "visual_protocol": {
-            "disease_target": f"{(disease_skill.get('visual_protocol') or {}).get('disease_target', 'disease')}_anatomy_reference",
+            "disease_target": f"{(disease_knowledge.get('visual_protocol') or {}).get('disease_target', 'disease')}_anatomy_reference",
             "finding_targets": [anatomy_reference],
         },
     }
@@ -306,15 +306,15 @@ def _target_runs_segmenter(finding_target: dict[str, Any]) -> bool:
     return execution_mode in {"vlm_plus_segmenter", "specialist_segmenter"}
 
 
-def _skill_with_finding_targets(
+def _knowledge_with_finding_targets(
     *,
-    skill: dict[str, Any],
+    knowledge: dict[str, Any],
     finding_targets: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    visual_protocol = dict(skill.get("visual_protocol") or {})
+    visual_protocol = dict(knowledge.get("visual_protocol") or {})
     visual_protocol["finding_targets"] = [dict(target) for target in finding_targets]
     return {
-        **skill,
+        **knowledge,
         "visual_protocol": visual_protocol,
     }
 
@@ -981,7 +981,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run skill-driven no-mask vision localization, anatomy reference segmentation, and finding segmentation."
+        description="Run knowledge-driven no-mask vision localization, anatomy reference segmentation, and finding segmentation."
     )
     parser.add_argument("--image", required=True)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
@@ -993,7 +993,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     _load_dotenv_local()
     args = build_parser().parse_args(argv)
-    result = run_no_mask_skill_visual_pipeline_demo(
+    result = run_no_mask_knowledge_visual_pipeline_demo(
         image_path=Path(args.image),
         output_dir=Path(args.output_dir),
         disease_key=args.disease_key,

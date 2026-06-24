@@ -1,15 +1,15 @@
-const API = "/skill-editor/api";
+const API = "/knowledge-editor/api";
 
 const els = {
   statusText: document.querySelector("#statusText"),
   refreshButton: document.querySelector("#refreshButton"),
   saveButton: document.querySelector("#saveButton"),
-  newSkillButton: document.querySelector("#newSkillButton"),
+  newKnowledgeButton: document.querySelector("#newKnowledgeButton"),
   newPromptButton: document.querySelector("#newPromptButton"),
   deleteButton: document.querySelector("#deleteButton"),
-  skillList: document.querySelector("#skillList"),
+  knowledgeList: document.querySelector("#knowledgeList"),
   promptList: document.querySelector("#promptList"),
-  skillEditor: document.querySelector("#skillEditor"),
+  knowledgeEditor: document.querySelector("#knowledgeEditor"),
   promptEditor: document.querySelector("#promptEditor"),
   promptMarkdown: document.querySelector("#promptMarkdown"),
   authorInput: document.querySelector("#authorInput"),
@@ -23,9 +23,9 @@ const els = {
 };
 
 let state = {
-  kind: "skill",
+  kind: "knowledge",
   key: "",
-  skills: [],
+  knowledge: [],
   prompts: [],
   detail: null,
   tab: "preview",
@@ -37,7 +37,7 @@ boot();
 function bindEvents() {
   els.refreshButton.addEventListener("click", refreshAll);
   els.saveButton.addEventListener("click", saveCurrent);
-  els.newSkillButton.addEventListener("click", createSkill);
+  els.newKnowledgeButton.addEventListener("click", createKnowledge);
   els.newPromptButton.addEventListener("click", createPrompt);
   els.deleteButton.addEventListener("click", deleteCurrent);
   document.querySelectorAll(".tab").forEach((button) => {
@@ -46,10 +46,10 @@ function bindEvents() {
       renderTabs();
     });
   });
-  document.querySelectorAll("[data-skill-field]").forEach((input) => {
+  document.querySelectorAll("[data-knowledge-field]").forEach((input) => {
     input.addEventListener("input", () => {
-      if (state.kind !== "skill" || !state.detail) return;
-      state.detail.editor[input.dataset.skillField] = input.value;
+      if (state.kind !== "knowledge" || !state.detail) return;
+      state.detail.editor[input.dataset.knowledgeField] = input.value;
       renderPreview();
     });
   });
@@ -63,7 +63,7 @@ function bindEvents() {
 async function boot() {
   try {
     await api("/health");
-    setStatus("已连接 MedScope skill_editor，保存会写入当前仓库的 skills/ 和 prompts/");
+    setStatus("已连接 MedScope knowledge_editor，保存会写入当前仓库的 knowledge/ 和 prompts/");
     await refreshAll();
   } catch (error) {
     setStatus(error.message, "error");
@@ -71,24 +71,24 @@ async function boot() {
 }
 
 async function refreshAll() {
-  const [skillData, promptData] = await Promise.all([
-    api("/skills"),
+  const [knowledgeData, promptData] = await Promise.all([
+    api("/knowledge"),
     api("/prompts"),
   ]);
-  state.skills = skillData.skills || [];
+  state.knowledge = knowledgeData.knowledge || [];
   state.prompts = promptData.prompts || [];
   renderLists();
   if (state.key) {
     await loadDocument(state.kind, state.key);
-  } else if (state.skills.length) {
-    await loadDocument("skill", state.skills[0].skill_key);
+  } else if (state.knowledge.length) {
+    await loadDocument("knowledge", state.knowledge[0].knowledge_key);
   } else if (state.prompts.length) {
     await loadDocument("prompt", state.prompts[0].prompt_key);
   }
 }
 
 async function loadDocument(kind, key) {
-  const detail = await api(`/${kind === "skill" ? "skills" : "prompts"}/${encodeURIComponent(key)}`);
+  const detail = await api(`/${kind === "knowledge" ? "knowledge" : "prompts"}/${encodeURIComponent(key)}`);
   state.kind = kind;
   state.key = key;
   state.detail = detail;
@@ -102,13 +102,13 @@ async function saveCurrent() {
   if (!state.key || !state.detail) return;
   const author = els.authorInput.value.trim() || "未填写";
   const note = els.noteInput.value.trim() || "医生修改";
-  if (state.kind === "skill") {
-    state.detail = await api(`/skills/${encodeURIComponent(state.key)}`, {
+  if (state.kind === "knowledge") {
+    state.detail = await api(`/knowledge/${encodeURIComponent(state.key)}`, {
       method: "PUT",
       body: {
         author,
         note,
-        editor: collectSkillEditor(),
+        editor: collectKnowledgeEditor(),
       },
     });
   } else {
@@ -126,21 +126,21 @@ async function saveCurrent() {
   showToast("已保存，并写入版本记录");
 }
 
-async function createSkill() {
-  const skillKey = window.prompt("请输入 skill 文件名，例如 femoral_head_necrosis");
-  if (!skillKey) return;
-  const diseaseName = window.prompt("请输入疾病名称，例如 股骨头坏死") || "新疾病 Skill";
-  const created = await api("/skills", {
+async function createKnowledge() {
+  const knowledgeKey = window.prompt("请输入 knowledge 文件名，例如 femoral_head_necrosis");
+  if (!knowledgeKey) return;
+  const diseaseName = window.prompt("请输入疾病名称，例如 股骨头坏死") || "新疾病 Knowledge";
+  const created = await api("/knowledge", {
     method: "POST",
     body: {
-      skill_key: skillKey,
+      knowledge_key: knowledgeKey,
       disease_name: diseaseName,
       author: els.authorInput.value.trim() || "系统",
     },
   });
   await refreshAll();
-  await loadDocument("skill", created.skill_key);
-  showToast("已新增 skill 文件");
+  await loadDocument("knowledge", created.knowledge_key);
+  showToast("已新增 knowledge 文件");
 }
 
 async function createPrompt() {
@@ -160,10 +160,10 @@ async function createPrompt() {
 
 async function deleteCurrent() {
   if (!state.key) return;
-  const label = state.kind === "skill" ? "Skill" : "Prompt";
+  const label = state.kind === "knowledge" ? "Knowledge" : "Prompt";
   const confirmed = window.confirm(`确认删除当前 ${label} 文件？删除前会保存一份版本快照。`);
   if (!confirmed) return;
-  await api(`/${state.kind === "skill" ? "skills" : "prompts"}/${encodeURIComponent(state.key)}`, {
+  await api(`/${state.kind === "knowledge" ? "knowledge" : "prompts"}/${encodeURIComponent(state.key)}`, {
     method: "DELETE",
     body: {
       author: els.authorInput.value.trim() || "未填写",
@@ -177,12 +177,12 @@ async function deleteCurrent() {
 }
 
 function renderLists() {
-  els.skillList.innerHTML = state.skills.map((skill) => `
-    <button class="doc-button ${state.kind === "skill" && state.key === skill.skill_key ? "active" : ""}" data-kind="skill" data-key="${escapeHtml(skill.skill_key)}" type="button">
-      <strong>${escapeHtml(skill.title || skill.skill_key)}</strong>
-      <span>${escapeHtml(skill.skill_key)} · ${escapeHtml(skill.version_count)} 版</span>
+  els.knowledgeList.innerHTML = state.knowledge.map((knowledge) => `
+    <button class="doc-button ${state.kind === "knowledge" && state.key === knowledge.knowledge_key ? "active" : ""}" data-kind="knowledge" data-key="${escapeHtml(knowledge.knowledge_key)}" type="button">
+      <strong>${escapeHtml(knowledge.title || knowledge.knowledge_key)}</strong>
+      <span>${escapeHtml(knowledge.knowledge_key)} · ${escapeHtml(knowledge.version_count)} 版</span>
     </button>
-  `).join("") || '<p class="empty">暂无 skill</p>';
+  `).join("") || '<p class="empty">暂无 knowledge</p>';
   els.promptList.innerHTML = state.prompts.map((prompt) => `
     <button class="doc-button ${state.kind === "prompt" && state.key === prompt.prompt_key ? "active" : ""}" data-kind="prompt" data-key="${escapeHtml(prompt.prompt_key)}" type="button">
       <strong>${escapeHtml(prompt.title || prompt.prompt_key)}</strong>
@@ -195,13 +195,13 @@ function renderLists() {
 }
 
 function renderEditor() {
-  els.skillEditor.classList.toggle("hidden", state.kind !== "skill");
+  els.knowledgeEditor.classList.toggle("hidden", state.kind !== "knowledge");
   els.promptEditor.classList.toggle("hidden", state.kind !== "prompt");
   if (!state.detail) return;
-  if (state.kind === "skill") {
+  if (state.kind === "knowledge") {
     const editor = state.detail.editor || {};
-    document.querySelectorAll("[data-skill-field]").forEach((input) => {
-      input.value = editor[input.dataset.skillField] || "";
+    document.querySelectorAll("[data-knowledge-field]").forEach((input) => {
+      input.value = editor[input.dataset.knowledgeField] || "";
     });
     els.stagingPreview.textContent = editor.staging_rules_preview || "{}";
     els.sourcePreview.textContent = editor.source_documents_preview || "[]";
@@ -234,10 +234,10 @@ function renderPreview() {
     els.previewView.innerHTML = markdownToHtml(state.detail.markdown || "");
     return;
   }
-  const editor = collectSkillEditor();
+  const editor = collectKnowledgeEditor();
   els.previewView.innerHTML = `
     <h2>${escapeHtml(editor.disease_name || state.key)}</h2>
-    ${renderField("Skill ID", editor.skill_id)}
+    ${renderField("Knowledge ID", editor.knowledge_id)}
     ${renderField("证据等级", editor.evidence_level)}
     ${renderField("来源", editor.source)}
     ${renderList("常见症状", editor.common_symptoms)}
@@ -255,7 +255,7 @@ function renderRaw() {
     els.rawView.textContent = "";
     return;
   }
-  els.rawView.textContent = state.kind === "skill"
+  els.rawView.textContent = state.kind === "knowledge"
     ? JSON.stringify(state.detail.raw || {}, null, 2)
     : state.detail.markdown || "";
 }
@@ -286,11 +286,11 @@ function renderHistory() {
 
 async function compareVersion(versionId) {
   const version = await fetchVersion(versionId);
-  const currentText = state.kind === "skill"
-    ? JSON.stringify(collectSkillEditor(), null, 2)
+  const currentText = state.kind === "knowledge"
+    ? JSON.stringify(collectKnowledgeEditor(), null, 2)
     : els.promptMarkdown.value;
   const oldContent = version.content || {};
-  const oldText = state.kind === "skill"
+  const oldText = state.kind === "knowledge"
     ? JSON.stringify(oldContent, null, 2)
     : oldContent.markdown || "";
   document.querySelector("#diffBox").innerHTML = `
@@ -305,7 +305,7 @@ async function compareVersion(versionId) {
 async function restoreVersion(versionId) {
   const confirmed = window.confirm("确认恢复这个历史版本？当前文件会被覆盖，并生成一条恢复记录。");
   if (!confirmed) return;
-  const path = `/${state.kind === "skill" ? "skills" : "prompts"}/${encodeURIComponent(state.key)}/versions/${encodeURIComponent(versionId)}/restore`;
+  const path = `/${state.kind === "knowledge" ? "knowledge" : "prompts"}/${encodeURIComponent(state.key)}/versions/${encodeURIComponent(versionId)}/restore`;
   state.detail = await api(path, {
     method: "POST",
     body: {
@@ -317,16 +317,16 @@ async function restoreVersion(versionId) {
 }
 
 async function fetchVersion(versionId) {
-  const path = `/${state.kind === "skill" ? "skills" : "prompts"}/${encodeURIComponent(state.key)}/versions/${encodeURIComponent(versionId)}`;
+  const path = `/${state.kind === "knowledge" ? "knowledge" : "prompts"}/${encodeURIComponent(state.key)}/versions/${encodeURIComponent(versionId)}`;
   const payload = await api(path);
   return payload.version;
 }
 
-function collectSkillEditor() {
-  if (state.kind !== "skill") return {};
+function collectKnowledgeEditor() {
+  if (state.kind !== "knowledge") return {};
   const editor = {...(state.detail?.editor || {})};
-  document.querySelectorAll("[data-skill-field]").forEach((input) => {
-    editor[input.dataset.skillField] = input.value;
+  document.querySelectorAll("[data-knowledge-field]").forEach((input) => {
+    editor[input.dataset.knowledgeField] = input.value;
   });
   return editor;
 }

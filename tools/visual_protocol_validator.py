@@ -4,7 +4,7 @@ from typing import Any
 
 
 class VisualProtocolValidator:
-    """Validates the visual protocol contract used by image-skill alignment."""
+    """Validates the visual protocol contract used by image-knowledge alignment."""
 
     QUANTITATIVE_SCHEMA_VERSION = "quantitative_evidence_protocol.v1"
     QUANTITATIVE_PROTOCOL_SECTIONS = {
@@ -19,21 +19,21 @@ class VisualProtocolValidator:
         "not_usable",
     }
 
-    def validate_skill(self, skill: dict[str, Any]) -> dict[str, Any]:
-        if skill.get("skill_type") != "guideline_based":
+    def validate_knowledge(self, knowledge: dict[str, Any]) -> dict[str, Any]:
+        if knowledge.get("knowledge_type") != "guideline_based":
             return {
                 "valid": True,
                 "status": "not_required",
                 "errors": [],
                 "warnings": [],
             }
-        return self.validate(skill.get("visual_protocol"))
+        return self.validate(knowledge.get("visual_protocol"))
 
-    def validate_evidence_protocol(self, skill: dict[str, Any]) -> dict[str, Any]:
+    def validate_evidence_protocol(self, knowledge: dict[str, Any]) -> dict[str, Any]:
         errors: list[str] = []
         warnings: list[str] = []
 
-        if skill.get("skill_type") != "guideline_based":
+        if knowledge.get("knowledge_type") != "guideline_based":
             return {
                 "valid": True,
                 "status": "not_required",
@@ -41,10 +41,10 @@ class VisualProtocolValidator:
                 "warnings": [],
             }
 
-        imaging = skill.get("imaging_evidence_protocol")
-        quantitative = skill.get("quantitative_evidence_protocol")
-        clinical = skill.get("clinical_context_protocol")
-        integrated = skill.get("integrated_reasoning_protocol")
+        imaging = knowledge.get("imaging_evidence_protocol")
+        quantitative = knowledge.get("quantitative_evidence_protocol")
+        clinical = knowledge.get("clinical_context_protocol")
+        integrated = knowledge.get("integrated_reasoning_protocol")
 
         self._validate_imaging_evidence_protocol(imaging, errors, warnings)
         self._validate_quantitative_evidence_protocol(quantitative, errors)
@@ -76,7 +76,7 @@ class VisualProtocolValidator:
             return {
                 "valid": False,
                 "status": "invalid",
-                "errors": ["visual_protocol is required for guideline_based skill"],
+                "errors": ["visual_protocol is required for guideline_based knowledge"],
                 "warnings": [],
             }
 

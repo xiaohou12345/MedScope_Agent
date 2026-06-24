@@ -71,7 +71,7 @@ class NoMaskCandidateDiagnosisDemoTest(unittest.TestCase):
             report = json.loads(Path(result["report_path"]).read_text(encoding="utf-8"))
             self.assertTrue(report["诊断倾向"].startswith("科研假设风险提示"))
             self.assertEqual(
-                report["used_skill"]["skill_type"],
+                report["used_knowledge"]["knowledge_type"],
                 "data_mined_hypothesis",
             )
             self.assertEqual(report["hypothesis_validation_mode"], "enabled")
@@ -275,7 +275,7 @@ class NoMaskCandidateDiagnosisDemoTest(unittest.TestCase):
 
             self.assertEqual(result["status"], "ok")
             report = json.loads(Path(result["report_path"]).read_text(encoding="utf-8"))
-            self.assertEqual(report["used_skill"]["skill_type"], "guideline_based")
+            self.assertEqual(report["used_knowledge"]["knowledge_type"], "guideline_based")
             self.assertIn("股骨头坏死", report["诊断倾向"])
             self.assertEqual(report["visual_input_contract"]["body_part"], "hip")
             self.assertEqual(

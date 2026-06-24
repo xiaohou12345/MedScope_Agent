@@ -37,10 +37,10 @@ include = [
     "llm*",
     "memory*",
     "scripts*",
-    "skill_editor*",
+    "knowledge_editor*",
     "tools*",
 ]
 
 [tool.setuptools.package-data]
 tools = ["*.yaml"]
-skill_editor = ["*.html", "*.css", "*.js"]
+knowledge_editor = ["*.html", "*.css", "*.js"]

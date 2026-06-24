@@ -38,7 +38,7 @@ class RealBratsSampleTest(unittest.TestCase):
                 image_path=str(REAL_IMAGE),
                 mask_path=str(REAL_MASK),
                 overlay_path=str(overlay_path),
-                disease_skill={"disease_name": "成人弥漫性胶质瘤"},
+                disease_knowledge={"disease_name": "成人弥漫性胶质瘤"},
             )
 
             evidence = result["visual_evidence"]

@@ -27,7 +27,7 @@ class SegmentationBenchmarkTest(unittest.TestCase):
             self.assertEqual(result["evaluator_type"], "binary_mask")
             self.assertTrue(result["safety"]["web_demo_independent"])
             self.assertTrue(result["safety"]["not_clinical_diagnosis"])
-            self.assertFalse(result["safety"]["formal_skill_update_allowed"])
+            self.assertFalse(result["safety"]["formal_knowledge_update_allowed"])
             self.assertEqual(result["aggregate"]["case_count"], 1)
             self.assertEqual(result["aggregate"]["metric_ready_case_count"], 0)
             self.assertEqual(result["aggregate"]["missing_reference_mask_count"], 1)
@@ -100,7 +100,7 @@ class SegmentationBenchmarkTest(unittest.TestCase):
                         "safety": {
                             "web_demo_independent": True,
                             "not_clinical_diagnosis": True,
-                            "formal_skill_update_allowed": False,
+                            "formal_knowledge_update_allowed": False,
                         },
                         "metric_gates": {
                             "required_metrics": ["lesion_dice", "lesion_iou"],
@@ -141,7 +141,7 @@ class SegmentationBenchmarkTest(unittest.TestCase):
             self.assertEqual(case["quality_gate"]["status"], "fail")
             self.assertIn("lesion_dice", case["quality_gate"]["failed_metrics"])
             self.assertFalse(case["diagnosis_allowed"])
-            self.assertFalse(case["formal_skill_update_allowed"])
+            self.assertFalse(case["formal_knowledge_update_allowed"])
             markdown = Path(result["output_paths"]["markdown_path"]).read_text(encoding="utf-8")
             self.assertIn("metric_fail_case_count", markdown)
             self.assertIn("| metric_ready_case |", markdown)

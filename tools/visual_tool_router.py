@@ -121,7 +121,7 @@ class VisualToolRegistry:
 
 
 class VisualToolRouter:
-    """Routes skill visual_protocol tasks to capable visual tools."""
+    """Routes knowledge visual_protocol tasks to capable visual tools."""
 
     def __init__(self, registry: VisualToolRegistry | None = None) -> None:
         self.registry = registry or VisualToolRegistry.from_file(
@@ -191,8 +191,8 @@ class VisualToolRouter:
             )
         return plan
 
-    def plan_from_skill(self, skill: dict[str, Any]) -> list[dict[str, Any]]:
-        protocol = skill.get("imaging_evidence_protocol") or skill.get("visual_protocol") or {}
+    def plan_from_knowledge(self, knowledge: dict[str, Any]) -> list[dict[str, Any]]:
+        protocol = knowledge.get("imaging_evidence_protocol") or knowledge.get("visual_protocol") or {}
         return self.plan_from_protocol(dict(protocol))
 
     def _protocol_tasks(self, visual_protocol: dict[str, Any]) -> list[dict[str, Any]]:

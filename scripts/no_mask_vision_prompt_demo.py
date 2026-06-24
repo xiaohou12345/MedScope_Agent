@@ -8,15 +8,15 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 from tools.vision_prompt_generator import OpenAICompatibleVisionClient, VisionPromptGenerator
 
 
 DEFAULT_OUTPUT_DIR = Path("output/fake/no_mask_vision_prompt_demo")
 
 
-def default_pneumonia_opacity_skill() -> dict[str, Any]:
-    return SkillBuilderTool().load_guideline_skill("pneumonia_chest_xray")
+def default_pneumonia_opacity_knowledge() -> dict[str, Any]:
+    return KnowledgeBuilderTool().load_guideline_knowledge("pneumonia_chest_xray")
 
 
 def run_no_mask_vision_prompt_demo(
@@ -24,7 +24,7 @@ def run_no_mask_vision_prompt_demo(
     image_path: Path | str,
     output_dir: Path | str = DEFAULT_OUTPUT_DIR,
     patient_message: str = "咳嗽发热，胸片疑似肺炎，请定位可疑肺部浸润影区域",
-    disease_skill: dict[str, Any] | None = None,
+    disease_knowledge: dict[str, Any] | None = None,
     client: Any | None = None,
     source_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -34,7 +34,7 @@ def run_no_mask_vision_prompt_demo(
     generator = VisionPromptGenerator(client=client or OpenAICompatibleVisionClient())
     prompt_result = generator.generate(
         image_path=image,
-        disease_skill=disease_skill or default_pneumonia_opacity_skill(),
+        disease_knowledge=disease_knowledge or default_pneumonia_opacity_knowledge(),
         patient_message=patient_message,
     )
     prompt_result["source_metadata"] = source_metadata or {}

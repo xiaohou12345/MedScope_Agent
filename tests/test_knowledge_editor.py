@@ -3,33 +3,33 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from skill_editor.backend import (
-    dispatch_skill_editor_api_request,
-    dispatch_skill_editor_static_request,
+from knowledge_editor.backend import (
+    dispatch_knowledge_editor_api_request,
+    dispatch_knowledge_editor_static_request,
 )
 
 
-class SkillEditorTest(unittest.TestCase):
+class KnowledgeEditorTest(unittest.TestCase):
     def test_static_editor_page_is_served_from_own_route(self):
-        status, body, content_type = dispatch_skill_editor_static_request("/skill-editor/")
+        status, body, content_type = dispatch_knowledge_editor_static_request("/knowledge-editor/")
 
         self.assertEqual(status, 200)
         self.assertEqual(content_type, "text/html; charset=utf-8")
-        self.assertIn("Skill / Prompt 可视化编辑器".encode("utf-8"), body)
-        self.assertIn(b"/skill-editor/app.js", body)
+        self.assertIn("Knowledge / Prompt 可视化编辑器".encode("utf-8"), body)
+        self.assertIn(b"/knowledge-editor/app.js", body)
 
-    def test_skill_editor_updates_existing_medscope_yaml_without_losing_unknown_fields(self):
+    def test_knowledge_editor_updates_existing_medscope_yaml_without_losing_unknown_fields(self):
         with TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            skills_dir = root / "skills"
+            knowledges_dir = root / "knowledge"
             versions = root / "versions"
-            skills_dir.mkdir()
-            skill_path = skills_dir / "fhn.yaml"
-            skill_path.write_text(
+            knowledges_dir.mkdir()
+            knowledge_path = knowledges_dir / "fhn.yaml"
+            knowledge_path.write_text(
                 json.dumps(
                     {
                         "disease_name": "股骨头坏死",
-                        "skill_id": "fhn_v0.1",
+                        "knowledge_id": "fhn_v0.1",
                         "version": "0.1",
                         "unknown_runtime_field": {"keep": True},
                         "clinical_features": {
@@ -46,16 +46,16 @@ class SkillEditorTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            status, payload = dispatch_skill_editor_api_request(
+            status, payload = dispatch_knowledge_editor_api_request(
                 method="PUT",
-                path="/skill-editor/api/skills/fhn",
+                path="/knowledge-editor/api/knowledge/fhn",
                 body=json.dumps(
                     {
                         "author": "张医生",
                         "note": "补充症状",
                         "editor": {
                             "disease_name": "股骨头坏死",
-                            "skill_id": "fhn_v0.1",
+                            "knowledge_id": "fhn_v0.1",
                             "version": "0.1",
                             "evidence_level": "high",
                             "source": "医生审核",
@@ -72,13 +72,13 @@ class SkillEditorTest(unittest.TestCase):
                     },
                     ensure_ascii=False,
                 ).encode("utf-8"),
-                skills_dir=skills_dir,
+                knowledges_dir=knowledges_dir,
                 version_root=versions,
             )
 
             self.assertEqual(status, 200)
-            self.assertEqual(payload["skill_key"], "fhn")
-            updated = json.loads(skill_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["knowledge_key"], "fhn")
+            updated = json.loads(knowledge_path.read_text(encoding="utf-8"))
             self.assertEqual(updated["unknown_runtime_field"], {"keep": True})
             self.assertEqual(updated["clinical_features"]["common_symptoms"], ["髋痛", "跛行"])
             self.assertEqual(updated["required_image_views"], ["X 光", "MRI"])
@@ -94,9 +94,9 @@ class SkillEditorTest(unittest.TestCase):
             versions = root / "versions"
             prompts_dir.mkdir()
 
-            status, created = dispatch_skill_editor_api_request(
+            status, created = dispatch_knowledge_editor_api_request(
                 method="POST",
-                path="/skill-editor/api/prompts",
+                path="/knowledge-editor/api/prompts",
                 body=json.dumps(
                     {
                         "prompt_key": "diagnosis_agent_prompt",
@@ -111,9 +111,9 @@ class SkillEditorTest(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertEqual(created["prompt_key"], "diagnosis_agent_prompt")
 
-            status, updated = dispatch_skill_editor_api_request(
+            status, updated = dispatch_knowledge_editor_api_request(
                 method="PUT",
-                path="/skill-editor/api/prompts/diagnosis_agent_prompt",
+                path="/knowledge-editor/api/prompts/diagnosis_agent_prompt",
                 body=json.dumps(
                     {
                         "markdown": "你是诊断医生 Agent，负责生成辅助诊断报告。",
@@ -132,9 +132,9 @@ class SkillEditorTest(unittest.TestCase):
             self.assertEqual(len(updated["versions"]), 2)
             first_version_id = updated["versions"][-1]["id"]
 
-            status, restored = dispatch_skill_editor_api_request(
+            status, restored = dispatch_knowledge_editor_api_request(
                 method="POST",
-                path=f"/skill-editor/api/prompts/diagnosis_agent_prompt/versions/{first_version_id}/restore",
+                path=f"/knowledge-editor/api/prompts/diagnosis_agent_prompt/versions/{first_version_id}/restore",
                 body=json.dumps({"author": "张医生"}, ensure_ascii=False).encode("utf-8"),
                 prompts_dir=prompts_dir,
                 version_root=versions,

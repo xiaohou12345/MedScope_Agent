@@ -10,15 +10,15 @@ from urllib.parse import urlparse
 
 EDITOR_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = EDITOR_ROOT.parent
-SKILLS_DIR = PROJECT_ROOT / "skills"
+KNOWLEDGES_DIR = PROJECT_ROOT / "knowledge"
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
-VERSION_ROOT = PROJECT_ROOT / "output" / "skill_editor_versions"
+VERSION_ROOT = PROJECT_ROOT / "output" / "knowledge_editor_versions"
 
 STATIC_FILES = {
-    "/skill-editor": "index.html",
-    "/skill-editor/": "index.html",
-    "/skill-editor/app.js": "app.js",
-    "/skill-editor/styles.css": "styles.css",
+    "/knowledge-editor": "index.html",
+    "/knowledge-editor/": "index.html",
+    "/knowledge-editor/app.js": "app.js",
+    "/knowledge-editor/styles.css": "styles.css",
 }
 
 
@@ -30,7 +30,7 @@ def _remove_suffix(value: str, suffix: str) -> str:
     return value[: -len(suffix)] if suffix and value.endswith(suffix) else value
 
 
-def dispatch_skill_editor_static_request(path: str) -> tuple[int | None, bytes, str]:
+def dispatch_knowledge_editor_static_request(path: str) -> tuple[int | None, bytes, str]:
     route_path = urlparse(path).path
     filename = STATIC_FILES.get(route_path)
     if not filename:
@@ -48,28 +48,28 @@ def dispatch_skill_editor_static_request(path: str) -> tuple[int | None, bytes, 
     return 200, file_path.read_bytes(), content_type
 
 
-def dispatch_skill_editor_api_request(
+def dispatch_knowledge_editor_api_request(
     method: str,
     path: str,
     body: bytes = b"",
     *,
-    skills_dir: Path | str = SKILLS_DIR,
+    knowledges_dir: Path | str = KNOWLEDGES_DIR,
     prompts_dir: Path | str = PROMPTS_DIR,
     version_root: Path | str = VERSION_ROOT,
 ) -> tuple[int | None, dict]:
     route_path = urlparse(path).path
-    if route_path == "/skill-editor/api/health":
+    if route_path == "/knowledge-editor/api/health":
         return 200, {"status": "ok"}
     try:
-        if route_path == "/skill-editor/api/skills" or route_path.startswith("/skill-editor/api/skills/"):
-            return _dispatch_skill_api(
+        if route_path == "/knowledge-editor/api/knowledge" or route_path.startswith("/knowledge-editor/api/knowledge/"):
+            return _dispatch_knowledge_api(
                 method=method,
                 route_path=route_path,
                 body=body,
-                skills_dir=Path(skills_dir),
+                knowledges_dir=Path(knowledges_dir),
                 version_root=Path(version_root),
             )
-        if route_path == "/skill-editor/api/prompts" or route_path.startswith("/skill-editor/api/prompts/"):
+        if route_path == "/knowledge-editor/api/prompts" or route_path.startswith("/knowledge-editor/api/prompts/"):
             return _dispatch_prompt_api(
                 method=method,
                 route_path=route_path,
@@ -82,109 +82,109 @@ def dispatch_skill_editor_api_request(
     return None, {}
 
 
-def _dispatch_skill_api(
+def _dispatch_knowledge_api(
     *,
     method: str,
     route_path: str,
     body: bytes,
-    skills_dir: Path,
+    knowledges_dir: Path,
     version_root: Path,
 ) -> tuple[int, dict]:
-    if method == "GET" and route_path == "/skill-editor/api/skills":
-        skills = [
-            _skill_summary(skill_key=path.stem, skill=_read_skill(path), version_root=version_root)
-            for path in sorted(skills_dir.glob("*.yaml"))
+    if method == "GET" and route_path == "/knowledge-editor/api/knowledge":
+        knowledge = [
+            _knowledge_summary(knowledge_key=path.stem, knowledge=_read_knowledge(path), version_root=version_root)
+            for path in sorted(knowledges_dir.glob("*.yaml"))
             if _can_read_json(path)
-        ] if skills_dir.exists() else []
-        skills.sort(key=lambda item: item["title"])
-        return 200, {"skills": skills}
+        ] if knowledges_dir.exists() else []
+        knowledge.sort(key=lambda item: item["title"])
+        return 200, {"knowledge": knowledge}
 
-    if method == "POST" and route_path == "/skill-editor/api/skills":
+    if method == "POST" and route_path == "/knowledge-editor/api/knowledge":
         payload = _json_body(body)
-        skill_key = _safe_key(payload.get("skill_key") or payload.get("name") or "new_skill")
-        skills_dir.mkdir(parents=True, exist_ok=True)
-        skill_path = skills_dir / f"{skill_key}.yaml"
-        if skill_path.exists():
-            return 409, {"error": f"skill already exists: {skill_key}"}
-        skill = _new_skill(skill_key=skill_key, payload=payload)
-        skill_path.write_text(_json_text(skill), encoding="utf-8")
+        knowledge_key = _safe_key(payload.get("knowledge_key") or payload.get("name") or "new_knowledge")
+        knowledges_dir.mkdir(parents=True, exist_ok=True)
+        knowledge_path = knowledges_dir / f"{knowledge_key}.yaml"
+        if knowledge_path.exists():
+            return 409, {"error": f"knowledge already exists: {knowledge_key}"}
+        knowledge = _new_knowledge(knowledge_key=knowledge_key, payload=payload)
+        knowledge_path.write_text(_json_text(knowledge), encoding="utf-8")
         _save_version(
-            kind="skills",
-            document_key=skill_key,
-            content=skill,
+            kind="knowledge",
+            document_key=knowledge_key,
+            content=knowledge,
             author=str(payload.get("author") or "系统"),
-            note=str(payload.get("note") or "创建 skill"),
+            note=str(payload.get("note") or "创建 knowledge"),
             action="create",
             version_root=version_root,
         )
-        return 200, _skill_detail(skill_key=skill_key, skill_path=skill_path, version_root=version_root)
+        return 200, _knowledge_detail(knowledge_key=knowledge_key, knowledge_path=knowledge_path, version_root=version_root)
 
-    skill_key, suffix = _split_document_route(route_path, "/skill-editor/api/skills/")
-    if not skill_key:
+    knowledge_key, suffix = _split_document_route(route_path, "/knowledge-editor/api/knowledge/")
+    if not knowledge_key:
         return 404, {"error": "not found"}
-    skill_path = skills_dir / f"{skill_key}.yaml"
-    if not skill_path.exists():
-        return 404, {"error": f"skill not found: {skill_key}"}
+    knowledge_path = knowledges_dir / f"{knowledge_key}.yaml"
+    if not knowledge_path.exists():
+        return 404, {"error": f"knowledge not found: {knowledge_key}"}
 
     if method == "GET" and not suffix:
-        return 200, _skill_detail(skill_key=skill_key, skill_path=skill_path, version_root=version_root)
+        return 200, _knowledge_detail(knowledge_key=knowledge_key, knowledge_path=knowledge_path, version_root=version_root)
     if method == "GET" and suffix == "versions":
-        return 200, {"versions": _list_versions(kind="skills", document_key=skill_key, version_root=version_root)}
+        return 200, {"versions": _list_versions(kind="knowledge", document_key=knowledge_key, version_root=version_root)}
     if method == "GET" and suffix.startswith("versions/"):
         version_id = _remove_prefix(suffix, "versions/")
-        return _version_response(kind="skills", document_key=skill_key, version_id=version_id, version_root=version_root)
+        return _version_response(kind="knowledge", document_key=knowledge_key, version_id=version_id, version_root=version_root)
     if method == "POST" and suffix.startswith("versions/") and suffix.endswith("/restore"):
         version_id = _remove_suffix(_remove_prefix(suffix, "versions/"), "/restore").strip("/")
         status, payload = _version_response(
-            kind="skills",
-            document_key=skill_key,
+            kind="knowledge",
+            document_key=knowledge_key,
             version_id=version_id,
             version_root=version_root,
         )
         if status != 200:
             return status, payload
-        skill = payload["version"]["content"]
-        skill_path.write_text(_json_text(skill), encoding="utf-8")
+        knowledge = payload["version"]["content"]
+        knowledge_path.write_text(_json_text(knowledge), encoding="utf-8")
         request = _json_body(body) if body else {}
         _save_version(
-            kind="skills",
-            document_key=skill_key,
-            content=skill,
+            kind="knowledge",
+            document_key=knowledge_key,
+            content=knowledge,
             author=str(request.get("author") or "系统"),
             note=f"恢复版本 {version_id}",
             action="restore",
             version_root=version_root,
         )
-        return 200, _skill_detail(skill_key=skill_key, skill_path=skill_path, version_root=version_root)
+        return 200, _knowledge_detail(knowledge_key=knowledge_key, knowledge_path=knowledge_path, version_root=version_root)
     if method == "PUT" and not suffix:
         payload = _json_body(body)
-        current = _read_skill(skill_path)
-        updated = _apply_skill_editor_payload(current, payload)
-        skill_path.write_text(_json_text(updated), encoding="utf-8")
+        current = _read_knowledge(knowledge_path)
+        updated = _apply_knowledge_editor_payload(current, payload)
+        knowledge_path.write_text(_json_text(updated), encoding="utf-8")
         _save_version(
-            kind="skills",
-            document_key=skill_key,
+            kind="knowledge",
+            document_key=knowledge_key,
             content=updated,
             author=str(payload.get("author") or "未填写"),
-            note=str(payload.get("note") or "医生修改 skill"),
+            note=str(payload.get("note") or "医生修改 knowledge"),
             action="update",
             version_root=version_root,
         )
-        return 200, _skill_detail(skill_key=skill_key, skill_path=skill_path, version_root=version_root)
+        return 200, _knowledge_detail(knowledge_key=knowledge_key, knowledge_path=knowledge_path, version_root=version_root)
     if method == "DELETE" and not suffix:
         payload = _json_body(body) if body else {}
-        current = _read_skill(skill_path)
+        current = _read_knowledge(knowledge_path)
         _save_version(
-            kind="skills",
-            document_key=skill_key,
+            kind="knowledge",
+            document_key=knowledge_key,
             content=current,
             author=str(payload.get("author") or "未填写"),
             note=str(payload.get("note") or "删除前快照"),
             action="delete",
             version_root=version_root,
         )
-        skill_path.unlink()
-        return 200, {"status": "deleted", "skill_key": skill_key}
+        knowledge_path.unlink()
+        return 200, {"status": "deleted", "knowledge_key": knowledge_key}
     return 404, {"error": "not found"}
 
 
@@ -196,14 +196,14 @@ def _dispatch_prompt_api(
     prompts_dir: Path,
     version_root: Path,
 ) -> tuple[int, dict]:
-    if method == "GET" and route_path == "/skill-editor/api/prompts":
+    if method == "GET" and route_path == "/knowledge-editor/api/prompts":
         prompts = [
             _prompt_summary(prompt_path=path, version_root=version_root)
             for path in sorted(prompts_dir.glob("*.md"))
         ] if prompts_dir.exists() else []
         return 200, {"prompts": prompts}
 
-    if method == "POST" and route_path == "/skill-editor/api/prompts":
+    if method == "POST" and route_path == "/knowledge-editor/api/prompts":
         payload = _json_body(body)
         prompt_key = _safe_key(payload.get("prompt_key") or payload.get("name") or "new_prompt")
         prompts_dir.mkdir(parents=True, exist_ok=True)
@@ -223,7 +223,7 @@ def _dispatch_prompt_api(
         )
         return 200, _prompt_detail(prompt_key=prompt_key, prompt_path=prompt_path, version_root=version_root)
 
-    prompt_key, suffix = _split_document_route(route_path, "/skill-editor/api/prompts/")
+    prompt_key, suffix = _split_document_route(route_path, "/knowledge-editor/api/prompts/")
     if not prompt_key:
         return 404, {"error": "not found"}
     prompt_path = prompts_dir / f"{prompt_key}.md"
@@ -291,62 +291,62 @@ def _dispatch_prompt_api(
     return 404, {"error": "not found"}
 
 
-def _skill_summary(*, skill_key: str, skill: dict, version_root: Path) -> dict:
-    clinical = skill.get("clinical_features") or {}
+def _knowledge_summary(*, knowledge_key: str, knowledge: dict, version_root: Path) -> dict:
+    clinical = knowledge.get("clinical_features") or {}
     return {
-        "skill_key": skill_key,
-        "title": skill.get("disease_name") or skill_key,
-        "skill_id": skill.get("skill_id") or "",
-        "evidence_level": skill.get("evidence_level") or "",
+        "knowledge_key": knowledge_key,
+        "title": knowledge.get("disease_name") or knowledge_key,
+        "knowledge_id": knowledge.get("knowledge_id") or "",
+        "evidence_level": knowledge.get("evidence_level") or "",
         "symptom_count": len(clinical.get("common_symptoms") or []),
-        "image_requirement_count": len(skill.get("required_image_views") or []),
-        "version_count": len(_list_versions(kind="skills", document_key=skill_key, version_root=version_root)),
+        "image_requirement_count": len(knowledge.get("required_image_views") or []),
+        "version_count": len(_list_versions(kind="knowledge", document_key=knowledge_key, version_root=version_root)),
     }
 
 
-def _skill_detail(*, skill_key: str, skill_path: Path, version_root: Path) -> dict:
-    skill = _read_skill(skill_path)
+def _knowledge_detail(*, knowledge_key: str, knowledge_path: Path, version_root: Path) -> dict:
+    knowledge = _read_knowledge(knowledge_path)
     return {
-        "skill_key": skill_key,
-        "path": str(skill_path),
-        "editor": _skill_to_editor(skill),
-        "raw": skill,
-        "versions": _list_versions(kind="skills", document_key=skill_key, version_root=version_root),
+        "knowledge_key": knowledge_key,
+        "path": str(knowledge_path),
+        "editor": _knowledge_to_editor(knowledge),
+        "raw": knowledge,
+        "versions": _list_versions(kind="knowledge", document_key=knowledge_key, version_root=version_root),
     }
 
 
-def _skill_to_editor(skill: dict) -> dict:
-    clinical = skill.get("clinical_features") or {}
-    targets = skill.get("visual_targets") or {}
-    tasks = skill.get("vision_agent_tasks") or {}
-    report = skill.get("report_requirements") or {}
+def _knowledge_to_editor(knowledge: dict) -> dict:
+    clinical = knowledge.get("clinical_features") or {}
+    targets = knowledge.get("visual_targets") or {}
+    tasks = knowledge.get("vision_agent_tasks") or {}
+    report = knowledge.get("report_requirements") or {}
     return {
-        "disease_name": skill.get("disease_name") or "",
-        "skill_id": skill.get("skill_id") or "",
-        "version": skill.get("version") or "",
-        "source": skill.get("source") or "",
-        "evidence_level": skill.get("evidence_level") or "",
+        "disease_name": knowledge.get("disease_name") or "",
+        "knowledge_id": knowledge.get("knowledge_id") or "",
+        "version": knowledge.get("version") or "",
+        "source": knowledge.get("source") or "",
+        "evidence_level": knowledge.get("evidence_level") or "",
         "common_symptoms": _join_list(clinical.get("common_symptoms")),
         "risk_factors": _join_list(clinical.get("risk_factors")),
-        "required_image_views": _join_list(skill.get("required_image_views")),
+        "required_image_views": _join_list(knowledge.get("required_image_views")),
         "anatomy": _join_list(targets.get("anatomy")),
         "lesion_features": _join_list(targets.get("lesion_features")),
         "segmentation_targets": _join_list(tasks.get("segmentation_targets")),
         "quantitative_features": _join_list(tasks.get("quantitative_features")),
         "report_requirements": _join_list(report.get("include")),
-        "doctor_notes": _join_doctor_notes(skill),
-        "staging_rules_preview": _json_text(skill.get("staging_rules") or {}),
-        "source_documents_preview": _json_text(skill.get("source_documents") or []),
+        "doctor_notes": _join_doctor_notes(knowledge),
+        "staging_rules_preview": _json_text(knowledge.get("staging_rules") or {}),
+        "source_documents_preview": _json_text(knowledge.get("source_documents") or []),
     }
 
 
-def _apply_skill_editor_payload(skill: dict, payload: dict) -> dict:
-    updated = json.loads(json.dumps(skill, ensure_ascii=False))
+def _apply_knowledge_editor_payload(knowledge: dict, payload: dict) -> dict:
+    updated = json.loads(json.dumps(knowledge, ensure_ascii=False))
     editor = payload.get("editor") or {}
     if not isinstance(editor, dict):
         raise ValueError("editor must be an object")
 
-    for field in ("disease_name", "skill_id", "version", "source", "evidence_level"):
+    for field in ("disease_name", "knowledge_id", "version", "source", "evidence_level"):
         if field in editor:
             updated[field] = str(editor.get(field) or "").strip()
 
@@ -395,14 +395,14 @@ def _apply_skill_editor_payload(skill: dict, payload: dict) -> dict:
     return updated
 
 
-def _new_skill(*, skill_key: str, payload: dict) -> dict:
-    disease_name = str(payload.get("disease_name") or payload.get("title") or "新疾病 Skill").strip()
+def _new_knowledge(*, knowledge_key: str, payload: dict) -> dict:
+    disease_name = str(payload.get("disease_name") or payload.get("title") or "新疾病 Knowledge").strip()
     return {
         "disease_name": disease_name,
-        "skill_id": f"{skill_key}_v0.1",
+        "knowledge_id": f"{knowledge_key}_v0.1",
         "version": "0.1",
         "source_type": "doctor_edited",
-        "skill_type": "guideline_based",
+        "knowledge_type": "guideline_based",
         "evidence_level": "review_required",
         "source": "医生可视化编辑器创建，需补充来源",
         "source_documents": [],
@@ -507,13 +507,13 @@ def _version_response(*, kind: str, document_key: str, version_id: str, version_
     return 200, {"version": json.loads(version_path.read_text(encoding="utf-8"))}
 
 
-def _read_skill(path: Path) -> dict:
+def _read_knowledge(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _can_read_json(path: Path) -> bool:
     try:
-        _read_skill(path)
+        _read_knowledge(path)
         return True
     except json.JSONDecodeError:
         return False
@@ -565,8 +565,8 @@ def _join_list(value: object) -> str:
     return "\n".join(str(item) for item in value)
 
 
-def _join_doctor_notes(skill: dict) -> str:
-    notes = (skill.get("quality_control") or {}).get("doctor_review_notes") or []
+def _join_doctor_notes(knowledge: dict) -> str:
+    notes = (knowledge.get("quality_control") or {}).get("doctor_review_notes") or []
     if not isinstance(notes, list):
         return ""
     return "\n".join(str(item.get("note") or item) for item in notes if item)

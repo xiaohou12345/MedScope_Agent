@@ -7,36 +7,37 @@ from typing import Any
 from tools.evidence_summary_tool import EvidenceSummaryTool
 from tools.guideline_extraction_tool import GuidelineExtractionTool
 from tools.guideline_search_tool import GuidelineSearchTool
+from tools.guideline_knowledge_templates import apply_guideline_knowledge_template
 from tools.visual_protocol_builder import VisualProtocolBuilder
 from tools.visual_protocol_validator import VisualProtocolValidator
 
 
-class SkillBuilderTool:
-    """Loads guideline skills and creates clearly labeled hypothesis skills."""
+class KnowledgeBuilderTool:
+    """Loads guideline knowledge and creates clearly labeled hypothesis knowledge."""
 
     def __init__(
         self,
-        skills_dir: Path | str = "skills",
+        knowledges_dir: Path | str = "knowledge",
         guideline_search_tool: GuidelineSearchTool | None = None,
         guideline_extraction_tool: GuidelineExtractionTool | None = None,
         evidence_summary_tool: EvidenceSummaryTool | None = None,
         visual_protocol_builder: VisualProtocolBuilder | None = None,
         visual_protocol_validator: VisualProtocolValidator | None = None,
     ) -> None:
-        self.skills_dir = Path(skills_dir)
+        self.knowledges_dir = Path(knowledges_dir)
         self.guideline_search_tool = guideline_search_tool or GuidelineSearchTool()
         self.guideline_extraction_tool = guideline_extraction_tool or GuidelineExtractionTool()
         self.evidence_summary_tool = evidence_summary_tool or EvidenceSummaryTool()
         self.visual_protocol_builder = visual_protocol_builder or VisualProtocolBuilder()
         self.visual_protocol_validator = visual_protocol_validator or VisualProtocolValidator()
 
-    def load_guideline_skill(self, disease_key: str) -> dict[str, Any]:
-        skill_path = self.skills_dir / f"{disease_key}.yaml"
-        if not skill_path.exists():
-            raise FileNotFoundError(f"Skill file not found: {skill_path}")
-        return json.loads(skill_path.read_text(encoding="utf-8"))
+    def load_guideline_knowledge(self, disease_key: str) -> dict[str, Any]:
+        knowledge_path = self.knowledges_dir / f"{disease_key}.yaml"
+        if not knowledge_path.exists():
+            raise FileNotFoundError(f"Knowledge file not found: {knowledge_path}")
+        return json.loads(knowledge_path.read_text(encoding="utf-8"))
 
-    def prepare_skill(
+    def prepare_knowledge(
         self,
         disease_key: str,
         disease_name: str,
@@ -44,37 +45,37 @@ class SkillBuilderTool:
         persist: bool = False,
     ) -> dict[str, Any]:
         try:
-            return self.load_guideline_skill(disease_key)
+            return self.load_guideline_knowledge(disease_key)
         except FileNotFoundError:
             guideline_result = self.guideline_search_tool.search(
                 disease_key=disease_key,
                 disease_name=disease_name,
             )
             if guideline_result["has_guideline"]:
-                skill = self.build_guideline_skill_from_search(guideline_result)
+                knowledge = self.build_guideline_knowledge_from_search(guideline_result)
                 if persist:
-                    self.save_skill(disease_key, skill)
-                return skill
+                    self.save_knowledge(disease_key, knowledge)
+                return knowledge
             summary = self.evidence_summary_tool.summarize_observations(
                 disease_name=disease_name,
                 observations=observations,
             )
             summary["disease_key"] = disease_key
-            skill = self.build_hypothesis_skill_from_summary(summary)
+            knowledge = self.build_hypothesis_knowledge_from_summary(summary)
             if persist:
-                self.save_skill(disease_key, skill)
-            return skill
+                self.save_knowledge(disease_key, knowledge)
+            return knowledge
 
-    def save_skill(self, disease_key: str, skill: dict[str, Any]) -> Path:
-        self.skills_dir.mkdir(parents=True, exist_ok=True)
-        skill_path = self.skills_dir / f"{disease_key}.yaml"
-        skill_path.write_text(
-            json.dumps(skill, ensure_ascii=False, indent=2),
+    def save_knowledge(self, disease_key: str, knowledge: dict[str, Any]) -> Path:
+        self.knowledges_dir.mkdir(parents=True, exist_ok=True)
+        knowledge_path = self.knowledges_dir / f"{disease_key}.yaml"
+        knowledge_path.write_text(
+            json.dumps(knowledge, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        return skill_path
+        return knowledge_path
 
-    def build_guideline_skill_from_search(self, guideline_result: dict[str, Any]) -> dict[str, Any]:
+    def build_guideline_knowledge_from_search(self, guideline_result: dict[str, Any]) -> dict[str, Any]:
         source_documents = list(guideline_result["sources"])
         source = "; ".join(document["title"] for document in source_documents)
         if guideline_result.get("guideline_documents"):
@@ -85,13 +86,13 @@ class SkillBuilderTool:
             )
         else:
             guideline_payload = dict(guideline_result.get("guideline_payload") or {})
-        skill = {
+        knowledge = {
             "disease_name": guideline_result["disease_name"],
-            "skill_id": f"{guideline_result['disease_key']}_guideline_v0.1",
+            "knowledge_id": f"{guideline_result['disease_key']}_guideline_v0.1",
             "version": "0.1",
             "path_type": "guideline_aware",
             "source_type": guideline_result["source_type"],
-            "skill_type": "guideline_based",
+            "knowledge_type": "guideline_based",
             "evidence_level": guideline_result["evidence_level"],
             "source": source,
             "source_documents": source_documents,
@@ -128,16 +129,20 @@ class SkillBuilderTool:
             "guideline_extraction",
         ):
             if field in guideline_payload:
-                skill[field] = guideline_payload[field]
-        skill["visual_protocol"] = self.visual_protocol_builder.build(skill)
+                knowledge[field] = guideline_payload[field]
+        knowledge = apply_guideline_knowledge_template(
+            knowledge,
+            disease_key=str(guideline_result["disease_key"]),
+        )
+        knowledge["visual_protocol"] = self.visual_protocol_builder.build(knowledge)
         conflicts = self._detect_guideline_conflicts(
             documents=list(guideline_result.get("guideline_documents") or []),
             sources=source_documents,
         )
         if conflicts:
-            skill["guideline_conflicts"] = conflicts
-        self._attach_guideline_quality_control(skill)
-        return skill
+            knowledge["guideline_conflicts"] = conflicts
+        self._attach_guideline_quality_control(knowledge)
+        return knowledge
 
     def _build_source_priority(self, sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
         indexed_sources = list(enumerate(sources))
@@ -326,21 +331,21 @@ class SkillBuilderTool:
         except (TypeError, ValueError):
             return default
 
-    def _attach_guideline_quality_control(self, skill: dict[str, Any]) -> None:
-        if skill.get("skill_type") != "guideline_based":
+    def _attach_guideline_quality_control(self, knowledge: dict[str, Any]) -> None:
+        if knowledge.get("knowledge_type") != "guideline_based":
             return
-        extraction = skill.get("guideline_extraction") or {}
+        extraction = knowledge.get("guideline_extraction") or {}
         citations = extraction.get("citations") or []
         if not citations:
-            raise ValueError("guideline_based skills require guideline_extraction.citations")
+            raise ValueError("guideline_based knowledge require guideline_extraction.citations")
         citation_urls = [citation.get("url") for citation in citations if isinstance(citation, dict)]
         missing_url_count = len(citations) - len([url for url in citation_urls if url])
-        conflicts = list(skill.get("guideline_conflicts") or [])
+        conflicts = list(knowledge.get("guideline_conflicts") or [])
         conflict_count = len(conflicts)
         severity_counts = self._conflict_severity_counts(conflicts)
         highest_conflict_severity = self._highest_conflict_severity(conflicts)
-        missing_core_sections = self._missing_core_sections(skill)
-        visual_protocol_validation = self.visual_protocol_validator.validate_skill(skill)
+        missing_core_sections = self._missing_core_sections(knowledge)
+        visual_protocol_validation = self.visual_protocol_validator.validate_knowledge(knowledge)
         visual_protocol_ready = bool(visual_protocol_validation["valid"])
         formal_ready = (
             missing_url_count == 0
@@ -348,11 +353,11 @@ class SkillBuilderTool:
             and not missing_core_sections
             and visual_protocol_ready
         )
-        skill["quality_control"] = {
+        knowledge["quality_control"] = {
             "citation_status": "verified" if missing_url_count == 0 else "needs_review",
             "citation_count": len(citations),
             "missing_url_count": missing_url_count,
-            "source_priority_status": self._source_priority_status(skill),
+            "source_priority_status": self._source_priority_status(knowledge),
             "conflict_status": "needs_review" if conflict_count else "none",
             "conflict_count": conflict_count,
             "conflict_severity_counts": severity_counts,
@@ -362,8 +367,8 @@ class SkillBuilderTool:
             "visual_protocol_status": visual_protocol_validation["status"],
             "visual_protocol_errors": list(visual_protocol_validation["errors"]),
             "visual_protocol_warnings": list(visual_protocol_validation["warnings"]),
-            "formal_skill_status": "formal_ready" if formal_ready else "needs_review",
-            "can_enter_formal_guideline_skill": formal_ready,
+            "formal_knowledge_status": "formal_ready" if formal_ready else "needs_review",
+            "can_enter_formal_guideline_knowledge": formal_ready,
         }
 
     def _conflict_severity_counts(self, conflicts: list[dict[str, Any]]) -> dict[str, int]:
@@ -383,8 +388,8 @@ class SkillBuilderTool:
                 highest = severity
         return highest
 
-    def _source_priority_status(self, skill: dict[str, Any]) -> str:
-        source_priority = skill.get("source_priority") or []
+    def _source_priority_status(self, knowledge: dict[str, Any]) -> str:
+        source_priority = knowledge.get("source_priority") or []
         if not source_priority:
             return "missing"
         for source in source_priority:
@@ -394,36 +399,36 @@ class SkillBuilderTool:
                 return "ranked"
         return "implicit_order"
 
-    def _missing_core_sections(self, skill: dict[str, Any]) -> list[str]:
+    def _missing_core_sections(self, knowledge: dict[str, Any]) -> list[str]:
         missing: list[str] = []
-        clinical_features = skill.get("clinical_features") or {}
+        clinical_features = knowledge.get("clinical_features") or {}
         if not any(clinical_features.get(key) for key in ("common_symptoms", "risk_factors")):
             missing.append("clinical_features")
-        if not skill.get("required_image_views"):
+        if not knowledge.get("required_image_views"):
             missing.append("required_image_views")
-        vision_agent_tasks = skill.get("vision_agent_tasks") or {}
+        vision_agent_tasks = knowledge.get("vision_agent_tasks") or {}
         if not any(
             vision_agent_tasks.get(key)
             for key in ("segmentation_targets", "quantitative_features")
         ):
             missing.append("vision_agent_tasks")
-        extraction = skill.get("guideline_extraction") or {}
+        extraction = knowledge.get("guideline_extraction") or {}
         if not extraction.get("citations"):
             missing.append("guideline_extraction.citations")
         return missing
 
-    def build_hypothesis_skill_from_summary(self, summary: dict[str, Any]) -> dict[str, Any]:
-        skill = self.build_hypothesis_skill(
+    def build_hypothesis_knowledge_from_summary(self, summary: dict[str, Any]) -> dict[str, Any]:
+        knowledge = self.build_hypothesis_knowledge(
             disease_key=str(summary.get("disease_key") or "data_mined_hypothesis"),
             disease_name=summary["disease_name"],
             observations=list(summary["observations"]),
             source=summary["source"],
         )
-        skill["source_type"] = summary["source_type"]
-        skill["evidence_summary_mode"] = summary["mode"]
-        return skill
+        knowledge["source_type"] = summary["source_type"]
+        knowledge["evidence_summary_mode"] = summary["mode"]
+        return knowledge
 
-    def build_hypothesis_skill(
+    def build_hypothesis_knowledge(
         self,
         disease_key: str,
         disease_name: str,
@@ -432,10 +437,10 @@ class SkillBuilderTool:
     ) -> dict[str, Any]:
         return {
             "disease_name": disease_name,
-            "skill_id": f"{disease_key}_hypothesis_v0.1",
+            "knowledge_id": f"{disease_key}_hypothesis_v0.1",
             "version": "0.1",
             "path_type": "privileged_knowledge_discovery",
-            "skill_type": "data_mined_hypothesis",
+            "knowledge_type": "data_mined_hypothesis",
             "evidence_level": "low",
             "source_type": "internal_dataset_summary",
             "source": source,
@@ -456,7 +461,7 @@ class SkillBuilderTool:
             "evidence_completeness_matrix": {
                 "gold_standard_confirmation": {
                     "status": "missing_at_deployment",
-                    "reason": "Hypothesis skill must be confirmed by gold-standard modality.",
+                    "reason": "Hypothesis knowledge must be confirmed by gold-standard modality.",
                 }
             },
             "safety_gate": {

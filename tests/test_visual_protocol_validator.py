@@ -3,49 +3,49 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 from tools.visual_protocol_validator import VisualProtocolValidator
 
 
 class VisualProtocolValidatorTest(unittest.TestCase):
-    def test_static_guideline_skills_have_valid_visual_protocol(self):
+    def test_static_guideline_knowledges_have_valid_visual_protocol(self):
         validator = VisualProtocolValidator()
 
-        for skill_path in (
-            Path("skills/femoral_head_necrosis.yaml"),
-            Path("skills/diffuse_glioma_brats.yaml"),
-            Path("skills/pneumonia_chest_xray.yaml"),
-            Path("skills/idiopathic_pulmonary_fibrosis_hrct.yaml"),
+        for knowledge_path in (
+            Path("knowledge/femoral_head_necrosis.yaml"),
+            Path("knowledge/diffuse_glioma_brats.yaml"),
+            Path("knowledge/pneumonia_chest_xray.yaml"),
+            Path("knowledge/idiopathic_pulmonary_fibrosis_hrct.yaml"),
         ):
-            with self.subTest(skill_path=str(skill_path)):
-                skill = json.loads(skill_path.read_text(encoding="utf-8"))
-                result = validator.validate_skill(skill)
+            with self.subTest(knowledge_path=str(knowledge_path)):
+                knowledge = json.loads(knowledge_path.read_text(encoding="utf-8"))
+                result = validator.validate_knowledge(knowledge)
 
                 self.assertTrue(result["valid"], result)
                 self.assertEqual(result["errors"], [])
 
-    def test_static_guideline_skills_have_valid_evidence_protocol(self):
+    def test_static_guideline_knowledges_have_valid_evidence_protocol(self):
         validator = VisualProtocolValidator()
 
-        for skill_path in (
-            Path("skills/femoral_head_necrosis.yaml"),
-            Path("skills/pneumonia_chest_xray.yaml"),
+        for knowledge_path in (
+            Path("knowledge/femoral_head_necrosis.yaml"),
+            Path("knowledge/pneumonia_chest_xray.yaml"),
         ):
-            with self.subTest(skill_path=str(skill_path)):
-                skill = json.loads(skill_path.read_text(encoding="utf-8"))
-                result = validator.validate_evidence_protocol(skill)
+            with self.subTest(knowledge_path=str(knowledge_path)):
+                knowledge = json.loads(knowledge_path.read_text(encoding="utf-8"))
+                result = validator.validate_evidence_protocol(knowledge)
 
                 self.assertTrue(result["valid"], result)
                 self.assertEqual(result["errors"], [])
 
-    def test_non_fhn_skill_declares_evidence_acquisition_protocol(self):
-        skill = json.loads(Path("skills/pneumonia_chest_xray.yaml").read_text(encoding="utf-8"))
+    def test_non_fhn_knowledge_declares_evidence_acquisition_protocol(self):
+        knowledge = json.loads(Path("knowledge/pneumonia_chest_xray.yaml").read_text(encoding="utf-8"))
 
-        imaging = skill["imaging_evidence_protocol"]
+        imaging = knowledge["imaging_evidence_protocol"]
         targets = {item["target"]: item for item in imaging["finding_targets"]}
-        quantitative = skill["quantitative_evidence_protocol"]
-        clinical = skill["clinical_context_protocol"]
-        integrated = skill["integrated_reasoning_protocol"]
+        quantitative = knowledge["quantitative_evidence_protocol"]
+        clinical = knowledge["clinical_context_protocol"]
+        integrated = knowledge["integrated_reasoning_protocol"]
 
         self.assertEqual(imaging["disease_target"], "community_acquired_pneumonia")
         self.assertEqual(targets["lung_opacity"]["execution_mode"], "vlm_plus_segmenter")
@@ -63,18 +63,18 @@ class VisualProtocolValidatorTest(unittest.TestCase):
         )
         self.assertIn("clinical_context_source", integrated["required_sections"])
 
-    def test_static_skills_declare_versioned_quantitative_contract(self):
+    def test_static_knowledges_declare_versioned_quantitative_contract(self):
         validator = VisualProtocolValidator()
 
-        for skill_path in (
-            Path("skills/femoral_head_necrosis.yaml"),
-            Path("skills/diffuse_glioma_brats.yaml"),
-            Path("skills/pneumonia_chest_xray.yaml"),
-            Path("skills/idiopathic_pulmonary_fibrosis_hrct.yaml"),
+        for knowledge_path in (
+            Path("knowledge/femoral_head_necrosis.yaml"),
+            Path("knowledge/diffuse_glioma_brats.yaml"),
+            Path("knowledge/pneumonia_chest_xray.yaml"),
+            Path("knowledge/idiopathic_pulmonary_fibrosis_hrct.yaml"),
         ):
-            with self.subTest(skill_path=str(skill_path)):
-                skill = json.loads(skill_path.read_text(encoding="utf-8"))
-                quantitative = skill["quantitative_evidence_protocol"]
+            with self.subTest(knowledge_path=str(knowledge_path)):
+                knowledge = json.loads(knowledge_path.read_text(encoding="utf-8"))
+                quantitative = knowledge["quantitative_evidence_protocol"]
 
                 self.assertEqual(
                     quantitative["schema_version"],
@@ -88,8 +88,8 @@ class VisualProtocolValidatorTest(unittest.TestCase):
                 self.assertTrue(result["valid"], result)
 
     def test_quantitative_protocol_requires_item_level_contract(self):
-        skill = self._minimal_valid_skill()
-        skill["imaging_evidence_protocol"] = {
+        knowledge = self._minimal_valid_knowledge()
+        knowledge["imaging_evidence_protocol"] = {
             "disease_target": "minimal_disease",
             "finding_targets": [
                 {
@@ -102,7 +102,7 @@ class VisualProtocolValidatorTest(unittest.TestCase):
                 }
             ],
         }
-        skill["quantitative_evidence_protocol"] = {
+        knowledge["quantitative_evidence_protocol"] = {
             "schema_version": "quantitative_evidence_protocol.v1",
             "protocol_sections": ["image_feature_quantification", "measurement_evidence"],
             "diagnosis_boundary": "Exploratory features cannot confirm diagnosis.",
@@ -123,16 +123,16 @@ class VisualProtocolValidatorTest(unittest.TestCase):
                 }
             ],
         }
-        skill["clinical_context_protocol"] = {
+        knowledge["clinical_context_protocol"] = {
             "risk_factors": ["risk_demo"],
             "reasoning_rule": "clinical context cannot confirm diagnosis",
         }
-        skill["integrated_reasoning_protocol"] = {
+        knowledge["integrated_reasoning_protocol"] = {
             "required_sections": ["imaging_support", "clinical_context_source"],
             "safety_rules": [],
         }
 
-        result = VisualProtocolValidator().validate_evidence_protocol(skill)
+        result = VisualProtocolValidator().validate_evidence_protocol(knowledge)
 
         self.assertFalse(result["valid"])
         self.assertIn(
@@ -153,8 +153,8 @@ class VisualProtocolValidatorTest(unittest.TestCase):
         )
 
     def test_evidence_protocol_requires_clinical_context_limits(self):
-        skill = self._minimal_valid_skill()
-        skill["imaging_evidence_protocol"] = {
+        knowledge = self._minimal_valid_knowledge()
+        knowledge["imaging_evidence_protocol"] = {
             "disease_target": "minimal_disease",
             "finding_targets": [
                 {
@@ -165,19 +165,19 @@ class VisualProtocolValidatorTest(unittest.TestCase):
                 }
             ],
         }
-        skill["quantitative_evidence_protocol"] = {
+        knowledge["quantitative_evidence_protocol"] = {
             "image_feature_quantification": [],
             "measurement_evidence": [],
         }
-        skill["clinical_context_protocol"] = {
+        knowledge["clinical_context_protocol"] = {
             "risk_factors": ["risk_demo"],
         }
-        skill["integrated_reasoning_protocol"] = {
+        knowledge["integrated_reasoning_protocol"] = {
             "required_sections": ["imaging_support", "clinical_risk_support"],
             "safety_rules": [],
         }
 
-        result = VisualProtocolValidator().validate_evidence_protocol(skill)
+        result = VisualProtocolValidator().validate_evidence_protocol(knowledge)
 
         self.assertFalse(result["valid"])
         self.assertIn(
@@ -189,11 +189,11 @@ class VisualProtocolValidatorTest(unittest.TestCase):
             result["errors"],
         )
 
-    def test_femoral_head_skill_declares_stage_ii_xray_findings(self):
-        skill = json.loads(Path("skills/femoral_head_necrosis.yaml").read_text(encoding="utf-8"))
+    def test_femoral_head_knowledge_declares_stage_ii_xray_findings(self):
+        knowledge = json.loads(Path("knowledge/femoral_head_necrosis.yaml").read_text(encoding="utf-8"))
         finding_targets = {
             finding["target"]: finding
-            for finding in skill["visual_protocol"].get("finding_targets", [])
+            for finding in knowledge["visual_protocol"].get("finding_targets", [])
         }
 
         self.assertIn("sclerotic_band", finding_targets)
@@ -209,46 +209,46 @@ class VisualProtocolValidatorTest(unittest.TestCase):
             ["area_ratio_in_femoral_head", "relative_lucency_score", "roundness"],
         )
 
-    def test_femoral_head_skill_declares_anatomy_reference_for_normalized_measurements(self):
-        skill = json.loads(Path("skills/femoral_head_necrosis.yaml").read_text(encoding="utf-8"))
+    def test_femoral_head_knowledge_declares_anatomy_reference_for_normalized_measurements(self):
+        knowledge = json.loads(Path("knowledge/femoral_head_necrosis.yaml").read_text(encoding="utf-8"))
 
-        anatomy_reference = skill["visual_protocol"].get("anatomy_reference")
+        anatomy_reference = knowledge["visual_protocol"].get("anatomy_reference")
 
         self.assertEqual(anatomy_reference["target"], "femoral_head")
         self.assertEqual(anatomy_reference["display_name"], "股骨头解剖区域")
         self.assertEqual(anatomy_reference["required_modalities"], ["X-ray"])
         self.assertIn("area_ratio_in_femoral_head", anatomy_reference["normalizes"])
 
-    def test_missing_visual_protocol_is_invalid_for_guideline_skill(self):
-        result = VisualProtocolValidator().validate_skill(
+    def test_missing_visual_protocol_is_invalid_for_guideline_knowledge(self):
+        result = VisualProtocolValidator().validate_knowledge(
             {
-                "skill_type": "guideline_based",
-                "skill_id": "missing_protocol_v0.1",
+                "knowledge_type": "guideline_based",
+                "knowledge_id": "missing_protocol_v0.1",
             }
         )
 
         self.assertFalse(result["valid"])
-        self.assertIn("visual_protocol is required for guideline_based skill", result["errors"])
+        self.assertIn("visual_protocol is required for guideline_based knowledge", result["errors"])
 
     def test_alignment_tasks_must_name_task_and_required_modalities(self):
-        skill = self._minimal_valid_skill()
-        skill["visual_protocol"]["alignment_tasks"] = [
+        knowledge = self._minimal_valid_knowledge()
+        knowledge["visual_protocol"]["alignment_tasks"] = [
             {"task": "segment_target"},
             {"required_modalities": ["MRI"]},
         ]
 
-        result = VisualProtocolValidator().validate_skill(skill)
+        result = VisualProtocolValidator().validate_knowledge(knowledge)
 
         self.assertFalse(result["valid"])
         self.assertIn("visual_protocol.alignment_tasks[0].required_modalities is required", result["errors"])
         self.assertIn("visual_protocol.alignment_tasks[1].task is required", result["errors"])
 
     def test_required_next_images_and_blocked_scope_are_quality_gates(self):
-        skill = self._minimal_valid_skill()
-        skill["visual_protocol"].pop("required_next_images")
-        skill["visual_protocol"]["diagnosis_scope"] = {"allowed": ["limited report"]}
+        knowledge = self._minimal_valid_knowledge()
+        knowledge["visual_protocol"].pop("required_next_images")
+        knowledge["visual_protocol"]["diagnosis_scope"] = {"allowed": ["limited report"]}
 
-        result = VisualProtocolValidator().validate_skill(skill)
+        result = VisualProtocolValidator().validate_knowledge(knowledge)
 
         self.assertFalse(result["valid"])
         self.assertIn("visual_protocol.required_next_images is required", result["errors"])
@@ -257,8 +257,8 @@ class VisualProtocolValidatorTest(unittest.TestCase):
             result["warnings"],
         )
 
-    def test_skill_builder_records_visual_protocol_status_in_quality_control(self):
-        skill = SkillBuilderTool().build_guideline_skill_from_search(
+    def test_knowledge_builder_records_visual_protocol_status_in_quality_control(self):
+        knowledge = KnowledgeBuilderTool().build_guideline_knowledge_from_search(
             {
                 "disease_key": "incomplete_visual_protocol",
                 "disease_name": "视觉协议不完整疾病",
@@ -296,19 +296,19 @@ class VisualProtocolValidatorTest(unittest.TestCase):
             }
         )
 
-        self.assertEqual(skill["quality_control"]["visual_protocol_status"], "invalid")
+        self.assertEqual(knowledge["quality_control"]["visual_protocol_status"], "invalid")
         self.assertIn(
             "visual_protocol.alignment_tasks is required",
-            skill["quality_control"]["visual_protocol_errors"],
+            knowledge["quality_control"]["visual_protocol_errors"],
         )
         self.assertIn(
             "visual_protocol.required_modalities is required",
-            skill["quality_control"]["visual_protocol_errors"],
+            knowledge["quality_control"]["visual_protocol_errors"],
         )
-        self.assertEqual(skill["quality_control"]["formal_skill_status"], "needs_review")
-        self.assertFalse(skill["quality_control"]["can_enter_formal_guideline_skill"])
+        self.assertEqual(knowledge["quality_control"]["formal_knowledge_status"], "needs_review")
+        self.assertFalse(knowledge["quality_control"]["can_enter_formal_guideline_knowledge"])
 
-    def test_skill_builder_marks_valid_visual_protocol_as_valid(self):
+    def test_knowledge_builder_marks_valid_visual_protocol_as_valid(self):
         guideline_result = {
             "disease_key": "valid_visual_protocol",
             "disease_name": "视觉协议完整疾病",
@@ -340,22 +340,22 @@ class VisualProtocolValidatorTest(unittest.TestCase):
                         }
                     ],
                 },
-                "visual_protocol": self._minimal_valid_skill()["visual_protocol"],
+                "visual_protocol": self._minimal_valid_knowledge()["visual_protocol"],
             },
         }
 
-        skill = SkillBuilderTool().build_guideline_skill_from_search(guideline_result)
+        knowledge = KnowledgeBuilderTool().build_guideline_knowledge_from_search(guideline_result)
 
-        self.assertEqual(skill["quality_control"]["visual_protocol_status"], "valid")
-        self.assertEqual(skill["quality_control"]["visual_protocol_errors"], [])
-        self.assertEqual(skill["quality_control"]["formal_skill_status"], "formal_ready")
-        self.assertTrue(skill["quality_control"]["can_enter_formal_guideline_skill"])
+        self.assertEqual(knowledge["quality_control"]["visual_protocol_status"], "valid")
+        self.assertEqual(knowledge["quality_control"]["visual_protocol_errors"], [])
+        self.assertEqual(knowledge["quality_control"]["formal_knowledge_status"], "formal_ready")
+        self.assertTrue(knowledge["quality_control"]["can_enter_formal_guideline_knowledge"])
 
-    def _minimal_valid_skill(self):
+    def _minimal_valid_knowledge(self):
         return deepcopy(
             {
-                "skill_type": "guideline_based",
-                "skill_id": "minimal_valid_v0.1",
+                "knowledge_type": "guideline_based",
+                "knowledge_id": "minimal_valid_v0.1",
                 "visual_protocol": {
                     "disease_target": "minimal_disease",
                     "clinical_focus": "minimal disease imaging assessment",

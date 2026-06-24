@@ -82,7 +82,7 @@ class BratsVisionTestLineTest(unittest.TestCase):
             self.assertEqual(payload["mode"], "brats_nifti_ground_truth")
             self.assertTrue(Path(payload["result"]["image_outputs"]["overlay_path"]).exists())
 
-    def test_brats_test_line_loads_glioma_skill_visual_protocol(self):
+    def test_brats_test_line_loads_glioma_knowledge_visual_protocol(self):
         with TemporaryDirectory() as tmpdir:
             output = run_brats_vision_test_line(
                 image_path=REAL_IMAGE,

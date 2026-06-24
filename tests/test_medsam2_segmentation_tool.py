@@ -314,7 +314,7 @@ class MedSAM2SegmentationToolTest(unittest.TestCase):
                 prompt={"boxes": [[1, 1, 5, 5]]},
                 mask_path=mask_path,
                 overlay_path=overlay_path,
-                disease_skill={"disease_name": "成人弥漫性胶质瘤"},
+                disease_knowledge={"disease_name": "成人弥漫性胶质瘤"},
             )
 
             self.assertEqual(segmentation_tool.calls[0]["prompt"], {"boxes": [[1, 1, 5, 5]]})

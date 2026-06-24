@@ -1,10 +1,10 @@
 {
   "disease_name": "特发性肺纤维化 HRCT 评估",
-  "skill_id": "idiopathic_pulmonary_fibrosis_hrct_guideline_v0.1",
+  "knowledge_id": "idiopathic_pulmonary_fibrosis_hrct_guideline_v0.1",
   "version": "0.1",
   "path_type": "guideline_aware",
   "source_type": "medical_guideline",
-  "skill_type": "guideline_based",
+  "knowledge_type": "guideline_based",
   "evidence_level": "high",
   "source": "Idiopathic Pulmonary Fibrosis (an Update) and Progressive Pulmonary Fibrosis in Adults; Diagnosis of Idiopathic Pulmonary Fibrosis",
   "source_documents": [
@@ -54,7 +54,7 @@
     }
   ],
   "guideline_source": {
-    "source_catalog_path": "output/fake/ipf_guideline_skill_demo/guideline_sources.json"
+    "source_catalog_path": "output/fake/ipf_guideline_knowledge_demo/guideline_sources.json"
   },
   "clinical_features": {
     "common_symptoms": [
@@ -276,7 +276,7 @@
     "suspected_conditions": [
       {
         "disease": "特发性肺纤维化 HRCT 评估",
-        "reason": "患者描述或图像线索匹配当前 guideline skill。"
+        "reason": "患者描述或图像线索匹配当前 guideline knowledge。"
       }
     ],
     "required_next_images": [
@@ -288,7 +288,7 @@
     ],
     "diagnosis_scope": {
       "allowed": [
-        "只分析当前图像和 skill 支持的视觉证据",
+        "只分析当前图像和 knowledge 支持的视觉证据",
         "说明缺失影像导致的不确定性",
         "给出下一步所需影像检查"
       ],
@@ -362,7 +362,7 @@
     "visual_protocol_status": "valid",
     "visual_protocol_errors": [],
     "visual_protocol_warnings": [],
-    "formal_skill_status": "formal_ready",
-    "can_enter_formal_guideline_skill": true
+    "formal_knowledge_status": "formal_ready",
+    "can_enter_formal_guideline_knowledge": true
   }
 }

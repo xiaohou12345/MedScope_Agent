@@ -2,7 +2,7 @@
 
 请严格按下面流程生成中文辅助诊断报告：
 
-1. 先读取当前图像模态、患者描述和 disease skill。
+1. 先读取当前图像模态、患者描述和 disease knowledge。
 2. 区分视觉证据中的 supported、missing、unassessed、excluded 信息。
 3. 只把 supported 且 diagnosis_usable 的视觉事实作为影像依据。
 4. missing 或 unassessed 只能写成缺失、不能评估或需要补充检查。

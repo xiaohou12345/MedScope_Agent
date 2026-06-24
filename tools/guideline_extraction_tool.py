@@ -5,7 +5,7 @@ from typing import Any
 
 
 class GuidelineExtractionTool:
-    """Extracts structured skill fields from guideline document sections."""
+    """Extracts structured knowledge fields from guideline document sections."""
 
     def extract(
         self,

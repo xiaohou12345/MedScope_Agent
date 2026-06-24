@@ -89,7 +89,7 @@ class SegmentationToolTest(unittest.TestCase):
                 image_path=image_path,
                 mask_path=mask_path,
                 overlay_path=overlay_path,
-                disease_skill={"disease_name": "成人弥漫性胶质瘤"},
+                disease_knowledge={"disease_name": "成人弥漫性胶质瘤"},
             )
 
             self.assertEqual(fake_segmentation_tool.calls, [(image_path, mask_path, overlay_path)])

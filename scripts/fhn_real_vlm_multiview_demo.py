@@ -11,7 +11,7 @@ from llm.connectivity import ApiConnectivityChecker
 
 
 DEFAULT_OUTPUT_DIR = Path("output/fake/fhn_real_vlm_multiview_demo")
-DEFAULT_MESSAGE = "左髋疼痛，上传髋关节多体位 X 光，请根据股骨头坏死 skill 提取候选视觉证据。"
+DEFAULT_MESSAGE = "左髋疼痛，上传髋关节多体位 X 光，请根据股骨头坏死 knowledge 提取候选视觉证据。"
 
 
 def run_demo(
@@ -85,7 +85,7 @@ def run_demo(
         "status": "ok",
         "demo_name": "fhn_real_vlm_multiview_demo",
         "case_id": service_result.get("case_id"),
-        "selected_skill": routing.get("selected_skill"),
+        "selected_knowledge": routing.get("selected_knowledge"),
         "selected_vision_mode": routing.get("selected_vision_mode"),
         "evidence_item_count": len(evidence_items),
         "evidence_item_status_counts": _count_by_key(evidence_items, "diagnosis_usable_level"),
@@ -160,7 +160,7 @@ def _write_markdown_summary(path: Path, summary: dict[str, Any]) -> None:
         "## Routing",
         "",
         f"- case_id: {summary.get('case_id') or '-'}",
-        f"- selected_skill: {summary.get('selected_skill') or '-'}",
+        f"- selected_knowledge: {summary.get('selected_knowledge') or '-'}",
         f"- selected_vision_mode: {summary.get('selected_vision_mode') or '-'}",
         f"- evidence_item_count: {summary.get('evidence_item_count', 0)}",
         "",

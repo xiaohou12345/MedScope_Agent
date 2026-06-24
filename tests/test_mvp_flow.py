@@ -225,7 +225,7 @@ class FactUsageVisionAgent:
         }
 
 
-class FakeNoMaskSkillPipeline:
+class FakeNoMaskKnowledgePipeline:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
@@ -362,11 +362,11 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             self.assertEqual(saved_case["schema_version"], "memory_v1")
             self.assertEqual(
                 saved_case["memory_types"],
-                ["patient_memory", "image_memory", "skill_memory", "reasoning_memory"],
+                ["patient_memory", "image_memory", "knowledge_memory", "reasoning_memory"],
             )
             self.assertIn("patient_memory", saved_case)
             self.assertIn("image_memory", saved_case)
-            self.assertIn("skill_memory", saved_case)
+            self.assertIn("knowledge_memory", saved_case)
             self.assertIn("reasoning_memory", saved_case)
             self.assertIn("qa_memory", saved_case)
             self.assertEqual(saved_case["patient_memory"]["patient_info"]["age"], 45)
@@ -379,13 +379,13 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             self.assertIn("completeness", saved_case["image_memory"])
             self.assertIn("segmentation_quality", saved_case["image_memory"])
             self.assertEqual(
-                saved_case["skill_memory"]["selected_skill"],
+                saved_case["knowledge_memory"]["selected_knowledge"],
                 "femoral_head_necrosis_v0.1",
             )
-            self.assertIn("routing_decision", saved_case["skill_memory"])
-            self.assertIn("guideline_evidence", saved_case["skill_memory"])
+            self.assertIn("routing_decision", saved_case["knowledge_memory"])
+            self.assertIn("guideline_evidence", saved_case["knowledge_memory"])
             self.assertEqual(
-                saved_case["skill_memory"]["skill_type"],
+                saved_case["knowledge_memory"]["knowledge_type"],
                 "guideline_based",
             )
             self.assertIn("report", saved_case["reasoning_memory"])
@@ -411,7 +411,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             )
 
             result = doctor.handle_patient_case(
-                patient_message="右髋疼痛，上传 X 光，请根据股骨头坏死 skill 分析",
+                patient_message="右髋疼痛，上传 X 光，请根据股骨头坏死 knowledge 分析",
                 image_path="output/fake/uploads/fhn_xray.png",
                 patient_info={"symptoms": ["髋关节疼痛"]},
                 disease_key="femoral_head_necrosis",
@@ -459,7 +459,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             )
 
             result = doctor.handle_patient_case(
-                patient_message="右髋疼痛，上传 X 光，请根据股骨头坏死 skill 分析",
+                patient_message="右髋疼痛，上传 X 光，请根据股骨头坏死 knowledge 分析",
                 image_path="output/fake/uploads/fhn_xray.png",
                 patient_info={"symptoms": ["髋关节疼痛"]},
                 disease_key="femoral_head_necrosis",
@@ -494,27 +494,27 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                 1,
             )
 
-    def test_gaodoctor_runs_fhn_no_mask_skill_pipeline_when_requested(self):
+    def test_gaodoctor_runs_fhn_no_mask_knowledge_pipeline_when_requested(self):
         with TemporaryDirectory() as tmpdir:
             memory = MemoryManager(base_dir=Path(tmpdir))
-            no_mask_runner = FakeNoMaskSkillPipeline()
+            no_mask_runner = FakeNoMaskKnowledgePipeline()
             doctor = GaoDoctorAgent(
                 memory_manager=memory,
                 no_mask_visual_pipeline_runner=no_mask_runner,
             )
 
             result = doctor.handle_patient_case(
-                patient_message="右髋疼痛，上传 X 光，请根据股骨头坏死 skill 自动圈出候选征象",
+                patient_message="右髋疼痛，上传 X 光，请根据股骨头坏死 knowledge 自动圈出候选征象",
                 image_path="output/fake/uploads/fhn_xray.png",
                 patient_info={"symptoms": ["髋关节疼痛"]},
                 disease_key="femoral_head_necrosis",
-                vision_mode="no_mask_skill",
+                vision_mode="no_mask_knowledge",
             )
 
             self.assertEqual(len(no_mask_runner.calls), 1)
             self.assertEqual(no_mask_runner.calls[0]["image_path"], "output/fake/uploads/fhn_xray.png")
             self.assertEqual(no_mask_runner.calls[0]["disease_key"], "femoral_head_necrosis")
-            self.assertEqual(no_mask_runner.calls[0]["patient_message"], "右髋疼痛，上传 X 光，请根据股骨头坏死 skill 自动圈出候选征象")
+            self.assertEqual(no_mask_runner.calls[0]["patient_message"], "右髋疼痛，上传 X 光，请根据股骨头坏死 knowledge 自动圈出候选征象")
 
             saved_case = json.loads(Path(result["case_memory_path"]).read_text(encoding="utf-8"))
             image_bundle = saved_case["image_memory"]["visual_evidence_bundle"]
@@ -533,14 +533,14 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                 "output/fake/fhn_no_mask/finding_comparison.png",
             )
             self.assertEqual(
-                saved_case["skill_memory"]["selected_vision_mode"],
-                "no_mask_skill",
+                saved_case["knowledge_memory"]["selected_vision_mode"],
+                "no_mask_knowledge",
             )
 
     def test_gaodoctor_runs_multi_view_fhn_no_mask_pipeline_and_merges_evidence(self):
         with TemporaryDirectory() as tmpdir:
             memory = MemoryManager(base_dir=Path(tmpdir))
-            no_mask_runner = FakeNoMaskSkillPipeline()
+            no_mask_runner = FakeNoMaskKnowledgePipeline()
             doctor = GaoDoctorAgent(
                 memory_manager=memory,
                 no_mask_visual_pipeline_runner=no_mask_runner,
@@ -565,7 +565,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                     ],
                 },
                 disease_key="femoral_head_necrosis",
-                vision_mode="no_mask_skill",
+                vision_mode="no_mask_knowledge",
             )
 
             saved_case = json.loads(Path(result["case_memory_path"]).read_text(encoding="utf-8"))
@@ -609,12 +609,12 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             },
         )
 
-    def test_gaodoctor_persists_insufficient_image_skill_alignment_without_vision_run(self):
+    def test_gaodoctor_persists_insufficient_image_knowledge_alignment_without_vision_run(self):
         with TemporaryDirectory() as tmpdir:
             memory = MemoryManager(base_dir=Path(tmpdir))
             doctor = GaoDoctorAgent(memory_manager=memory)
             alignment_plan = {
-                "selected_skill": "femoral_head_necrosis",
+                "selected_knowledge": "femoral_head_necrosis",
                 "analysis_status": "insufficient_evidence",
                 "clinical_focus": "股骨头坏死早期评估",
                 "image_context": {
@@ -674,7 +674,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                 "missing",
             )
             self.assertEqual(
-                saved_case["skill_memory"]["alignment_plan"]["analysis_status"],
+                saved_case["knowledge_memory"]["alignment_plan"]["analysis_status"],
                 "insufficient_evidence",
             )
             self.assertEqual(
@@ -683,7 +683,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             )
 
     def test_gaodoctor_glioma_modes_use_generic_visual_protocol_executor(self):
-        skill = DiagnosisDoctorAgent().load_disease_skill("diffuse_glioma_brats")
+        knowledge = DiagnosisDoctorAgent().load_disease_knowledge("diffuse_glioma_brats")
         recording_vision = RecordingVisionAgent()
         doctor = GaoDoctorAgent(vision_agent=recording_vision)
 
@@ -692,7 +692,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             image_path="case_flair.nii.gz",
             patient_message="请基于这次 FLAIR MRI 做胶质瘤辅助分析",
             disease_key="diffuse_glioma_brats",
-            disease_skill=skill,
+            disease_knowledge=knowledge,
             vision_mode="ground_truth",
             mask_path="case_seg.nii.gz",
             segmentation_prompt=None,
@@ -701,7 +701,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
         self.assertEqual(ground_truth_result["visual_evidence"]["segmentation_quality"], "recorded")
         self.assertEqual(len(recording_vision.calls), 1)
         self.assertEqual(recording_vision.calls[0]["mask_path"], "case_seg.nii.gz")
-        self.assertEqual(recording_vision.calls[0]["disease_skill"], skill)
+        self.assertEqual(recording_vision.calls[0]["disease_knowledge"], knowledge)
 
         created_agents = []
 
@@ -718,7 +718,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                     image_path="case_flair.nii.gz",
                     patient_message="请基于这次 FLAIR MRI 做胶质瘤辅助分析",
                     disease_key="diffuse_glioma_brats",
-                    disease_skill=skill,
+                    disease_knowledge=knowledge,
                     vision_mode="medsam2",
                     mask_path=None,
                     segmentation_prompt={"boxes": [[1, 1, 5, 5]]},
@@ -728,7 +728,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
         medsam2_call = created_agents[0].calls[0]
         self.assertEqual(medsam2_call["segmentation_prompt"], {"boxes": [[1, 1, 5, 5]]})
         self.assertTrue(str(medsam2_call["output_mask_path"]).endswith("_medsam2_mask.nii.gz"))
-        self.assertEqual(medsam2_call["disease_skill"], skill)
+        self.assertEqual(medsam2_call["disease_knowledge"], knowledge)
 
     @unittest.skipUnless(
         REAL_IMAGE.exists() and REAL_MASK.exists(),
@@ -750,7 +750,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
 
             report = result["report"]
             self.assertEqual(result["intent"], "diagnosis")
-            self.assertEqual(report["used_skill"]["skill_id"], "diffuse_glioma_brats_v0.1")
+            self.assertEqual(report["used_knowledge"]["knowledge_id"], "diffuse_glioma_brats_v0.1")
             self.assertIn("胶质瘤", report["diagnostic_tendency"])
             self.assertIn("enhancing_tumor", "；".join(report["不确定性说明"]))
             self.assertNotIn("增强肿瘤体积为 0", "；".join(report["不确定性说明"]))
@@ -789,16 +789,16 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                     "body_part": "hip",
                     "visual_features": {},
                 },
-                skill_memory={
+                knowledge_memory={
                     "disease": "股骨头坏死",
-                    "skill_id": "femoral_head_necrosis_v0.1",
-                    "skill_type": "guideline_based",
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
+                    "knowledge_type": "guideline_based",
                     "evidence_level": "high",
                     "source": "ARCO 分期相关公开医学知识整理",
                 },
                 reasoning_memory={
                     "case_id": case_id,
-                    "used_skill": "femoral_head_necrosis_v0.1",
+                    "used_knowledge": "femoral_head_necrosis_v0.1",
                     "key_evidence": ["股骨头负重区纹理异常", "未见明显塌陷"],
                     "diagnostic_result": "疑似早期股骨头坏死",
                     "uncertainty": ["单纯 X 光对早期病变敏感性有限"],
@@ -875,16 +875,16 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                     "body_part": "hip",
                     "visual_features": {},
                 },
-                skill_memory={
+                knowledge_memory={
                     "disease": "股骨头坏死",
-                    "skill_id": "femoral_head_necrosis_v0.1",
-                    "skill_type": "guideline_based",
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
+                    "knowledge_type": "guideline_based",
                     "evidence_level": "high",
                     "source": "guideline",
                 },
                 reasoning_memory={
                     "case_id": case_id,
-                    "used_skill": "femoral_head_necrosis_v0.1",
+                    "used_knowledge": "femoral_head_necrosis_v0.1",
                     "key_evidence": [],
                     "diagnostic_result": "证据不足",
                     "uncertainty": ["X 光证据不足"],
@@ -955,7 +955,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
     def test_vision_agent_returns_evidence_without_final_diagnosis(self):
         evidence = VisionAgent().analyze_image(
             image_path="data/images/demo_xray.png",
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "股骨头坏死",
                 "vision_agent_tasks": {
                     "segmentation_targets": ["股骨头区域", "疑似坏死区域"],
@@ -970,10 +970,10 @@ class MedScopeMvpFlowTest(unittest.TestCase):
         self.assertFalse(evidence["visual_evidence"]["collapse"])
         self.assertIn("mask_path", evidence["image_outputs"])
 
-    def test_diagnosis_agent_combines_skill_visual_evidence_and_symptoms(self):
+    def test_diagnosis_agent_combines_knowledge_visual_evidence_and_symptoms(self):
         visual_result = VisionAgent().analyze_image(
             image_path="data/images/demo_xray.png",
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "股骨头坏死",
                 "vision_agent_tasks": {
                     "segmentation_targets": ["股骨头区域"],
@@ -1004,21 +1004,21 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             visual_result["visual_evidence"]["segmentation_quality"],
         )
 
-    def test_missing_guideline_creates_low_evidence_hypothesis_skill(self):
-        skill = DiagnosisDoctorAgent().prepare_skill(
+    def test_missing_guideline_creates_low_evidence_hypothesis_knowledge(self):
+        knowledge = DiagnosisDoctorAgent().prepare_knowledge(
             disease_key="rare_disease_without_guideline",
             disease_name="罕见病示例",
             observations=["已确诊病例中常见局部纹理异常"],
         )
 
-        self.assertEqual(skill["skill_type"], "data_mined_hypothesis")
-        self.assertEqual(skill["evidence_level"], "low")
-        self.assertIn("不等同于正式医学指南", skill["warning"])
+        self.assertEqual(knowledge["knowledge_type"], "data_mined_hypothesis")
+        self.assertEqual(knowledge["evidence_level"], "low")
+        self.assertIn("不等同于正式医学指南", knowledge["warning"])
 
-    def test_hypothesis_skill_is_blocked_unless_validation_mode_is_enabled(self):
+    def test_hypothesis_knowledge_is_blocked_unless_validation_mode_is_enabled(self):
         visual_result = VisionAgent().analyze_image(
             image_path="data/images/demo_xray.png",
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "股骨头坏死 1 期假设",
                 "vision_agent_tasks": {
                     "segmentation_targets": ["股骨头区域"],
@@ -1026,7 +1026,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                 },
             },
         )
-        hypothesis_skill = DiagnosisDoctorAgent().prepare_skill(
+        hypothesis_knowledge = DiagnosisDoctorAgent().prepare_knowledge(
             disease_key="fhn_stage1_without_guideline",
             disease_name="股骨头坏死 1 期假设",
             observations=["X 光股骨头负重区出现亚像素级纹理不均"],
@@ -1037,13 +1037,13 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                 case_id="case_hypothesis_blocked",
                 patient_info={"symptoms": ["髋关节疼痛"]},
                 visual_result=visual_result,
-                disease_skill=hypothesis_skill,
+                disease_knowledge=hypothesis_knowledge,
             )
 
     def test_hypothesis_validation_mode_generates_research_warning_not_diagnosis(self):
         visual_result = VisionAgent().analyze_image(
             image_path="data/images/demo_xray.png",
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "股骨头坏死 1 期假设",
                 "vision_agent_tasks": {
                     "segmentation_targets": ["股骨头区域"],
@@ -1051,7 +1051,7 @@ class MedScopeMvpFlowTest(unittest.TestCase):
                 },
             },
         )
-        hypothesis_skill = DiagnosisDoctorAgent().prepare_skill(
+        hypothesis_knowledge = DiagnosisDoctorAgent().prepare_knowledge(
             disease_key="fhn_stage1_without_guideline",
             disease_name="股骨头坏死 1 期假设",
             observations=["X 光股骨头负重区出现亚像素级纹理不均"],
@@ -1061,12 +1061,12 @@ class MedScopeMvpFlowTest(unittest.TestCase):
             case_id="case_hypothesis_enabled",
             patient_info={"symptoms": ["髋关节疼痛"]},
             visual_result=visual_result,
-            disease_skill=hypothesis_skill,
+            disease_knowledge=hypothesis_knowledge,
             hypothesis_validation_mode=True,
         )
 
         self.assertEqual(report["hypothesis_validation_mode"], "enabled")
-        self.assertEqual(report["used_skill"]["skill_type"], "data_mined_hypothesis")
+        self.assertEqual(report["used_knowledge"]["knowledge_type"], "data_mined_hypothesis")
         self.assertIn("科研假设风险提示", report["diagnostic_tendency"])
         self.assertIn("建议进一步金标准检查", "；".join(report["建议进一步检查"]))
         patient_facing_text = json.dumps(

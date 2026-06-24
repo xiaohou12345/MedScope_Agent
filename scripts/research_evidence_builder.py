@@ -1,7 +1,7 @@
 """Build proposal-only research evidence artifacts.
 
 The builder accepts already supplied research/source metadata. It does not
-search papers, update formal skills, or modify diagnosis outputs.
+search papers, update formal knowledge, or modify diagnosis outputs.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Any, Callable
 DEFAULT_OUTPUT_DIR = Path("output/fake/research_evidence_gateway")
 ALLOWED_CANDIDATE_TYPES = {
     "research_evidence_proposal",
-    "candidate_skill_extension",
+    "candidate_knowledge_extension",
     "candidate_measurement_protocol",
     "candidate_quality_gate_rule",
     "differential_diagnosis_clue",
@@ -112,7 +112,7 @@ class ResearchEvidenceRetriever:
             "normalized_research_evidence": normalized_evidence,
             "runtime_safety": {
                 "paper_search_performed": pubmed_enabled,
-                "formal_skill_updated": False,
+                "formal_knowledge_updated": False,
                 "formal_guideline_updated": False,
                 "diagnosis_report_updated": False,
                 "formal_update_allowed": False,
@@ -149,7 +149,7 @@ class ResearchEvidenceExtractor:
                 "input_mode": "supplied_text_only",
                 "pdf_binary_parsed": False,
                 "llm_extraction_used": False,
-                "formal_skill_updated": False,
+                "formal_knowledge_updated": False,
                 "formal_guideline_updated": False,
                 "diagnosis_report_updated": False,
                 "formal_update_allowed": False,
@@ -176,7 +176,7 @@ class ResearchClaimBuilder:
             )
             source_id = evidence.get("source_id")
             source_ids = list(evidence.get("source_ids") or ([source_id] if source_id else []))
-            proposed_skill_section = _target_section_for_claim(
+            proposed_knowledge_section = _target_section_for_claim(
                 evidence,
                 legacy_candidate_type,
             )
@@ -187,8 +187,8 @@ class ResearchClaimBuilder:
                 "summary": _build_claim_summary(evidence, claim_type),
                 "source_id": source_id,
                 "source_ids": source_ids,
-                "target_protocol_section": proposed_skill_section,
-                "proposed_skill_section": proposed_skill_section,
+                "target_protocol_section": proposed_knowledge_section,
+                "proposed_knowledge_section": proposed_knowledge_section,
                 "target_disease": disease_key,
                 "modality": evidence.get("modality") or "unknown",
                 "applicability": {
@@ -215,12 +215,12 @@ class ResearchClaimBuilder:
 def build_research_evidence_review_package(
     *,
     disease_key: str,
-    target_skill_id: str,
+    target_knowledge_id: str,
     modality: str,
     research_question: str,
     supplied_metadata: list[dict[str, Any]] | None = None,
     supplied_texts: list[dict[str, Any]] | None = None,
-    guideline_skill: dict[str, Any] | None = None,
+    guideline_knowledge: dict[str, Any] | None = None,
     pubmed_enabled: bool = False,
     pubmed_limit: int = 10,
     pubmed_client: PubMedMetadataClient | None = None,
@@ -250,7 +250,7 @@ def build_research_evidence_review_package(
     )
     proposal = build_research_evidence_proposal(
         disease_key=disease_key,
-        target_skill_id=target_skill_id,
+        target_knowledge_id=target_knowledge_id,
         sources=list(retrieval["normalized_research_evidence"]),
         extracted_claims=claims,
         output_dir=None,
@@ -267,7 +267,7 @@ def build_research_evidence_review_package(
             "research_metadata_normalized": True,
             "candidate_claims_generated": True,
             "candidate_artifacts_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "diagnosis_rules_modified": False,
@@ -280,36 +280,36 @@ def build_research_evidence_review_package(
     )
     review_artifact = _build_gateway_review_artifact(
         proposal=proposal,
-        guideline_skill=guideline_skill or {},
+        guideline_knowledge=guideline_knowledge or {},
     )
     human_review_checklist = _build_human_review_checklist(review_artifact)
     promotion_dry_run = _build_research_promotion_dry_run(
         proposal=proposal,
         review_artifact=review_artifact,
     )
-    controlled_skill_extension_draft = _build_controlled_skill_extension_draft(
+    controlled_knowledge_extension_draft = _build_controlled_knowledge_extension_draft(
         proposal=proposal,
         review_artifact=review_artifact,
         promotion_dry_run=promotion_dry_run,
     )
     human_review_decision = _build_human_review_decision(
         review_artifact=review_artifact,
-        controlled_skill_extension_draft=controlled_skill_extension_draft,
+        controlled_knowledge_extension_draft=controlled_knowledge_extension_draft,
         human_review_decisions=list(human_review_decisions or []),
     )
     controlled_promotion_package = _build_controlled_promotion_package(
-        controlled_skill_extension_draft=controlled_skill_extension_draft,
+        controlled_knowledge_extension_draft=controlled_knowledge_extension_draft,
         human_review_decision=human_review_decision,
     )
-    formal_skill_extension_patch_preview = (
-        _build_formal_skill_extension_patch_preview(
+    formal_knowledge_extension_patch_preview = (
+        _build_formal_knowledge_extension_patch_preview(
             controlled_promotion_package=controlled_promotion_package,
         )
     )
     package = {
         "schema_version": "research_evidence_review_package.v1",
         "disease_key": disease_key,
-        "target_skill_id": target_skill_id,
+        "target_knowledge_id": target_knowledge_id,
         "proposal_status": "proposal_only",
         "research_evidence_extraction": extraction,
         "research_evidence_retrieval": retrieval,
@@ -318,13 +318,13 @@ def build_research_evidence_review_package(
         "gateway_review_artifact": review_artifact,
         "human_review_checklist": human_review_checklist,
         "promotion_dry_run": promotion_dry_run,
-        "controlled_skill_extension_draft": controlled_skill_extension_draft,
+        "controlled_knowledge_extension_draft": controlled_knowledge_extension_draft,
         "human_review_decision": human_review_decision,
         "controlled_promotion_package": controlled_promotion_package,
-        "formal_skill_extension_patch_preview": formal_skill_extension_patch_preview,
+        "formal_knowledge_extension_patch_preview": formal_knowledge_extension_patch_preview,
         "runtime_safety": {
             "candidate_artifacts_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "diagnosis_rules_modified": False,
@@ -343,7 +343,7 @@ def build_research_evidence_review_package(
 def build_research_evidence_proposal_from_request(
     *,
     disease_key: str,
-    target_skill_id: str,
+    target_knowledge_id: str,
     modality: str,
     research_question: str,
     extracted_claims: list[dict[str, Any]],
@@ -363,7 +363,7 @@ def build_research_evidence_proposal_from_request(
     )
     payload = build_research_evidence_proposal(
         disease_key=disease_key,
-        target_skill_id=target_skill_id,
+        target_knowledge_id=target_knowledge_id,
         sources=list(retrieval["normalized_research_evidence"]),
         extracted_claims=extracted_claims,
         output_dir=None,
@@ -376,7 +376,7 @@ def build_research_evidence_proposal_from_request(
             "paper_search_performed": retrieval["runtime_safety"]["paper_search_performed"],
             "research_metadata_normalized": True,
             "candidate_artifacts_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "formal_update_allowed": False,
@@ -498,7 +498,7 @@ def normalize_research_metadata(
 def build_research_evidence_proposal(
     *,
     disease_key: str,
-    target_skill_id: str,
+    target_knowledge_id: str,
     sources: list[dict[str, Any]],
     extracted_claims: list[dict[str, Any]],
     output_dir: Path | str | None = None,
@@ -521,7 +521,7 @@ def build_research_evidence_proposal(
     payload = {
         "schema_version": "research_evidence_proposal.v1",
         "disease_key": disease_key,
-        "target_skill_id": target_skill_id,
+        "target_knowledge_id": target_knowledge_id,
         "proposal_status": "proposal_only",
         "sources": normalized_sources,
         "candidate_extensions": candidate_extensions,
@@ -530,7 +530,7 @@ def build_research_evidence_proposal(
             "input_mode": "supplied_sources_only",
             "paper_search_performed": False,
             "candidate_artifacts_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "formal_update_allowed": False,
@@ -594,7 +594,7 @@ def _build_candidate_extension(
         "source_id": source.get("source_id"),
         "source_type": source.get("source_type"),
         "target_protocol_section": claim.get("target_protocol_section"),
-        "proposed_skill_section": claim.get("proposed_skill_section")
+        "proposed_knowledge_section": claim.get("proposed_knowledge_section")
         or claim.get("target_protocol_section"),
         "summary": claim.get("summary"),
         "modality": claim.get("modality"),
@@ -651,7 +651,7 @@ def _build_quality_gate(candidate_extensions: list[dict[str, Any]]) -> dict[str,
             "read_only": True,
             "proposal_only": True,
             "formal_update": False,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
         },
@@ -766,7 +766,7 @@ def _build_candidate_gate_status(
         "sample_size": status_for("sample_size_minimum_met", "sample_size_below_minimum"),
         "guideline_conflict": {
             "status": "not_evaluated",
-            "reason": "guideline_skill_not_checked_at_quality_gate",
+            "reason": "guideline_knowledge_not_checked_at_quality_gate",
         },
         "reproducibility_or_external_validation": {
             "status": "requires_review"
@@ -1074,7 +1074,7 @@ def _infer_candidate_claim_type_from_text(text: str, research_question: str) -> 
         or "radiomics" in lower
     ):
         return "candidate_measurement_protocol"
-    return "candidate_skill_extension"
+    return "candidate_knowledge_extension"
 
 
 def _infer_limitations_from_text(text: str) -> list[str]:
@@ -1140,7 +1140,7 @@ def _normalize_legacy_candidate_type(value: Any) -> str:
     raw = str(value or "").strip()
     if raw in ALLOWED_CANDIDATE_TYPES and raw != "research_evidence_proposal":
         return raw
-    return "candidate_skill_extension"
+    return "candidate_knowledge_extension"
 
 
 def _normalize_claim_type(value: Any, *, evidence: dict[str, Any]) -> str:
@@ -1194,7 +1194,7 @@ def _target_section_for_claim(evidence: dict[str, Any], claim_type: str) -> str:
         "candidate_quality_gate_rule": "quality_gate_protocol.research_evidence_gate",
         "differential_diagnosis_clue": "differential_diagnosis_protocol",
         "clinical_risk_context_clue": "clinical_context_bundle.risk_factors",
-        "candidate_skill_extension": "integrated_reasoning_protocol",
+        "candidate_knowledge_extension": "integrated_reasoning_protocol",
     }
     return defaults.get(claim_type, "integrated_reasoning_protocol")
 
@@ -1213,7 +1213,7 @@ def _claim_builder_artifact(claims: list[dict[str, Any]]) -> dict[str, Any]:
         "schema_version": "research_claim_builder.v1",
         "claim_count": len(claims),
         "supported_claim_types": [
-            "candidate_skill_extension",
+            "candidate_knowledge_extension",
             "candidate_measurement_protocol",
             "candidate_quality_gate_rule",
             "differential_diagnosis_clue",
@@ -1231,10 +1231,10 @@ def _claim_builder_artifact(claims: list[dict[str, Any]]) -> dict[str, Any]:
 def _build_gateway_review_artifact(
     *,
     proposal: dict[str, Any],
-    guideline_skill: dict[str, Any],
+    guideline_knowledge: dict[str, Any],
 ) -> dict[str, Any]:
     review_items = [
-        _build_review_item(candidate, guideline_skill)
+        _build_review_item(candidate, guideline_knowledge)
         for candidate in proposal.get("candidate_extensions") or []
     ]
     return {
@@ -1256,7 +1256,7 @@ def _build_gateway_review_artifact(
             "research_mode_only": True,
             "proposal_only": True,
             "formal_update": False,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "diagnosis_rules_modified": False,
@@ -1270,9 +1270,9 @@ def _build_gateway_review_artifact(
 
 def _build_review_item(
     candidate: dict[str, Any],
-    guideline_skill: dict[str, Any],
+    guideline_knowledge: dict[str, Any],
 ) -> dict[str, Any]:
-    conflict_reasons = _guideline_conflict_reasons(candidate, guideline_skill)
+    conflict_reasons = _guideline_conflict_reasons(candidate, guideline_knowledge)
     quality_gate = candidate.get("quality_gate") or {}
     gate_status = _review_gate_status(
         quality_gate.get("gate_status") or {},
@@ -1324,10 +1324,10 @@ def _review_gate_status(
     ]
     for key in required_keys:
         normalized.setdefault(key, {"status": "unknown", "reason": "not_evaluated"})
-    if "modality_not_in_guideline_skill" in conflict_reasons:
+    if "modality_not_in_guideline_knowledge" in conflict_reasons:
         normalized["modality_match"] = {
             "status": "blocked",
-            "reason": "modality_not_in_guideline_skill",
+            "reason": "modality_not_in_guideline_knowledge",
         }
     if conflict_reasons:
         normalized["guideline_conflict"] = {
@@ -1348,21 +1348,21 @@ def _review_gate_status(
 
 def _guideline_conflict_reasons(
     candidate: dict[str, Any],
-    guideline_skill: dict[str, Any],
+    guideline_knowledge: dict[str, Any],
 ) -> list[str]:
     reasons: list[str] = []
-    supported_modalities = guideline_skill.get("supported_modalities") or []
+    supported_modalities = guideline_knowledge.get("supported_modalities") or []
     if supported_modalities and not _casefold_contains(
         supported_modalities,
         candidate.get("modality"),
     ):
-        reasons.append("modality_not_in_guideline_skill")
-    sections = guideline_skill.get("evidence_protocol_sections") or []
+        reasons.append("modality_not_in_guideline_knowledge")
+    sections = guideline_knowledge.get("evidence_protocol_sections") or []
     if sections and not _casefold_contains(
         sections,
         candidate.get("target_protocol_section"),
     ):
-        reasons.append("target_protocol_section_not_in_guideline_skill")
+        reasons.append("target_protocol_section_not_in_guideline_knowledge")
     return reasons
 
 
@@ -1421,13 +1421,13 @@ def _build_research_promotion_dry_run(
                 "candidate_type": item.get("candidate_type"),
                 "target_protocol_section": item.get("target_protocol_section"),
                 "suggested_action_if_human_approved": (
-                    "draft_limited_research_mode_skill_extension"
+                    "draft_limited_research_mode_knowledge_extension"
                 ),
                 "guideline_conflict_status": item.get("guideline_conflict_status"),
             }
             for item in review_artifact.get("review_items") or []
         ],
-        "formal_skill_updated": False,
+        "formal_knowledge_updated": False,
         "formal_guideline_updated": False,
         "diagnosis_report_updated": False,
         "formal_update_allowed": False,
@@ -1435,7 +1435,7 @@ def _build_research_promotion_dry_run(
     }
 
 
-def _build_controlled_skill_extension_draft(
+def _build_controlled_knowledge_extension_draft(
     *,
     proposal: dict[str, Any],
     review_artifact: dict[str, Any],
@@ -1462,11 +1462,11 @@ def _build_controlled_skill_extension_draft(
     )
     draft_status = "blocked_by_gateway" if blocked_count else "pending_human_review"
     return {
-        "schema_version": "controlled_skill_extension_draft.v1",
+        "schema_version": "controlled_knowledge_extension_draft.v1",
         "draft_status": draft_status,
         "source_proposal_schema_version": proposal.get("schema_version"),
         "source_proposal_status": proposal.get("proposal_status"),
-        "target_skill_id": proposal.get("target_skill_id"),
+        "target_knowledge_id": proposal.get("target_knowledge_id"),
         "disease_key": proposal.get("disease_key"),
         "proposed_section_updates": proposed_updates,
         "guideline_conflict_summary": {
@@ -1487,14 +1487,14 @@ def _build_controlled_skill_extension_draft(
                 }
                 for item in proposed_updates
             ],
-            "formal_skill_file_changed": False,
+            "formal_knowledge_file_changed": False,
             "diagnosis_flow_changed": False,
         },
         "human_review_required": True,
         "runtime_safety": {
             "controlled_draft_only": True,
             "research_mode_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "formal_update_allowed": False,
@@ -1506,7 +1506,7 @@ def _build_controlled_skill_extension_draft(
 def _build_human_review_decision(
     *,
     review_artifact: dict[str, Any],
-    controlled_skill_extension_draft: dict[str, Any],
+    controlled_knowledge_extension_draft: dict[str, Any],
     human_review_decisions: list[dict[str, Any]],
 ) -> dict[str, Any]:
     supplied_by_item_id = {
@@ -1524,7 +1524,7 @@ def _build_human_review_decision(
             review_item=review_by_item_id.get(str(update.get("item_id")), {}),
             supplied_decision=supplied_by_item_id.get(str(update.get("item_id")), {}),
         )
-        for update in controlled_skill_extension_draft.get("proposed_section_updates") or []
+        for update in controlled_knowledge_extension_draft.get("proposed_section_updates") or []
     ]
     decisions = {item["review_decision"] for item in items}
     approved_count = sum(1 for item in items if item["review_decision"] == "approved")
@@ -1542,15 +1542,15 @@ def _build_human_review_decision(
     return {
         "schema_version": "research_human_review_decision.v1",
         "decision_status": decision_status,
-        "source_draft_schema_version": controlled_skill_extension_draft.get(
+        "source_draft_schema_version": controlled_knowledge_extension_draft.get(
             "schema_version"
         ),
-        "target_skill_id": controlled_skill_extension_draft.get("target_skill_id"),
+        "target_knowledge_id": controlled_knowledge_extension_draft.get("target_knowledge_id"),
         "review_item_count": len(items),
         "items": items,
         "runtime_safety": {
             "human_decision_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "formal_update_allowed": False,
@@ -1605,12 +1605,12 @@ def _normalize_human_review_decision(value: Any) -> str:
 
 def _build_controlled_promotion_package(
     *,
-    controlled_skill_extension_draft: dict[str, Any],
+    controlled_knowledge_extension_draft: dict[str, Any],
     human_review_decision: dict[str, Any],
 ) -> dict[str, Any]:
     update_by_item_id = {
         str(update.get("item_id") or ""): update
-        for update in controlled_skill_extension_draft.get("proposed_section_updates")
+        for update in controlled_knowledge_extension_draft.get("proposed_section_updates")
         or []
     }
     approved_updates = []
@@ -1631,8 +1631,8 @@ def _build_controlled_promotion_package(
             rejected_or_revision_items.append(
                 _build_rejected_or_revision_item(decision_item)
             )
-    patch_preview = _build_formal_skill_patch_preview(
-        target_skill_id=controlled_skill_extension_draft.get("target_skill_id"),
+    patch_preview = _build_formal_knowledge_patch_preview(
+        target_knowledge_id=controlled_knowledge_extension_draft.get("target_knowledge_id"),
         approved_updates=approved_updates,
     )
     return {
@@ -1642,18 +1642,18 @@ def _build_controlled_promotion_package(
             if approved_updates
             else "not_ready_for_promotion"
         ),
-        "source_draft_schema_version": controlled_skill_extension_draft.get(
+        "source_draft_schema_version": controlled_knowledge_extension_draft.get(
             "schema_version"
         ),
         "source_review_decision_schema_version": human_review_decision.get(
             "schema_version"
         ),
-        "target_skill_id": controlled_skill_extension_draft.get("target_skill_id"),
+        "target_knowledge_id": controlled_knowledge_extension_draft.get("target_knowledge_id"),
         "approved_updates": approved_updates,
         "rejected_or_revision_items": rejected_or_revision_items,
-        "formal_skill_patch_preview": patch_preview,
+        "formal_knowledge_patch_preview": patch_preview,
         "rollback_notes": _build_controlled_promotion_rollback_notes(
-            target_skill_id=controlled_skill_extension_draft.get("target_skill_id"),
+            target_knowledge_id=controlled_knowledge_extension_draft.get("target_knowledge_id"),
             approved_updates=approved_updates,
         ),
         "audit_log": _build_controlled_promotion_audit_log(
@@ -1664,7 +1664,7 @@ def _build_controlled_promotion_package(
         "runtime_safety": {
             "controlled_package_only": True,
             "formal_patch_preview_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "formal_update_allowed": False,
@@ -1711,18 +1711,18 @@ def _build_rejected_or_revision_item(decision_item: dict[str, Any]) -> dict[str,
     }
 
 
-def _build_formal_skill_patch_preview(
+def _build_formal_knowledge_patch_preview(
     *,
-    target_skill_id: Any,
+    target_knowledge_id: Any,
     approved_updates: list[dict[str, Any]],
 ) -> dict[str, Any]:
     if not approved_updates:
         return {
             "patch_status": "no_approved_updates",
-            "target_skill_id": target_skill_id,
+            "target_knowledge_id": target_knowledge_id,
             "preview_sections": [],
             "patch_preview_text": "",
-            "formal_skill_file_changed": False,
+            "formal_knowledge_file_changed": False,
             "patch_applied": False,
         }
     preview_sections = [
@@ -1742,20 +1742,20 @@ def _build_formal_skill_patch_preview(
     ]
     return {
         "patch_status": "preview_only_not_applied",
-        "target_skill_id": target_skill_id,
+        "target_knowledge_id": target_knowledge_id,
         "preview_sections": preview_sections,
         "patch_preview_text": "\n".join(
             f"+ [{section['evidence_use_label']}] {section['proposed_addition']}"
             for section in preview_sections
         ),
-        "formal_skill_file_changed": False,
+        "formal_knowledge_file_changed": False,
         "patch_applied": False,
     }
 
 
 def _build_controlled_promotion_rollback_notes(
     *,
-    target_skill_id: Any,
+    target_knowledge_id: Any,
     approved_updates: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     if not approved_updates:
@@ -1768,7 +1768,7 @@ def _build_controlled_promotion_rollback_notes(
     return [
         {
             "item_id": update.get("item_id"),
-            "target_skill_id": target_skill_id,
+            "target_knowledge_id": target_knowledge_id,
             "rollback_action": "remove_previewed_research_mode_extension_if_promoted_later",
             "formal_patch_applied": False,
         }
@@ -1786,7 +1786,7 @@ def _build_controlled_promotion_audit_log(
         {
             "event": f"human_review_decision_{human_review_decision.get('decision_status')}",
             "schema_version": human_review_decision.get("schema_version"),
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "diagnosis_report_updated": False,
         }
     ]
@@ -1811,11 +1811,11 @@ def _build_controlled_promotion_audit_log(
     return events
 
 
-def _build_formal_skill_extension_patch_preview(
+def _build_formal_knowledge_extension_patch_preview(
     *,
     controlled_promotion_package: dict[str, Any],
 ) -> dict[str, Any]:
-    target_skill_id = controlled_promotion_package.get("target_skill_id")
+    target_knowledge_id = controlled_promotion_package.get("target_knowledge_id")
     target_sections = [
         _build_formal_patch_target_section(update)
         for update in controlled_promotion_package.get("approved_updates") or []
@@ -1823,7 +1823,7 @@ def _build_formal_skill_extension_patch_preview(
     pre_apply_audit = _build_formal_patch_pre_apply_audit(target_sections)
     audit_passed = pre_apply_audit["audit_status"] == "passed"
     diff_preview = _build_formal_extension_diff_preview(
-        target_skill_id=target_skill_id,
+        target_knowledge_id=target_knowledge_id,
         target_sections=target_sections if audit_passed else [],
         patch_allowed=audit_passed,
     )
@@ -1834,13 +1834,13 @@ def _build_formal_skill_extension_patch_preview(
     else:
         patch_status = "blocked_by_pre_apply_audit"
     return {
-        "schema_version": "formal_skill_extension_patch_preview.v1",
+        "schema_version": "formal_knowledge_extension_patch_preview.v1",
         "patch_status": patch_status,
         "source_package_schema_version": controlled_promotion_package.get(
             "schema_version"
         ),
-        "target_skill_id": target_skill_id,
-        "target_skill_file_preview": _target_skill_file_preview(target_skill_id),
+        "target_knowledge_id": target_knowledge_id,
+        "target_knowledge_file_preview": _target_knowledge_file_preview(target_knowledge_id),
         "target_sections": target_sections,
         "diff_preview": diff_preview,
         "sign_off_checklist": _build_formal_patch_sign_off_checklist(
@@ -1848,17 +1848,17 @@ def _build_formal_skill_extension_patch_preview(
             pre_apply_audit=pre_apply_audit,
         ),
         "rollback_plan": _build_formal_patch_rollback_plan(
-            target_skill_id=target_skill_id,
+            target_knowledge_id=target_knowledge_id,
             target_sections=target_sections,
         ),
         "pre_apply_audit": pre_apply_audit,
         "runtime_safety": {
             "preview_only": True,
             "patch_applied": False,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
-            "skill_registry_updated": False,
+            "knowledge_registry_updated": False,
             "formal_update_allowed": False,
             "diagnosis_allowed": False,
         },
@@ -1887,7 +1887,7 @@ def _build_formal_patch_pre_apply_audit(
     violations: list[str] = []
     diagnosis_rules_modified = False
     guideline_core_modified = False
-    skill_registry_modified = False
+    knowledge_registry_modified = False
     for section in target_sections:
         original = str(section.get("original_target_protocol_section") or "").lower()
         safe = str(section.get("safe_extension_section") or "").lower()
@@ -1899,26 +1899,26 @@ def _build_formal_patch_pre_apply_audit(
         if "guideline_core" in original or "core_guideline" in original:
             guideline_core_modified = True
             violations.append("forbidden_target_section")
-        if "skill_registry" in original or original == "registry" or ".registry" in original:
-            skill_registry_modified = True
+        if "knowledge_registry" in original or original == "registry" or ".registry" in original:
+            knowledge_registry_modified = True
             violations.append("forbidden_target_section")
     violations = _dedupe_strings(violations)
     return {
-        "schema_version": "formal_skill_extension_pre_apply_audit.v1",
+        "schema_version": "formal_knowledge_extension_pre_apply_audit.v1",
         "audit_status": "blocked" if violations else "passed",
         "violations": violations,
         "allowed_research_mode_sections_only": bool(target_sections) and not violations,
         "guideline_core_modified": guideline_core_modified,
         "diagnosis_rules_modified": diagnosis_rules_modified,
-        "skill_registry_modified": skill_registry_modified,
-        "formal_skill_file_changed": False,
+        "knowledge_registry_modified": knowledge_registry_modified,
+        "formal_knowledge_file_changed": False,
         "patch_applied": False,
     }
 
 
 def _build_formal_extension_diff_preview(
     *,
-    target_skill_id: Any,
+    target_knowledge_id: Any,
     target_sections: list[dict[str, Any]],
     patch_allowed: bool,
 ) -> dict[str, Any]:
@@ -1927,11 +1927,11 @@ def _build_formal_extension_diff_preview(
             "diff_status": "blocked_or_empty",
             "unified_diff": "",
             "patch_applied": False,
-            "formal_skill_file_changed": False,
+            "formal_knowledge_file_changed": False,
         }
     lines = [
-        f"--- formal_skill:{target_skill_id}",
-        f"+++ formal_skill:{target_skill_id}:research_evidence_supplements_preview",
+        f"--- formal_knowledge:{target_knowledge_id}",
+        f"+++ formal_knowledge:{target_knowledge_id}:research_evidence_supplements_preview",
     ]
     for section in target_sections:
         safe_section = section.get("safe_extension_section")
@@ -1950,7 +1950,7 @@ def _build_formal_extension_diff_preview(
         "diff_status": "preview_only_not_applied",
         "unified_diff": "\n".join(lines),
         "patch_applied": False,
-        "formal_skill_file_changed": False,
+        "formal_knowledge_file_changed": False,
     }
 
 
@@ -1960,7 +1960,7 @@ def _build_formal_patch_sign_off_checklist(
     pre_apply_audit: dict[str, Any],
 ) -> dict[str, Any]:
     return {
-        "schema_version": "formal_skill_extension_sign_off_checklist.v1",
+        "schema_version": "formal_knowledge_extension_sign_off_checklist.v1",
         "sign_off_status": "pending_sign_off",
         "patch_status": patch_status,
         "pre_apply_audit_status": pre_apply_audit.get("audit_status"),
@@ -1979,13 +1979,13 @@ def _build_formal_patch_sign_off_checklist(
 
 def _build_formal_patch_rollback_plan(
     *,
-    target_skill_id: Any,
+    target_knowledge_id: Any,
     target_sections: list[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
-        "schema_version": "formal_skill_extension_rollback_plan.v1",
+        "schema_version": "formal_knowledge_extension_rollback_plan.v1",
         "rollback_status": "preview_only",
-        "target_skill_id": target_skill_id,
+        "target_knowledge_id": target_knowledge_id,
         "rollback_steps": [
             {
                 "item_id": section.get("item_id"),
@@ -1995,13 +1995,13 @@ def _build_formal_patch_rollback_plan(
             }
             for section in target_sections
         ],
-        "formal_skill_file_changed": False,
+        "formal_knowledge_file_changed": False,
     }
 
 
-def _target_skill_file_preview(target_skill_id: Any) -> str:
-    safe_skill_id = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(target_skill_id or "unknown"))
-    return f"skills/{safe_skill_id}.json"
+def _target_knowledge_file_preview(target_knowledge_id: Any) -> str:
+    safe_knowledge_id = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(target_knowledge_id or "unknown"))
+    return f"knowledge/{safe_knowledge_id}.json"
 
 
 def _build_controlled_section_update(
@@ -2079,7 +2079,7 @@ def _controlled_suggested_section_action(
         return "add_research_mode_clinical_context_clue"
     if candidate_type == "candidate_quality_gate_rule":
         return "add_research_mode_quality_gate_note"
-    return "add_research_mode_supplemental_skill_extension"
+    return "add_research_mode_supplemental_knowledge_extension"
 
 
 def _dedupe_strings(values: list[Any]) -> list[str]:
@@ -2211,13 +2211,13 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     checklist_path = output / "human_review_checklist.json"
     checklist_md_path = output / "human_review_checklist.md"
     dry_run_path = output / "research_promotion_dry_run.json"
-    draft_path = output / "controlled_skill_extension_draft.json"
-    draft_md_path = output / "controlled_skill_extension_draft.md"
+    draft_path = output / "controlled_knowledge_extension_draft.json"
+    draft_md_path = output / "controlled_knowledge_extension_draft.md"
     review_decision_path = output / "research_human_review_decision.json"
     promotion_package_path = output / "controlled_promotion_package.json"
     promotion_package_md_path = output / "controlled_promotion_package.md"
-    formal_patch_path = output / "formal_skill_extension_patch_preview.json"
-    formal_patch_md_path = output / "formal_skill_extension_patch_preview.md"
+    formal_patch_path = output / "formal_knowledge_extension_patch_preview.json"
+    formal_patch_md_path = output / "formal_knowledge_extension_patch_preview.md"
     package_path = output / "research_evidence_review_package.json"
     package["output_paths"] = {
         "review_package_json_path": str(package_path),
@@ -2228,13 +2228,13 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
         "human_review_checklist_json_path": str(checklist_path),
         "human_review_checklist_md_path": str(checklist_md_path),
         "promotion_dry_run_json_path": str(dry_run_path),
-        "controlled_skill_extension_draft_json_path": str(draft_path),
-        "controlled_skill_extension_draft_md_path": str(draft_md_path),
+        "controlled_knowledge_extension_draft_json_path": str(draft_path),
+        "controlled_knowledge_extension_draft_md_path": str(draft_md_path),
         "human_review_decision_json_path": str(review_decision_path),
         "controlled_promotion_package_json_path": str(promotion_package_path),
         "controlled_promotion_package_md_path": str(promotion_package_md_path),
-        "formal_skill_extension_patch_preview_json_path": str(formal_patch_path),
-        "formal_skill_extension_patch_preview_md_path": str(formal_patch_md_path),
+        "formal_knowledge_extension_patch_preview_json_path": str(formal_patch_path),
+        "formal_knowledge_extension_patch_preview_md_path": str(formal_patch_md_path),
     }
     review_path.write_text(
         json.dumps(package["gateway_review_artifact"], ensure_ascii=False, indent=2),
@@ -2258,15 +2258,15 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     )
     draft_path.write_text(
         json.dumps(
-            package["controlled_skill_extension_draft"],
+            package["controlled_knowledge_extension_draft"],
             ensure_ascii=False,
             indent=2,
         ),
         encoding="utf-8",
     )
     draft_md_path.write_text(
-        _render_controlled_skill_extension_draft_markdown(
-            package["controlled_skill_extension_draft"]
+        _render_controlled_knowledge_extension_draft_markdown(
+            package["controlled_knowledge_extension_draft"]
         ),
         encoding="utf-8",
     )
@@ -2290,15 +2290,15 @@ def _write_review_package_outputs(package: dict[str, Any], output: Path) -> None
     )
     formal_patch_path.write_text(
         json.dumps(
-            package["formal_skill_extension_patch_preview"],
+            package["formal_knowledge_extension_patch_preview"],
             ensure_ascii=False,
             indent=2,
         ),
         encoding="utf-8",
     )
     formal_patch_md_path.write_text(
-        _render_formal_skill_extension_patch_preview_markdown(
-            package["formal_skill_extension_patch_preview"]
+        _render_formal_knowledge_extension_patch_preview_markdown(
+            package["formal_knowledge_extension_patch_preview"]
         ),
         encoding="utf-8",
     )
@@ -2339,18 +2339,18 @@ def _render_human_review_checklist_markdown(checklist: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _render_controlled_skill_extension_draft_markdown(draft: dict[str, Any]) -> str:
+def _render_controlled_knowledge_extension_draft_markdown(draft: dict[str, Any]) -> str:
     safety = draft.get("runtime_safety") or {}
     lines = [
-        "# Controlled Skill Extension Draft",
+        "# Controlled Knowledge Extension Draft",
         "",
         "This is a proposal-only draft for human review.",
         "",
         f"- `draft_status`: `{draft.get('draft_status')}`",
-        f"- `target_skill_id`: `{draft.get('target_skill_id')}`",
+        f"- `target_knowledge_id`: `{draft.get('target_knowledge_id')}`",
         "- `formal_update_allowed=false`",
         f"- `diagnosis_allowed={str(safety.get('diagnosis_allowed')).lower()}`",
-        "- `formal_skill_updated=false`",
+        "- `formal_knowledge_updated=false`",
         "- `diagnosis_report_updated=false`",
         "",
         "## Proposed Section Updates",
@@ -2370,18 +2370,18 @@ def _render_controlled_skill_extension_draft_markdown(draft: dict[str, Any]) -> 
 
 def _render_controlled_promotion_package_markdown(package: dict[str, Any]) -> str:
     safety = package.get("runtime_safety") or {}
-    patch_preview = package.get("formal_skill_patch_preview") or {}
+    patch_preview = package.get("formal_knowledge_patch_preview") or {}
     lines = [
         "# Controlled Promotion Package",
         "",
-        "This package is a human-reviewed preview. It does not modify formal skills.",
+        "This package is a human-reviewed preview. It does not modify formal knowledge.",
         "",
         f"- `package_status`: `{package.get('package_status')}`",
-        f"- `target_skill_id`: `{package.get('target_skill_id')}`",
+        f"- `target_knowledge_id`: `{package.get('target_knowledge_id')}`",
         f"- `patch_status`: `{patch_preview.get('patch_status')}`",
         "- `formal_update_allowed=false`",
         f"- `diagnosis_allowed={str(safety.get('diagnosis_allowed')).lower()}`",
-        "- `formal_skill_updated=false`",
+        "- `formal_knowledge_updated=false`",
         "- `diagnosis_report_updated=false`",
         "",
         "## Approved Updates",
@@ -2414,26 +2414,26 @@ def _render_controlled_promotion_package_markdown(package: dict[str, Any]) -> st
     return "\n".join(lines)
 
 
-def _render_formal_skill_extension_patch_preview_markdown(
+def _render_formal_knowledge_extension_patch_preview_markdown(
     patch: dict[str, Any],
 ) -> str:
     safety = patch.get("runtime_safety") or {}
     audit = patch.get("pre_apply_audit") or {}
     diff_preview = patch.get("diff_preview") or {}
     lines = [
-        "# Formal Skill Extension Patch Preview",
+        "# Formal Knowledge Extension Patch Preview",
         "",
         "This artifact is a pre-apply preview for human review only.",
         "",
         f"- `patch_status`: `{patch.get('patch_status')}`",
-        f"- `target_skill_id`: `{patch.get('target_skill_id')}`",
-        f"- `target_skill_file_preview`: `{patch.get('target_skill_file_preview')}`",
+        f"- `target_knowledge_id`: `{patch.get('target_knowledge_id')}`",
+        f"- `target_knowledge_file_preview`: `{patch.get('target_knowledge_file_preview')}`",
         f"- `pre_apply_audit`: `{audit.get('audit_status')}`",
         "- `formal_update_allowed=false`",
         f"- `diagnosis_allowed={str(safety.get('diagnosis_allowed')).lower()}`",
-        "- `formal_skill_updated=false`",
+        "- `formal_knowledge_updated=false`",
         "- `diagnosis_report_updated=false`",
-        "- `skill_registry_updated=false`",
+        "- `knowledge_registry_updated=false`",
         "",
         "## Target Sections",
         "",
@@ -2476,10 +2476,10 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         "# Research Evidence Proposal",
         "",
         "This artifact records supplied research evidence as candidate-only proposals.",
-        "It does not search papers or update formal guideline skills.",
+        "It does not search papers or update formal guideline knowledge.",
         "",
         f"- `disease_key`: `{payload.get('disease_key')}`",
-        f"- `target_skill_id`: `{payload.get('target_skill_id')}`",
+        f"- `target_knowledge_id`: `{payload.get('target_knowledge_id')}`",
         f"- `proposal_status`: `{payload.get('proposal_status')}`",
         f"- `quality_gate_status`: `{decision.get('status')}`",
         "- `formal_update_allowed=false`",
@@ -2517,7 +2517,7 @@ def main() -> None:
     if request.get("build_review_package"):
         payload = build_research_evidence_review_package(
             disease_key=request["disease_key"],
-            target_skill_id=request["target_skill_id"],
+            target_knowledge_id=request["target_knowledge_id"],
             modality=request.get("modality") or _infer_request_modality(request),
             research_question=request.get("research_question") or "",
             supplied_metadata=list(
@@ -2526,7 +2526,7 @@ def main() -> None:
                 or []
             ),
             supplied_texts=list(request.get("supplied_texts") or []),
-            guideline_skill=dict(request.get("guideline_skill") or {}),
+            guideline_knowledge=dict(request.get("guideline_knowledge") or {}),
             pubmed_enabled=args.enable_pubmed,
             pubmed_limit=args.pubmed_limit,
             human_review_decisions=list(request.get("human_review_decisions") or []),
@@ -2540,7 +2540,7 @@ def main() -> None:
     ):
         payload = build_research_evidence_proposal_from_request(
             disease_key=request["disease_key"],
-            target_skill_id=request["target_skill_id"],
+            target_knowledge_id=request["target_knowledge_id"],
             modality=request.get("modality") or _infer_request_modality(request),
             research_question=request.get("research_question") or "",
             supplied_metadata=list(
@@ -2556,7 +2556,7 @@ def main() -> None:
     else:
         payload = build_research_evidence_proposal(
             disease_key=request["disease_key"],
-            target_skill_id=request["target_skill_id"],
+            target_knowledge_id=request["target_knowledge_id"],
             sources=list(request.get("sources") or []),
             extracted_claims=list(request.get("extracted_claims") or []),
             output_dir=args.output_dir,

@@ -12,24 +12,24 @@
 - 无正式指南时只能生成 `data_mined_hypothesis`，不能伪装成医学指南。
 - Memory 必须保存证据链，不只保存最终结论。
 - 对外汇报不再讲“五个 Agent 平铺”，而是讲“上层临床证据流水线 + 底层 Agentic Runtime / Evidence Gateway”。
-- 底层 gateway 负责 skill 分发、共享 artifact、工具权限、contract guards、stop hooks、self-evolving candidate queue 和 validation gate。
-- self-evolving 只能进入候选队列，不能自动修改正式 guideline skill。
+- 底层 gateway 负责 knowledge 分发、共享 artifact、工具权限、contract guards、stop hooks、self-evolving candidate queue 和 validation gate。
+- self-evolving 只能进入候选队列，不能自动修改正式 guideline knowledge。
 
 ## 0.1 2026-05-26 架构表述更新
 
 - 已把系统定位从“五个并列 Agent”调整为双层架构：上层 `Clinical Evidence Pipeline`，下层 `Agentic Runtime / Evidence Gateway`。
-- 已补充 Claude Code / Codex 类比：主 Agent 通过 gateway 管理 skill、文件共享、工具约束和 hooks。
-- 已进一步明确：五个实现类只是 MVP worker 拆分，不是论文/组会的核心贡献；核心贡献应表述为 Evidence Gateway 对 skill、文件、工具、契约、stop hooks 和候选演化的统一管理。
-- 已把底层 gateway 拆成五类可控资源：Skill 系统、Shared Artifact Workspace、Tool Router、Contract Guards、Hooks/Self-evolving Queue，用于回应“为什么不是为了分 Agent 而分”的质疑。
+- 已补充 Claude Code / Codex 类比：主 Agent 通过 gateway 管理 knowledge、文件共享、工具约束和 hooks。
+- 已进一步明确：五个实现类只是 MVP worker 拆分，不是论文/组会的核心贡献；核心贡献应表述为 Evidence Gateway 对 knowledge、文件、工具、契约、stop hooks 和候选演化的统一管理。
+- 已把底层 gateway 拆成五类可控资源：Knowledge 系统、Shared Artifact Workspace、Tool Router、Contract Guards、Hooks/Self-evolving Queue，用于回应“为什么不是为了分 Agent 而分”的质疑。
 - 已同步更新答辩 Q&A、架构图和组会状态矩阵：增加 Gateway 资源管理图、Claude Code/Codex 类比回答，以及“实现类是 worker、Evidence Gateway 是 runtime 核心”的组会口径。
 - 已同步演示 runbook：前端入口改为按当前演示端口/实际启动输出为准，Gateway 章节从“下一步落地”改为“当前按 runtime trace / manifest / stop hook / queue / validation gate 展示”；旧 `mvp_status_by_agents.md` 已标记为历史追溯材料，不作为组会主叙事。
 - 已同步论文方法草稿和验证路线图：方法贡献明确为 controlled medical evidence execution，不再把 agent 数量作为创新点；下一阶段验证重心调整为 reviewer notes、candidate promotion dry-run 和 evidence-bounded reasoning eval。
-- 已实现 `candidate promotion dry-run` 最小闭环：`scripts/candidate_promotion_dry_run.py` 会把 reviewer accepted 的 candidate item 转成 proposal-only artifact，输出 `candidate_skill_patch` proposal，但 `formal_skill_updated=false`、`formal_guideline_updated=false`、`diagnosis_report_updated=false`。
+- 已实现 `candidate promotion dry-run` 最小闭环：`scripts/candidate_promotion_dry_run.py` 会把 reviewer accepted 的 candidate item 转成 proposal-only artifact，输出 `candidate_knowledge_patch` proposal，但 `formal_knowledge_updated=false`、`formal_guideline_updated=false`、`diagnosis_report_updated=false`。
 - 已生成 dry-run 产物：`output/fake/candidate_promotion_dry_run/candidate_promotion_dry_run.json` 和 `output/fake/candidate_promotion_dry_run/candidate_promotion_dry_run.md`。
 - 已实现 `evidence-bounded reasoning eval` 最小聚合评测：`scripts/evidence_bounded_reasoning_eval.py` 汇总 adopted、missing、excluded、overlap、QA 五类 case，输出 `output/fake/evidence_bounded_reasoning_eval/evidence_bounded_reasoning_eval.json` 和 `.md`。
 - 当前 reasoning eval 结果：`status=passed`、`case_count=5`、`unsupported_claim_count=0`、`missing_as_negative_violation_count=0`、`excluded_fact_reuse_violation_count=0`、`overlap_double_count_violation_count=0`、`qa_grounding_violation_count=0`。
 - 已生成本轮总收敛审计：`output/fake/medscope_mvp_convergence_audit.md`。该文件把架构叙事、视觉证据评测、Gateway 安全链路、promotion dry-run、reasoning eval、不能宣称内容和下一阶段真实验证扩展压成一页。
-- 已明确医疗安全差异：MedScope 的 stop hooks 和 self-evolving 只产生候选记忆、候选规则或候选 skill patch，必须通过 validation gate 后才能考虑升级。
+- 已明确医疗安全差异：MedScope 的 stop hooks 和 self-evolving 只产生候选记忆、候选规则或候选 knowledge patch，必须通过 validation gate 后才能考虑升级。
 - 已修正 Phase A audit：FHN response 顶层现在可直接展示 4 个 structured visual facts、2 个 adopted facts 和 2 个 excluded facts。
 - 已新增 `output/fake/vision_evidence_eval_plan.md`，明确 Phase B 视觉证据评测线、指标、命令、失败模板和收敛标准。
 - 已新增 `scripts/vision_evidence_eval_summary.py`，并生成 `output/fake/vision_evidence_eval_summary.json` 和 `output/fake/vision_evidence_eval_summary.md`。
@@ -44,7 +44,7 @@
 ```text
 患者 / 前端
   -> Clinical Orchestrator
-  -> Skill Gateway / Skill Builder（已有 skill 则加载，缺失 skill 才构建）
+  -> Knowledge Gateway / Knowledge Builder（已有 knowledge 则加载，缺失 knowledge 才构建）
   -> Vision Evidence Agent（按 visual protocol 输出视觉证据）
   -> Diagnosis Reasoning Agent（只消费 evidence bundle）
   -> Memory / Audit Layer（写入四类 memory）
@@ -54,12 +54,12 @@
 
 核心模块：
 
-- Clinical Orchestrator：患者入口、任务路由、skill 选择、报告解释、后续 QA。
+- Clinical Orchestrator：患者入口、任务路由、knowledge 选择、报告解释、后续 QA。
 - Vision Evidence Agent：图像预处理、分割、病灶定位、特征提取，只返回结构化视觉证据。
-- Diagnosis Reasoning Agent：医学推理，融合 skill、患者上下文和 evidence bundle，生成报告。
-- Skill Gateway / Skill Builder：已有指南 skill 时加载和校验；缺失 skill 时才检索指南、抽取规则、生成候选或正式 skill。
-- Memory / Audit Layer：保存 patient/image/skill/reasoning 四类记忆，支撑 evidence bundle、audit、replay 和 QA。
-- Agentic Runtime / Evidence Gateway：管理 skill 分发、共享 artifact、工具权限、contract guards、stop hooks、candidate queue 和 validation gate。
+- Diagnosis Reasoning Agent：医学推理，融合 knowledge、患者上下文和 evidence bundle，生成报告。
+- Knowledge Gateway / Knowledge Builder：已有指南 knowledge 时加载和校验；缺失 knowledge 时才检索指南、抽取规则、生成候选或正式 knowledge。
+- Memory / Audit Layer：保存 patient/image/knowledge/reasoning 四类记忆，支撑 evidence bundle、audit、replay 和 QA。
+- Agentic Runtime / Evidence Gateway：管理 knowledge 分发、共享 artifact、工具权限、contract guards、stop hooks、candidate queue 和 validation gate。
 - LLM/API 层：统一 DMX/KY/API 调用，Agent 不直接依赖具体 provider。
 
 ## 2. 当前完成状态
@@ -69,7 +69,7 @@
 - [x] 建立最小可运行 MVP：输入图片路径和患者描述，输出结构化报告。
 - [x] 实现高医生 Agent、诊断医生 Agent、视觉 Agent、报告 Agent。
 - [x] 实现 Memory JSON 持久化。
-- [x] 实现股骨头坏死 `guideline_based` skill。
+- [x] 实现股骨头坏死 `guideline_based` knowledge。
 - [x] 实现 `data_mined_hypothesis` 与 `guideline_based` 的边界检查。
 - [x] 新增 `contracts/`，固定 Agent 间数据契约。
 - [x] 新增 `docs/architecture/boundaries.md`，说明后续可替换点。
@@ -84,7 +84,7 @@
 - [x] 诊断医生 LLM 工作流已增加 visual completeness 安全校验：LLM 若把 missing/null 视觉证据写成 0、阴性或未见，会被拒绝并走规则 fallback。
 - [x] 视觉 Agent 契约已扩展为同时输出 `image_outputs` 和 `visual_evidence`。
 - [x] 视觉 Agent 契约已扩展 `visual_evidence.measurements` 与 `visual_evidence.completeness`，用于区分“已支持证据”和“缺模态/未评估证据”。
-- [x] 新增 BraTS / 成人弥漫性胶质瘤测试线计划和 disease skill。
+- [x] 新增 BraTS / 成人弥漫性胶质瘤测试线计划和 disease knowledge。
 - [x] BraTS Phase A 已支持读取 2D mask、生成 overlay PNG、提取基础肿瘤区域特征。
 - [x] NIfTI/BraTS volume reader 已通过真实 BraTS2021 `.nii.gz` 样本验证，支持 3D label 统计和体素体积计算。
 - [x] 真实 BraTS2021 样本已下载到 `data/external/brats2021_00030/`，并生成确认 overlay：`output/real/brats2021_00030_flair_overlay.png`。
@@ -137,7 +137,7 @@ python -c "from llm.model_client import ApiRouteLog; r=ApiRouteLog.from_file('do
 
 ### Step 2：补诊断医生 Agent 的 LLM Prompt 工作流
 
-目标：诊断医生不再只靠硬编码规则，而是能把患者信息、skill、视觉证据组织成 LLM prompt，输出结构化报告。
+目标：诊断医生不再只靠硬编码规则，而是能把患者信息、knowledge、视觉证据组织成 LLM prompt，输出结构化报告。
 
 要做：
 
@@ -180,17 +180,17 @@ python -m unittest discover -v
 - 患者问“你刚才说哪里异常？”时能基于 memory 回答。
 - 患者问新诊断时才创建新 case。
 
-### Step 4：补指南检索和 Skill Builder
+### Step 4：补指南检索和 Knowledge Builder
 
-目标：诊断医生能从疾病方向触发指南检索，生成或复用 disease skill。
+目标：诊断医生能从疾病方向触发指南检索，生成或复用 disease knowledge。
 
 要做：
 
 - [x] 新增 `tools/guideline_search_tool.py`。
 - [x] 新增 `tools/evidence_summary_tool.py`。
-- [x] 有正式指南时生成 `guideline_based` skill。
+- [x] 有正式指南时生成 `guideline_based` knowledge。
 - [x] 无正式指南时进入 `evidence_summary_mode`，生成 `data_mined_hypothesis`。
-- [x] Skill 支持显式写入 `skills/`；进入 `skill_memory` 的流程已有报告链路覆盖。
+- [x] Knowledge 支持显式写入 `knowledge/`；进入 `knowledge_memory` 的流程已有报告链路覆盖。
 
 验收：
 
@@ -201,7 +201,7 @@ python -m unittest discover -v
 完成标准：
 
 - 不把数据总结产物叫医学指南。
-- skill 中必须有 `source`、`evidence_level`、`skill_type`。
+- knowledge 中必须有 `source`、`evidence_level`、`knowledge_type`。
 
 ### Step 5：补 BraTS / 胶质瘤视觉 Agent 测试线
 
@@ -210,7 +210,7 @@ python -m unittest discover -v
 要做：
 
 - [x] 扩展视觉输出契约：同时支持 `image_outputs` 和 `visual_evidence`。
-- [x] 新增 `skills/diffuse_glioma_brats.yaml`。
+- [x] 新增 `knowledge/diffuse_glioma_brats.yaml`。
 - [x] 新增 `docs/datasets/brats_glioma_plan.md`。
 - [x] 新增 `tools/mask_reader_tool.py`。
 - [x] 新增 `tools/overlay_generation_tool.py`。
@@ -237,8 +237,8 @@ python -m unittest discover -v
 - [x] `summary.json` 已包含 `aggregate.mean_*_dice` 和 `failed_case_ids`，支持批量结果快速审计。
 - [x] 批量运行同时写入 `summary.md`，用表格展示每例状态、Dice 和产物路径。
 - [x] 批量 manifest 模式会捕获单例异常并输出 `partial_error`，避免未配置 MedSAM2 时整批直接中断。
-- [x] `skills/diffuse_glioma_brats.yaml` 已新增 `visual_protocol`，明确 adult diffuse glioma 的分割目标、测量字段和各目标所需 MRI 模态。
-- [x] BraTS 视觉测试线已通过 `SkillBuilderTool.load_guideline_skill("diffuse_glioma_brats")` 加载 guideline skill，不再只传裸 `disease_name`。
+- [x] `knowledge/diffuse_glioma_brats.yaml` 已新增 `visual_protocol`，明确 adult diffuse glioma 的分割目标、测量字段和各目标所需 MRI 模态。
+- [x] BraTS 视觉测试线已通过 `KnowledgeBuilderTool.load_guideline_knowledge("diffuse_glioma_brats")` 加载 guideline knowledge，不再只传裸 `disease_name`。
 - [x] Vision Agent 已根据 `visual_protocol` 生成 `disease_target`、`measurements`、`completeness`，例如仅 FLAIR 输入时 whole tumor 为 `supported`，tumor core / enhancing tumor 为 `missing`。
 - [x] Diagnosis Agent 已读取视觉证据 completeness，并在报告不确定性中说明缺失字段不能被解释为阴性或数值 0。
 - [x] 真实 BraTS ground-truth 脚本已验证输出同时包含分割图路径、结构化测量、证据充分性和 Dice 评估。
@@ -262,12 +262,12 @@ python app.py --image data/images/demo_xray.png --message 左髋疼痛三个月 
 
 ### Step 6：Memory 后端增强
 
-目标：让 memory 支持查询、复用 skill、多轮 QA，但先不急着上复杂向量数据库。
+目标：让 memory 支持查询、复用 knowledge、多轮 QA，但先不急着上复杂向量数据库。
 
 要做：
 
 - [x] 增加按 case_id 查询。
-- [x] 增加按 disease 查询 skill memory。
+- [x] 增加按 disease 查询 knowledge memory。
 - [x] 增加历史 QA memory。
 - [x] 保留 JSON 后端，后续再考虑 SQLite/PostgreSQL。
 
@@ -279,7 +279,7 @@ python -m unittest discover -v
 
 完成标准：
 
-- Memory 能支撑“刚才哪里异常”“为什么建议 MRI”“之前用的哪个 skill”。
+- Memory 能支撑“刚才哪里异常”“为什么建议 MRI”“之前用的哪个 knowledge”。
 
 ### Step 7：封装 API / 前端入口
 
@@ -311,9 +311,9 @@ python -m unittest discover -v
 - [x] `MedScopeService.handle_request()` 支持透传 `disease_key`、`vision_mode`、`mask_path`、`segmentation_prompt`。
 - [x] CLI 支持 `--disease-key`、`--vision-mode`、`--mask`，仍统一调用 service 入口。
 - [x] `GaoDoctorAgent.handle_message()` 支持按 `disease_key` 分流；默认股骨头流程不变。
-- [x] `disease_key=diffuse_glioma_brats` 时，高医生加载 `diffuse_glioma_brats` skill，并调用 BraTS ground-truth 或 MedSAM2 视觉路径。
+- [x] `disease_key=diffuse_glioma_brats` 时，高医生加载 `diffuse_glioma_brats` knowledge，并调用 BraTS ground-truth 或 MedSAM2 视觉路径。
 - [x] case memory 的 `image_memory` 保存 `image_outputs`，同时保存结构化视觉证据和 completeness。
-- [x] 诊断医生 Agent 对胶质瘤 skill 生成胶质瘤方向报告，且不把 missing 视觉字段解释为 0。
+- [x] 诊断医生 Agent 对胶质瘤 knowledge 生成胶质瘤方向报告，且不把 missing 视觉字段解释为 0。
 
 验收：
 
@@ -357,7 +357,7 @@ python -m unittest discover -v
 - `llm/`
 - `memory/`
 - `tools/`
-- `skills/femoral_head_necrosis.yaml`
+- `knowledge/femoral_head_necrosis.yaml`
 - `prompts/gaodoctor_prompt.md`
 - `prompts/diagnosis_agent_prompt.md`
 - `docs/API_ROUTE_LOG.md`
@@ -380,7 +380,7 @@ python app.py --image data/images/demo_xray.png --message 左髋疼痛三个月 
 - 使用临时环境变量运行 `python -m scripts.api_smoke_test --real`，真实 API 返回 `pong`。
 - 诊断医生 LLM 工作流支持：合法 JSON 报告、非法 JSON fallback、缺字段 fallback。
 - 视觉契约支持 `image_outputs.original_image_path`、`mask_path`、`overlay_path`。
-- 新增 BraTS / 成人弥漫性胶质瘤 skill，作为下一条测试线。
+- 新增 BraTS / 成人弥漫性胶质瘤 knowledge，作为下一条测试线。
 - BraTS Phase A demo 可读取 2D mask、生成 overlay PNG、提取 whole tumor / tumor core / enhancing tumor 特征。
 - NIfTI reader 可统计 3D label，并按 header zooms 计算体素体积。
 - 真实 BraTS2021 样本 `BraTS2021_00030` 已下载到 `data/external/brats2021_00030/`。
@@ -389,7 +389,7 @@ python app.py --image data/images/demo_xray.png --message 左髋疼痛三个月 
 
 下一步：
 
-- 下一步建议进入 Step 4：补指南检索和 Skill Builder，先做离线/可控的 guideline search contract，不直接上复杂搜索系统。
+- 下一步建议进入 Step 4：补指南检索和 Knowledge Builder，先做离线/可控的 guideline search contract，不直接上复杂搜索系统。
 
 风险/待确认：
 
@@ -443,15 +443,15 @@ python -m unittest discover -v
 
 - `tools/guideline_search_tool.py`
 - `tools/evidence_summary_tool.py`
-- `tools/skill_builder_tool.py`
+- `tools/knowledge_builder_tool.py`
 - `agents/diagnosis_agent.py`
-- `tests/test_guideline_skill_builder.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `goalnew.md`
 
 验证命令：
 
 ```bash
-python -m unittest tests/test_guideline_skill_builder.py -v
+python -m unittest tests/test_guideline_knowledge_builder.py -v
 python -m unittest tests/test_mvp_flow.py tests/test_contracts.py -v
 python -m unittest discover -v
 ```
@@ -460,15 +460,15 @@ python -m unittest discover -v
 
 - `GuidelineSearchTool` 提供离线指南索引，不联网，用于先固定工具输入输出。
 - `EvidenceSummaryTool` 生成 `evidence_summary_mode`，强制 `source_type=internal_dataset_summary`、`evidence_level=low`、带 warning。
-- `SkillBuilderTool.prepare_skill()` 现在流程为：已有 skill 文件优先；否则查离线指南；仍无指南才生成 hypothesis skill。
+- `KnowledgeBuilderTool.prepare_knowledge()` 现在流程为：已有 knowledge 文件优先；否则查离线指南；仍无指南才生成 hypothesis knowledge。
 - 有指南候选时生成 `guideline_based/high/medical_guideline`。
 - 无指南时生成 `data_mined_hypothesis/low/internal_dataset_summary`，不会伪装成医学指南。
-- 生成 skill 支持 `persist=True` 时显式写入 `skills/`，默认不落盘，避免污染真实 skill 目录。
+- 生成 knowledge 支持 `persist=True` 时显式写入 `knowledge/`，默认不落盘，避免污染真实 knowledge 目录。
 - 当前 `python -m unittest discover -v`：40 个测试通过。
 
 下一步：
 
-- 建议进入 Step 6：增强 Memory 的按 case/disease 查询，支撑多轮 QA 和 skill 复用。
+- 建议进入 Step 6：增强 Memory 的按 case/disease 查询，支撑多轮 QA 和 knowledge 复用。
 
 风险/待确认：
 
@@ -532,7 +532,7 @@ python app.py --image data/images/demo_xray.png --message 左髋疼痛三个月 
 验证结果：
 
 - `MemoryManager.get_case_by_id()` 可按 case_id 读取完整 case memory。
-- `MemoryManager.find_cases_by_disease()` 可按 `skill_memory.disease` 查询历史 case。
+- `MemoryManager.find_cases_by_disease()` 可按 `knowledge_memory.disease` 查询历史 case。
 - `MemoryManager.append_qa_memory()` 可把追问与回答追加到同一个 case 的 `qa_memory`。
 - 新保存的 case 默认包含 `qa_memory: []`；读取旧 case 时会自动补默认字段。
 - `GaoDoctorAgent.answer_follow_up()` 现在回答后会保存 QA history。
@@ -787,7 +787,7 @@ python -m unittest discover -v
 - `MedScopeService.handle_request()` 现在可透传 `disease_key`、`vision_mode`、`mask_path`、`segmentation_prompt`，但 service 仍只持有高医生 Agent。
 - CLI 新增 `--disease-key`、`--vision-mode`、`--mask`，继续统一调用 service。
 - `GaoDoctorAgent.handle_message()` 支持胶质瘤病例参数，默认股骨头坏死路径保持不变。
-- 胶质瘤路径会加载 `diffuse_glioma_brats` skill，调用 Vision Agent 的 BraTS ground-truth 或 MedSAM2 分割路径。
+- 胶质瘤路径会加载 `diffuse_glioma_brats` knowledge，调用 Vision Agent 的 BraTS ground-truth 或 MedSAM2 分割路径。
 - case memory 的 `image_memory` 现在保存 `image_outputs`，并保存完整 `visual_features`，包括 `measurements` 和 `completeness`。
 - 诊断医生规则 fallback 对 `diffuse_glioma_brats_v0.1` 生成胶质瘤方向报告，说明病理和分子证据仍必需。
 - 真实 CLI 跑通 BraTS2021 `BraTS2021_00030`，报告中明确 `enhancing_tumor` 因缺 T1ce 为 `missing`，不能解释为 0。
@@ -1144,7 +1144,7 @@ python -m api.http_server --host 127.0.0.1 --port 8000
 
 - HTTP server 现在支持 `/` 返回互动前端页面。
 - 静态资源通过白名单路径提供：`/static/app.css`、`/static/app.js`。
-- 前端可填写患者描述、图像路径、mask 路径、疾病 skill、视觉模式和症状。
+- 前端可填写患者描述、图像路径、mask 路径、疾病 knowledge、视觉模式和症状。
 - 前端提交后调用 `/v1/medscope`，仍通过 `MedScopeService -> GaoDoctorAgent` 进入系统。
 - 前端会展示结构化报告、case_id、intent、原始 JSON。
 - 前端支持基于当前 case_id 发送 QA 追问。
@@ -1202,9 +1202,9 @@ python -m unittest discover -v
 - 当前浏览器上传的是本机文件并落入 `output/fake/uploads/`，仍属于实验性输入。
 - 普通上传走 MedSAM2 时依赖外部 `MEDSAM2_COMMAND_TEMPLATE`；如果未配置会返回后端错误，需要后续在 UI 上做 readiness 提示。
 
-### 2026-05-24 前端通用医疗影像与自动 Skill 选择追加
+### 2026-05-24 前端通用医疗影像与自动 Knowledge 选择追加
 
-本轮目标：前端不再让患者选择 disease skill，而是由 Agent 根据描述和上传图像信息自动选择处理流程。
+本轮目标：前端不再让患者选择 disease knowledge，而是由 Agent 根据描述和上传图像信息自动选择处理流程。
 
 修改文件：
 
@@ -1226,19 +1226,19 @@ python -m unittest discover -v
 验证结果：
 
 - 前端上传文案从 MRI 改为通用“医疗影像”，支持 MRI / CT / X-ray / PNG / NIfTI 等输入。
-- 前端移除 `疾病 Skill` 选择控件，患者不再需要理解或选择 skill。
+- 前端移除 `疾病 Knowledge` 选择控件，患者不再需要理解或选择 knowledge。
 - 前端移除患者可见的 `图像路径` 输入，主入口只保留患者描述、症状和拖拽上传。
 - 前端普通上传不再主动指定 `vision_mode=medsam2`；除内置胶质瘤样例外，分割流程由服务端/Agent 自动推断。
 - `MedScopeService` 在没有显式 `disease_key` 时会根据患者描述、图像路径和症状做保守自动选择。
 - 若描述或文件路径包含 `胶质瘤`、`脑部`、`brain`、`glioma`、`brats`、`flair`、`.nii` 等线索，自动选择 `diffuse_glioma_brats`。
-- 自动选择胶质瘤 skill 且没有 `mask_path` 时，默认走 `vision_mode=medsam2`，mask 仍由 Vision Agent/分割后端生成。
-- 普通髋部/X-ray 场景仍保持默认流程，不强行选择胶质瘤 skill。
+- 自动选择胶质瘤 knowledge 且没有 `mask_path` 时，默认走 `vision_mode=medsam2`，mask 仍由 Vision Agent/分割后端生成。
+- 普通髋部/X-ray 场景仍保持默认流程，不强行选择胶质瘤 knowledge。
 - 显式 API payload 仍可传 `disease_key` / `vision_mode`，用于开发和测试，不影响已有脚本。
 - 当前 `python -m unittest discover -v`：124 个测试通过。
 
 下一步：
 
-- 给自动 skill 选择加一个可解释字段，例如 `routing_decision`，前端显示“Agent 选择了哪个流程、为什么选择”。
+- 给自动 knowledge 选择加一个可解释字段，例如 `routing_decision`，前端显示“Agent 选择了哪个流程、为什么选择”。
 
 风险/待确认：
 
@@ -1246,7 +1246,7 @@ python -m unittest discover -v
 
 ### 2026-05-24 API 路由决策可解释字段追加
 
-本轮目标：让“Agent 根据描述和上传图像自动选择 skill / vision mode”从黑盒行为变成 API 可验证字段。
+本轮目标：让“Agent 根据描述和上传图像自动选择 knowledge / vision mode”从黑盒行为变成 API 可验证字段。
 
 修改文件：
 
@@ -1257,16 +1257,16 @@ python -m unittest discover -v
 验证命令：
 
 ```bash
-python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_glioma_skill_from_message_and_image tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_keeps_default_skill_for_non_glioma_image tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_routing_decision_marks_explicit_payload -v
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_glioma_knowledge_from_message_and_image tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_keeps_default_knowledge_for_non_glioma_image tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_routing_decision_marks_explicit_payload -v
 python -m unittest discover -v
 ```
 
 验证结果：
 
 - `MedScopeService` 现在会在响应中返回 `routing_decision`。
-- `routing_decision` 包含 `selected_skill`、`selected_vision_mode`、`source`、`reason`、`confidence`、`matched_clues`。
+- `routing_decision` 包含 `selected_knowledge`、`selected_vision_mode`、`source`、`reason`、`confidence`、`matched_clues`。
 - 自动胶质瘤路由会记录匹配线索，例如 `胶质瘤`、`flair`。
-- 非胶质瘤/非已支持专病场景会返回 `source=default`，不强行选择专病 skill。
+- 非胶质瘤/非已支持专病场景会返回 `source=default`，不强行选择专病 knowledge。
 - 显式 API payload 传入 `disease_key` / `vision_mode` 时，会返回 `source=explicit`，用于开发和测试链路。
 - 当前 `python -m unittest discover -v`：125 个测试通过。
 
@@ -1290,7 +1290,7 @@ python -m unittest discover -v
 验证命令：
 
 ```bash
-python -m unittest tests.test_contracts.ContractBoundaryTest.test_diagnosis_visual_input_contract_preserves_outputs_and_completeness tests.test_mvp_flow.MedScopeMvpFlowTest.test_diagnosis_agent_combines_skill_visual_evidence_and_symptoms tests.test_diagnosis_llm_workflow.DiagnosisLlmWorkflowTest.test_diagnosis_agent_accepts_structured_visual_field_acknowledgement_from_llm -v
+python -m unittest tests.test_contracts.ContractBoundaryTest.test_diagnosis_visual_input_contract_preserves_outputs_and_completeness tests.test_mvp_flow.MedScopeMvpFlowTest.test_diagnosis_agent_combines_knowledge_visual_evidence_and_symptoms tests.test_diagnosis_llm_workflow.DiagnosisLlmWorkflowTest.test_diagnosis_agent_accepts_structured_visual_field_acknowledgement_from_llm -v
 python -m unittest discover -v
 ```
 
@@ -1306,9 +1306,9 @@ python -m unittest discover -v
 
 - 做一个端到端样例验证：前端/HTTP 输入 -> 自动路由 -> Vision Agent 病灶图 -> Diagnosis Agent 报告 -> API 响应完整回传。
 
-### 2026-05-24 Skill 自动选择归属与契约固定
+### 2026-05-24 Knowledge 自动选择归属与契约固定
 
-本轮目标：把“患者不选择 skill，由系统自动选择已有 disease skill”的部分固定成 Orchestrator/API 路由契约，并明确它不是 Skill Builder 动态生成 skill。
+本轮目标：把“患者不选择 knowledge，由系统自动选择已有 disease knowledge”的部分固定成 Orchestrator/API 路由契约，并明确它不是 Knowledge Builder 动态生成 knowledge。
 
 修改文件：
 
@@ -1322,18 +1322,18 @@ python -m unittest discover -v
 验证命令：
 
 ```bash
-python -m unittest tests.test_contracts.ContractBoundaryTest.test_skill_routing_decision_contract_marks_orchestrator_scope tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_glioma_skill_from_message_and_image tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_keeps_default_skill_for_non_glioma_image tests.test_http_entrypoint.HttpEntrypointTest.test_post_medscope_returns_orchestrator_skill_routing_decision -v
+python -m unittest tests.test_contracts.ContractBoundaryTest.test_knowledge_routing_decision_contract_marks_orchestrator_scope tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_glioma_knowledge_from_message_and_image tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_keeps_default_knowledge_for_non_glioma_image tests.test_http_entrypoint.HttpEntrypointTest.test_post_medscope_returns_orchestrator_knowledge_routing_decision -v
 python -m unittest discover -v
 ```
 
 验证结果：
 
-- 新增 `SkillRoutingDecision` 契约，作为自动 skill 选择的稳定返回结构。
+- 新增 `KnowledgeRoutingDecision` 契约，作为自动 knowledge 选择的稳定返回结构。
 - `routing_decision.agent_scope` 固定为 `orchestrator_api`，说明该决策属于 GaoDoctor/API 编排层。
-- `routing_decision.skill_builder_action` 明确区分当前行为：
-  - 选中已有专病 skill 时为 `load_existing_skill`。
-  - 默认流程、不选专病 skill 时为 `none`。
-- 当前没有让 Skill Builder Agent 根据病例动态生成新 skill；Skill Builder 仍只提供已有 skill 的加载/维护能力。
+- `routing_decision.knowledge_builder_action` 明确区分当前行为：
+  - 选中已有专病 knowledge 时为 `load_existing_knowledge`。
+  - 默认流程、不选专病 knowledge 时为 `none`。
+- 当前没有让 Knowledge Builder Agent 根据病例动态生成新 knowledge；Knowledge Builder 仍只提供已有 knowledge 的加载/维护能力。
 - HTTP `/v1/medscope` 响应会透出该路由契约；后续前端已改为直接展示路由、证据和审计摘要，不再依赖原始 JSON 面板。
 
 下一步：
@@ -1342,7 +1342,7 @@ python -m unittest discover -v
 
 ### 2026-05-24 HTTP 端到端样例验证
 
-本轮目标：用真实 BraTS 样例从 HTTP 入口验证完整链路：自动路由 -> 已有 skill 加载 -> Vision Agent 病灶图 -> Diagnosis Agent `visual_input_contract` -> API 完整回传。
+本轮目标：用真实 BraTS 样例从 HTTP 入口验证完整链路：自动路由 -> 已有 knowledge 加载 -> Vision Agent 病灶图 -> Diagnosis Agent `visual_input_contract` -> API 完整回传。
 
 修改文件：
 
@@ -1363,7 +1363,7 @@ python -m unittest discover -v
 - 新增 HTTP 端到端测试 `test_post_medscope_runs_auto_routed_brats_end_to_end_sample`。
 - 测试从 `/v1/medscope` 入口提交真实 BraTS FLAIR 图像和系统隐藏 mask，不显式传 `disease_key` / `vision_mode`。
 - `MedScopeService` 自动选择 `diffuse_glioma_brats`，并因存在系统 mask 选择 `ground_truth` 验证路径。
-- API 响应包含 `routing_decision`，且 `source=auto`、`agent_scope=orchestrator_api`、`skill_builder_action=load_existing_skill`。
+- API 响应包含 `routing_decision`，且 `source=auto`、`agent_scope=orchestrator_api`、`knowledge_builder_action=load_existing_knowledge`。
 - API 顶层现在会回传 `visual_input_contract`，同时报告内也保留 `report.visual_input_contract`。
 - API 响应包含 `image_outputs.overlay_path`，overlay 文件真实存在，且 `/output/...` 预览路由可返回 `image/png`。
 - `visual_input_contract.completeness.enhancing_tumor.status=missing`，`enhancing_tumor_volume_ml=null`，报告未把缺失字段写成“增强肿瘤体积为 0”。
@@ -1413,18 +1413,18 @@ python -m unittest discover -v
 
 ### 2026-05-24 双路径框架文档与 Hypothesis Safety Gate 开关
 
-本轮目标：把 Guideline-Aware Path 与 Privileged Knowledge Discovery Path 写成正式架构边界，并把假设验证 skill 做成默认关闭、显式开启的安全模式。
+本轮目标：把 Guideline-Aware Path 与 Privileged Knowledge Discovery Path 写成正式架构边界，并把假设验证 knowledge 做成默认关闭、显式开启的安全模式。
 
 修改文件：
 
 - `docs/DUAL_PATH_AGENT_FRAMEWORK.md`
 - `tools/evidence_summary_tool.py`
-- `tools/skill_builder_tool.py`
+- `tools/knowledge_builder_tool.py`
 - `contracts/medical_contracts.py`
 - `agents/diagnosis_agent.py`
 - `agents/gaodoctor_agent.py`
 - `api/service.py`
-- `tests/test_guideline_skill_builder.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `tests/test_contracts.py`
 - `tests/test_mvp_flow.py`
 - `tests/test_service_entrypoint.py`
@@ -1433,22 +1433,22 @@ python -m unittest discover -v
 验证命令：
 
 ```bash
-python -m unittest tests.test_guideline_skill_builder.GuidelineSkillBuilderTest.test_skill_builder_uses_evidence_summary_for_missing_guideline tests.test_contracts.ContractBoundaryTest.test_skill_descriptor_enforces_guideline_vs_hypothesis_boundary tests.test_mvp_flow.MedScopeMvpFlowTest.test_hypothesis_skill_is_blocked_unless_validation_mode_is_enabled tests.test_mvp_flow.MedScopeMvpFlowTest.test_hypothesis_validation_mode_generates_research_warning_not_diagnosis -v
-python -m unittest tests/test_guideline_skill_builder.py tests/test_contracts.py tests/test_mvp_flow.py tests/test_service_entrypoint.py -v
+python -m unittest tests.test_guideline_knowledge_builder.GuidelineKnowledgeBuilderTest.test_knowledge_builder_uses_evidence_summary_for_missing_guideline tests.test_contracts.ContractBoundaryTest.test_knowledge_descriptor_enforces_guideline_vs_hypothesis_boundary tests.test_mvp_flow.MedScopeMvpFlowTest.test_hypothesis_knowledge_is_blocked_unless_validation_mode_is_enabled tests.test_mvp_flow.MedScopeMvpFlowTest.test_hypothesis_validation_mode_generates_research_warning_not_diagnosis -v
+python -m unittest tests/test_guideline_knowledge_builder.py tests/test_contracts.py tests/test_mvp_flow.py tests/test_service_entrypoint.py -v
 python -m unittest discover -v
 ```
 
 验证结果：
 
 - 新增 `docs/DUAL_PATH_AGENT_FRAMEWORK.md`，明确区分已实现、正在实现和规划中能力，避免把 LUPI/多模态蒸馏表述为已完成。
-- `data_mined_hypothesis` skill 现在包含：
+- `data_mined_hypothesis` knowledge 现在包含：
   - `path_type=privileged_knowledge_discovery`
   - `required_modalities`
   - `visual_protocol`
   - `evidence_completeness_matrix`
   - `safety_gate`
   - `discovery_metadata`
-- `safety_gate.mode_required=hypothesis_validation`，默认不允许 hypothesis skill 进入临床诊断报告。
+- `safety_gate.mode_required=hypothesis_validation`，默认不允许 hypothesis knowledge 进入临床诊断报告。
 - Diagnosis Agent 默认阻断 `data_mined_hypothesis`，错误提示要求开启 `hypothesis_validation_mode`。
 - 显式开启 `hypothesis_validation_mode=True` 时，Diagnosis Agent 只输出“科研假设风险提示”、金标准检查建议和低证据不确定性说明。
 - `hypothesis_validation_mode` 可在 `DiagnosisDoctorAgent(...)` 构造时开启，也可在 `generate_report(..., hypothesis_validation_mode=True)` 单次调用开启。
@@ -1457,24 +1457,24 @@ python -m unittest discover -v
 
 下一步：
 
-- 用 mock evidence summary 生成一个可持久化的 `fhn_stage1_hypothesis` 样例 skill，放在 `output/fake/` 验证，不直接加入正式 `skills/` 目录。
+- 用 mock evidence summary 生成一个可持久化的 `fhn_stage1_hypothesis` 样例 knowledge，放在 `output/fake/` 验证，不直接加入正式 `knowledge/` 目录。
 
-### 2026-05-24 Guideline Skill Builder 主线增强
+### 2026-05-24 Guideline Knowledge Builder 主线增强
 
-本轮目标：先把正式指南 skill 生成主线补扎实，知识发现 / hypothesis skill 作为 guideline 完成后的扩展能力保留。
+本轮目标：先把正式指南 knowledge 生成主线补扎实，知识发现 / hypothesis knowledge 作为 guideline 完成后的扩展能力保留。
 
 修改文件：
 
 - `tools/guideline_search_tool.py`
-- `tools/skill_builder_tool.py`
-- `tests/test_guideline_skill_builder.py`
+- `tools/knowledge_builder_tool.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `goalnew.md`
 
 已完成：
 
 - `GuidelineSearchTool` 的离线指南索引不再只返回来源列表，新增结构化 `guideline_payload`。
-- `SkillBuilderTool.build_guideline_skill_from_search()` 会把指南摘要转换成可执行的 `guideline_aware` skill。
-- 生成的 guideline skill 已包含：
+- `KnowledgeBuilderTool.build_guideline_knowledge_from_search()` 会把指南摘要转换成可执行的 `guideline_aware` knowledge。
+- 生成的 guideline knowledge 已包含：
   - `path_type=guideline_aware`
   - `clinical_features`
   - `required_image_views`
@@ -1482,13 +1482,13 @@ python -m unittest discover -v
   - `staging_rules`
   - `vision_agent_tasks`
   - 可选 `visual_protocol`
-- 成人弥漫性胶质瘤命中指南检索时，已能生成带 MRI 模态要求、分割目标和测量字段的 guideline skill。
-- 股骨头坏死命中指南检索时，已能生成带 ARCO 分期规则和视觉任务的 guideline skill。
+- 成人弥漫性胶质瘤命中指南检索时，已能生成带 MRI 模态要求、分割目标和测量字段的 guideline knowledge。
+- 股骨头坏死命中指南检索时，已能生成带 ARCO 分期规则和视觉任务的 guideline knowledge。
 
 验证命令：
 
 ```bash
-python -m unittest tests/test_guideline_skill_builder.py -v
+python -m unittest tests/test_guideline_knowledge_builder.py -v
 python -m unittest discover -v
 ```
 
@@ -1499,18 +1499,18 @@ python -m unittest discover -v
 
 下一步：
 
-- 继续把 guideline skill 生成能力接入更真实的指南来源解析，但仍保持“找不到正式指南才进入 hypothesis skill”的优先级边界。
+- 继续把 guideline knowledge 生成能力接入更真实的指南来源解析，但仍保持“找不到正式指南才进入 hypothesis knowledge”的优先级边界。
 
 ### 2026-05-24 Guideline 文档解析链路
 
-本轮目标：把 Skill Builder 主线从“离线索引直接提供结构化 `guideline_payload`”推进到“指南文档/章节 -> 解析工具 -> guideline skill”。
+本轮目标：把 Knowledge Builder 主线从“离线索引直接提供结构化 `guideline_payload`”推进到“指南文档/章节 -> 解析工具 -> guideline knowledge”。
 
 修改文件：
 
 - `tools/guideline_extraction_tool.py`
 - `tools/guideline_search_tool.py`
-- `tools/skill_builder_tool.py`
-- `tests/test_guideline_skill_builder.py`
+- `tools/knowledge_builder_tool.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `goalnew.md`
 
 已完成：
@@ -1523,20 +1523,20 @@ python -m unittest discover -v
   - `vision_agent_tasks`
   - `visual_protocol`
 - `GuidelineSearchTool` 当前返回 `guideline_documents`，不再在搜索结果中暴露预制 `guideline_payload`。
-- `SkillBuilderTool.build_guideline_skill_from_search()` 现在优先调用 `GuidelineExtractionTool.extract(...)` 生成 guideline payload。
-- 生成的 guideline skill 会记录 `guideline_extraction` 元数据，说明解析工具、疾病键、来源文档数和抽取字段。
+- `KnowledgeBuilderTool.build_guideline_knowledge_from_search()` 现在优先调用 `GuidelineExtractionTool.extract(...)` 生成 guideline payload。
+- 生成的 guideline knowledge 会记录 `guideline_extraction` 元数据，说明解析工具、疾病键、来源文档数和抽取字段。
 - 保留旧 `guideline_payload` 兼容 fallback，但当前默认离线索引已切到文档/章节路径。
 
 验证命令：
 
 ```bash
-python -m unittest tests/test_guideline_skill_builder.py -v
+python -m unittest tests/test_guideline_knowledge_builder.py -v
 python -m unittest discover -v
 ```
 
 验证结果：
 
-- 7 项 guideline skill builder 测试通过。
+- 7 项 guideline knowledge builder 测试通过。
 - 当前 `python -m unittest discover -v`：135 个测试通过。
 
 下一步：
@@ -1551,8 +1551,8 @@ python -m unittest discover -v
 
 - `data/guidelines/guideline_sources.json`
 - `tools/guideline_search_tool.py`
-- `tools/skill_builder_tool.py`
-- `tests/test_guideline_skill_builder.py`
+- `tools/knowledge_builder_tool.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `goalnew.md`
 
 已完成：
@@ -1560,19 +1560,19 @@ python -m unittest discover -v
 - 新增 `data/guidelines/guideline_sources.json`，保存股骨头坏死和成人弥漫性胶质瘤的指南来源、文档条目和章节文本。
 - `GuidelineSearchTool` 默认读取 `data/guidelines/guideline_sources.json`，同时支持 `source_catalog_path=...` 指向自定义来源文件。
 - `GuidelineSearchTool` 的搜索结果会返回 `source_catalog_path`，方便后续追溯指南来源。
-- `SkillBuilderTool` 生成 guideline skill 时写入 `guideline_source.source_catalog_path`，让 skill 能追踪到来源 catalog。
+- `KnowledgeBuilderTool` 生成 guideline knowledge 时写入 `guideline_source.source_catalog_path`，让 knowledge 能追踪到来源 catalog。
 - 保留 `offline_index` 注入能力，便于测试或后续外部检索结果直接注入。
 
 验证命令：
 
 ```bash
-python -m unittest tests/test_guideline_skill_builder.py -v
+python -m unittest tests/test_guideline_knowledge_builder.py -v
 python -m unittest discover -v
 ```
 
 验证结果：
 
-- 9 项 guideline skill builder 测试通过。
+- 9 项 guideline knowledge builder 测试通过。
 - 当前 `python -m unittest discover -v`：137 个测试通过。
 
 下一步：
@@ -1587,7 +1587,7 @@ python -m unittest discover -v
 
 - `tools/guideline_source_import_tool.py`
 - `scripts/import_guideline_source.py`
-- `tests/test_guideline_skill_builder.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `goalnew.md`
 
 已完成：
@@ -1599,42 +1599,42 @@ python -m unittest discover -v
   - 必填 metadata：`disease_key`、`disease_name`、`source_type`、`evidence_level`、`title`、`publisher`、`source_id`。
 - 同一 `disease_key` 多次导入时会合并 `sources` 和 `guideline_documents`，不会覆盖已有文档；相同 `source_id` 会替换对应文档。
 - 新增 CLI 入口 `scripts/import_guideline_source.py`，可用 `--raw-path` 和 `--catalog-path` 导入真实指南文本。
-- 已测试导入后的 catalog 可被 `GuidelineSearchTool(source_catalog_path=...)` 读取，后续继续进入 extraction/skill builder 链路。
+- 已测试导入后的 catalog 可被 `GuidelineSearchTool(source_catalog_path=...)` 读取，后续继续进入 extraction/knowledge builder 链路。
 
 验证命令：
 
 ```bash
-python -m unittest tests/test_guideline_skill_builder.py -v
+python -m unittest tests/test_guideline_knowledge_builder.py -v
 python -m unittest discover -v
 ```
 
 验证结果：
 
-- 12 项 guideline skill builder 测试通过。
+- 12 项 guideline knowledge builder 测试通过。
 - 当前 `python -m unittest discover -v`：140 个测试通过。
 
 下一步：
 
-- 补一个端到端验证：raw guideline txt -> import script -> source catalog -> SkillBuilder -> guideline skill，并把样例输出放在 `output/fake/`。
+- 补一个端到端验证：raw guideline txt -> import script -> source catalog -> KnowledgeBuilder -> guideline knowledge，并把样例输出放在 `output/fake/`。
 
-### 2026-05-24 Raw-to-Skill 端到端样例
+### 2026-05-24 Raw-to-Knowledge 端到端样例
 
-本轮目标：验证完整 guideline 主线样例：raw guideline txt -> source catalog -> GuidelineSearchTool -> GuidelineExtractionTool -> SkillBuilderTool -> guideline skill -> Vision/Diagnosis Agent 消费。
+本轮目标：验证完整 guideline 主线样例：raw guideline txt -> source catalog -> GuidelineSearchTool -> GuidelineExtractionTool -> KnowledgeBuilderTool -> guideline knowledge -> Vision/Diagnosis Agent 消费。
 
 修改文件：
 
-- `scripts/guideline_import_to_skill_demo.py`
+- `scripts/guideline_import_to_knowledge_demo.py`
 - `tests/test_guideline_import_pipeline.py`
 - `goalnew.md`
 
 已完成：
 
-- 新增 `scripts/guideline_import_to_skill_demo.py`：
+- 新增 `scripts/guideline_import_to_knowledge_demo.py`：
   - 默认创建 `output/fake/guideline_import_demo/raw_guideline.txt`。
   - 导入生成 `output/fake/guideline_import_demo/guideline_sources.json`。
-  - 通过 `SkillBuilderTool` 生成 `output/fake/guideline_import_demo/demo_glioma_guideline_skill.json`。
-- 样例 skill 已包含：
-  - `skill_type=guideline_based`
+  - 通过 `KnowledgeBuilderTool` 生成 `output/fake/guideline_import_demo/demo_glioma_guideline_knowledge.json`。
+- 样例 knowledge 已包含：
+  - `knowledge_type=guideline_based`
   - `path_type=guideline_aware`
   - `guideline_source.source_catalog_path`
   - `guideline_extraction`
@@ -1643,44 +1643,44 @@ python -m unittest discover -v
   - `vision_agent_tasks`
   - `visual_protocol`
 - 新增 `tests/test_guideline_import_pipeline.py`：
-  - 验证 raw 文本可导入 catalog 并生成 guideline skill。
-  - 验证导入生成的 skill 可被 `VisionAgent` 和 `DiagnosisDoctorAgent` 消费。
+  - 验证 raw 文本可导入 catalog 并生成 guideline knowledge。
+  - 验证导入生成的 knowledge 可被 `VisionAgent` 和 `DiagnosisDoctorAgent` 消费。
 
 样例产物：
 
 - `output/fake/guideline_import_demo/raw_guideline.txt`
 - `output/fake/guideline_import_demo/guideline_sources.json`
-- `output/fake/guideline_import_demo/demo_glioma_guideline_skill.json`
+- `output/fake/guideline_import_demo/demo_glioma_guideline_knowledge.json`
 
 验证命令：
 
 ```bash
-python -m scripts.guideline_import_to_skill_demo
-python -m unittest tests/test_guideline_import_pipeline.py tests/test_guideline_skill_builder.py -v
+python -m scripts.guideline_import_to_knowledge_demo
+python -m unittest tests/test_guideline_import_pipeline.py tests/test_guideline_knowledge_builder.py -v
 python -m unittest discover -v
 ```
 
 验证结果：
 
-- demo 脚本已生成 `guideline_based` skill 样例。
-- guideline import pipeline + skill builder 共 14 项测试通过。
+- demo 脚本已生成 `guideline_based` knowledge 样例。
+- guideline import pipeline + knowledge builder 共 14 项测试通过。
 - 当前 `python -m unittest discover -v`：142 个测试通过。
 
 下一步：
 
-- 如果继续增强“真实指南来源解析”，应接入真实网页/PDF/OCR 文本获取层；当前主线已经具备 raw 文本导入、结构化抽取、skill 生成和 Agent 消费闭环。
+- 如果继续增强“真实指南来源解析”，应接入真实网页/PDF/OCR 文本获取层；当前主线已经具备 raw 文本导入、结构化抽取、knowledge 生成和 Agent 消费闭环。
 
 ### 2026-05-24 Guideline Citation 追溯字段
 
-本轮目标：回答“指南来源在哪里、有依据吗”的问题，把 section 级 citation 从 source catalog 传到最终 guideline skill。
+本轮目标：回答“指南来源在哪里、有依据吗”的问题，把 section 级 citation 从 source catalog 传到最终 guideline knowledge。
 
 修改文件：
 
 - `data/guidelines/guideline_sources.json`
 - `tools/guideline_source_import_tool.py`
 - `tools/guideline_extraction_tool.py`
-- `scripts/guideline_import_to_skill_demo.py`
-- `tests/test_guideline_skill_builder.py`
+- `scripts/guideline_import_to_knowledge_demo.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `goalnew.md`
 
 已完成：
@@ -1692,41 +1692,41 @@ python -m unittest discover -v
 - raw 文本导入 catalog 时，每个 section 会自动携带 `citations`。
 - `GuidelineExtractionTool` 会汇总 section citations 到 `guideline_extraction.citations`。
 - `data/guidelines/guideline_sources.json` 已为默认股骨头坏死和成人弥漫性胶质瘤条目补充 URL、来源类型和 evidence note。
-- `scripts/guideline_import_to_skill_demo.py` 的 demo raw 文本已带 citation metadata，并支持 `--overwrite-raw` 重新生成 demo raw 文件。
-- `output/fake/guideline_import_demo/` 的 raw、catalog、skill 三层都已生成 citation 字段。
+- `scripts/guideline_import_to_knowledge_demo.py` 的 demo raw 文本已带 citation metadata，并支持 `--overwrite-raw` 重新生成 demo raw 文件。
+- `output/fake/guideline_import_demo/` 的 raw、catalog、knowledge 三层都已生成 citation 字段。
 
 验证命令：
 
 ```bash
-python -m scripts.guideline_import_to_skill_demo --overwrite-raw
-python -m unittest tests/test_guideline_import_pipeline.py tests/test_guideline_skill_builder.py -v
+python -m scripts.guideline_import_to_knowledge_demo --overwrite-raw
+python -m unittest tests/test_guideline_import_pipeline.py tests/test_guideline_knowledge_builder.py -v
 python -m unittest discover -v
 ```
 
 验证结果：
 
-- `output/fake/guideline_import_demo/demo_glioma_guideline_skill.json` 已包含 `guideline_extraction.citations`。
-- guideline import pipeline + skill builder 共 14 项测试通过。
+- `output/fake/guideline_import_demo/demo_glioma_guideline_knowledge.json` 已包含 `guideline_extraction.citations`。
+- guideline import pipeline + knowledge builder 共 14 项测试通过。
 - 当前 `python -m unittest discover -v`：142 个测试通过。
 
 下一步：
 
-- 可以继续把 citations 显示到诊断报告或前端证据面板；目前 skill 层已经具备来源追溯字段。
+- 可以继续把 citations 显示到诊断报告或前端证据面板；目前 knowledge 层已经具备来源追溯字段。
 
 ### 2026-05-24 Guideline Evidence 报告/API/前端闭环
 
-本轮目标：把 guideline citation 从 skill 层继续透传到诊断报告、HTTP API 和互动前端，形成“指南来源可追溯”的端到端闭环。
+本轮目标：把 guideline citation 从 knowledge 层继续透传到诊断报告、HTTP API 和互动前端，形成“指南来源可追溯”的端到端闭环。
 
 修改文件：
 
 - `contracts/medical_contracts.py`
-- `tools/skill_builder_tool.py`
+- `tools/knowledge_builder_tool.py`
 - `agents/diagnosis_agent.py`
 - `api/service.py`
 - `web/app.js`
 - `web/app.css`
-- `skills/diffuse_glioma_brats.yaml`
-- `skills/femoral_head_necrosis.yaml`
+- `knowledge/diffuse_glioma_brats.yaml`
+- `knowledge/femoral_head_necrosis.yaml`
 - `tests/test_contracts.py`
 - `tests/test_guideline_import_pipeline.py`
 - `tests/test_service_entrypoint.py`
@@ -1735,23 +1735,23 @@ python -m unittest discover -v
 
 已完成：
 
-- `SkillDescriptor` 保留 `source_documents`、`guideline_source`、`guideline_extraction` 和 `quality_control`。
-- `SkillBuilderTool` 对新构建的 `guideline_based` skill 增加 citation 质量控制；如果 `guideline_extraction` 没有 citations，会拒绝进入正式 guideline skill。
+- `KnowledgeDescriptor` 保留 `source_documents`、`guideline_source`、`guideline_extraction` 和 `quality_control`。
+- `KnowledgeBuilderTool` 对新构建的 `guideline_based` knowledge 增加 citation 质量控制；如果 `guideline_extraction` 没有 citations，会拒绝进入正式 guideline knowledge。
 - `DiagnosisDoctorAgent` 在正式指南路径中输出：
   - `guideline_evidence`
   - 中文报告字段 `指南依据`
   - 去重后的 citations、source documents、catalog 路径和质量控制信息。
 - `MedScopeService` 将报告里的 `guideline_evidence` 提升到 API 顶层，方便前端直接消费。
 - 互动前端新增“指南依据”展示区，显示来源标题、发布方/来源类型、section、evidence note 和来源链接。
-- 默认两个正式 skill 已同步来源字段：
+- 默认两个正式 knowledge 已同步来源字段：
   - 成人弥漫性胶质瘤：EANO / ESTRO-EANO 来源。
   - 股骨头坏死：ARCO review / ONFH guideline 来源。
 
 验证命令：
 
 ```bash
-python -m unittest tests.test_contracts.ContractBoundaryTest.test_skill_descriptor_preserves_guideline_citations tests.test_guideline_import_pipeline.GuidelineImportPipelineTest.test_imported_guideline_report_exposes_guideline_evidence tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_exposes_guideline_evidence_from_report tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
-python -m unittest tests.test_guideline_import_pipeline tests.test_guideline_skill_builder tests.test_contracts tests.test_service_entrypoint tests.test_http_entrypoint -v
+python -m unittest tests.test_contracts.ContractBoundaryTest.test_knowledge_descriptor_preserves_guideline_citations tests.test_guideline_import_pipeline.GuidelineImportPipelineTest.test_imported_guideline_report_exposes_guideline_evidence tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_exposes_guideline_evidence_from_report tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
+python -m unittest tests.test_guideline_import_pipeline tests.test_guideline_knowledge_builder tests.test_contracts tests.test_service_entrypoint tests.test_http_entrypoint -v
 node --check web/app.js
 python -m unittest discover -v
 ```
@@ -1765,11 +1765,11 @@ python -m unittest discover -v
 
 下一步：
 
-- 这一部分已经闭环。后续可以继续做“真实网页/PDF 指南采集器”，但那属于 guideline skill builder 的外部来源获取扩展，不需要重构当前 Agent 主链路。
+- 这一部分已经闭环。后续可以继续做“真实网页/PDF 指南采集器”，但那属于 guideline knowledge builder 的外部来源获取扩展，不需要重构当前 Agent 主链路。
 
 ### 2026-05-24 真实网页/PDF 指南采集器
 
-本轮目标：给 Skill Builder 增加外部来源获取层，可以从真实网页或 PDF 采集指南文本，生成现有 raw guideline 格式，并可选导入 source catalog。
+本轮目标：给 Knowledge Builder 增加外部来源获取层，可以从真实网页或 PDF 采集指南文本，生成现有 raw guideline 格式，并可选导入 source catalog。
 
 修改文件：
 
@@ -1793,7 +1793,7 @@ python -m unittest discover -v
   - CLI 只打印摘要，不打印整篇指南正文。
 - 新增测试：
   - HTML 采集后生成带 citation metadata 的 raw guideline。
-  - 采集后的 HTML raw guideline 可进入 `GuidelineSearchTool -> SkillBuilderTool` 链路。
+  - 采集后的 HTML raw guideline 可进入 `GuidelineSearchTool -> KnowledgeBuilderTool` 链路。
   - PDF 采集可通过注入 extractor 完成测试。
 - 真实网页 smoke test：
   - 来源：`https://pmc.ncbi.nlm.nih.gov/articles/PMC7152793/`
@@ -1805,7 +1805,7 @@ python -m unittest discover -v
 验证命令：
 
 ```bash
-python -m unittest tests.test_guideline_source_collector tests.test_guideline_import_pipeline tests.test_guideline_skill_builder -v
+python -m unittest tests.test_guideline_source_collector tests.test_guideline_import_pipeline tests.test_guideline_knowledge_builder -v
 python -m scripts.collect_guideline_source --source https://pmc.ncbi.nlm.nih.gov/articles/PMC7152793/ --raw-output-path output/fake/guideline_collector/onfh_guideline_real_raw.txt --catalog-path output/fake/guideline_collector/guideline_sources.json --import-to-catalog --disease-key onfh_real_source_demo --disease-name 股骨头坏死真实来源样例 --source-type medical_guideline --evidence-level high --title 'Guideline for Diagnostic and Treatment of Osteonecrosis of the Femoral Head' --publisher 'PMC open access guideline' --source-id onfh_pmc7152793 --source-kind clinical_guideline --evidence-note 'Real public web guideline collection smoke test'
 python -m unittest discover -v
 ```
@@ -1818,11 +1818,11 @@ python -m unittest discover -v
 
 下一步：
 
-- 采集器已经能“拿到真实来源并入库”。下一层更有价值的是“真实网页正文清洗与 section 语义映射”：把真实网页里的 `Abstract / Diagnosis / Imaging / Treatment` 自动映射为 `clinical_features / required_image_views / visual_protocol / report_requirements`，这样才能从任意真实指南更稳定地产生可执行 skill。
+- 采集器已经能“拿到真实来源并入库”。下一层更有价值的是“真实网页正文清洗与 section 语义映射”：把真实网页里的 `Abstract / Diagnosis / Imaging / Treatment` 自动映射为 `clinical_features / required_image_views / visual_protocol / report_requirements`，这样才能从任意真实指南更稳定地产生可执行 knowledge。
 
 ### 2026-05-24 真实指南 Section 语义映射
 
-本轮目标：让真实网页/PDF 采集后的原始章节能被转换为现有 Skill Builder 可消费的 canonical sections，避免网页作者、引用、资源栏等噪声污染正式 skill。
+本轮目标：让真实网页/PDF 采集后的原始章节能被转换为现有 Knowledge Builder 可消费的 canonical sections，避免网页作者、引用、资源栏等噪声污染正式 knowledge。
 
 修改文件：
 
@@ -1831,7 +1831,7 @@ python -m unittest discover -v
 - `tools/guideline_extraction_tool.py`
 - `scripts/collect_guideline_source.py`
 - `tests/test_guideline_source_collector.py`
-- `tests/test_guideline_skill_builder.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `goalnew.md`
 
 已完成：
@@ -1843,7 +1843,7 @@ python -m unittest discover -v
     - `staging_rules`
     - `report_requirements`
   - 跳过作者、引用、资源、动作栏、摘要、概述、图注等噪声章节。
-  - 对长段落做截断，避免 raw/skill 被网页全文污染。
+  - 对长段落做截断，避免 raw/knowledge 被网页全文污染。
   - 根据正文出现顺序保留影像视图顺序。
 - `GuidelineSourceCollectorTool.collect_to_raw_file(..., semantic_map=True)` 支持采集后立即语义映射。
 - CLI 新增 `--semantic-map` 参数。
@@ -1852,17 +1852,17 @@ python -m unittest discover -v
   - 修复重复 keyed list 行覆盖问题；例如多个 `common_symptoms:` 会合并而不是覆盖。
 - 新增/扩展测试：
   - 真实世界 heading 映射到 canonical sections。
-  - 作者/引用噪声不进入 canonical skill 字段。
-  - semantic mapped HTML 可进入 `GuidelineSearchTool -> SkillBuilderTool`。
+  - 作者/引用噪声不进入 canonical knowledge 字段。
+  - semantic mapped HTML 可进入 `GuidelineSearchTool -> KnowledgeBuilderTool`。
   - repeated keyed list extraction 合并测试。
 - 真实网页 semantic smoke test：
   - 来源：`https://pmc.ncbi.nlm.nih.gov/articles/PMC7152793/`
   - 输出：
     - `output/fake/guideline_collector/onfh_guideline_semantic_raw.txt`
     - `output/fake/guideline_collector/semantic_guideline_sources.json`
-    - `output/fake/guideline_collector/onfh_semantic_skill.json`
+    - `output/fake/guideline_collector/onfh_semantic_knowledge.json`
   - 采集后 canonical section 数：4。
-  - 生成 skill 已抽取：
+  - 生成 knowledge 已抽取：
     - `required_image_views`: CT, MRI, X-ray, Plain radiography, MRI T2, SPECT
     - `clinical_features.common_symptoms`: hip pain, knee pain, limited hip internal rotation, buttock pain, groin pain
     - `staging_rules`: Staging
@@ -1871,9 +1871,9 @@ python -m unittest discover -v
 验证命令：
 
 ```bash
-python -m unittest tests.test_guideline_source_collector tests.test_guideline_import_pipeline tests.test_guideline_skill_builder -v
+python -m unittest tests.test_guideline_source_collector tests.test_guideline_import_pipeline tests.test_guideline_knowledge_builder -v
 python -m scripts.collect_guideline_source --source https://pmc.ncbi.nlm.nih.gov/articles/PMC7152793/ --raw-output-path output/fake/guideline_collector/onfh_guideline_semantic_raw.txt --catalog-path output/fake/guideline_collector/semantic_guideline_sources.json --import-to-catalog --semantic-map --disease-key onfh_semantic_source_demo --disease-name 股骨头坏死语义映射样例 --source-type medical_guideline --evidence-level high --title 'Guideline for Diagnostic and Treatment of Osteonecrosis of the Femoral Head' --publisher 'PMC open access guideline' --source-id onfh_pmc7152793_semantic --source-kind clinical_guideline --evidence-note 'Real public web guideline semantic mapping smoke test'
-python -m scripts.guideline_import_to_skill_demo --raw-path output/fake/guideline_collector/onfh_guideline_semantic_raw.txt --catalog-path output/fake/guideline_collector/semantic_guideline_sources.json --skill-output-path output/fake/guideline_collector/onfh_semantic_skill.json --disease-key onfh_semantic_source_demo --disease-name 股骨头坏死语义映射样例
+python -m scripts.guideline_import_to_knowledge_demo --raw-path output/fake/guideline_collector/onfh_guideline_semantic_raw.txt --catalog-path output/fake/guideline_collector/semantic_guideline_sources.json --knowledge-output-path output/fake/guideline_collector/onfh_semantic_knowledge.json --disease-key onfh_semantic_source_demo --disease-name 股骨头坏死语义映射样例
 python -m unittest discover -v
 ```
 
@@ -1885,21 +1885,21 @@ python -m unittest discover -v
 
 下一步：
 
-- 现在真实指南可以采集、清洗、映射、入库并生成 guideline skill。后续最值得做的是“多来源 guideline skill 合并与冲突标注”：同一疾病多篇指南进入 catalog 后，需要标记来源优先级、年份、适用地区，以及同一字段的冲突说明。
+- 现在真实指南可以采集、清洗、映射、入库并生成 guideline knowledge。后续最值得做的是“多来源 guideline knowledge 合并与冲突标注”：同一疾病多篇指南进入 catalog 后，需要标记来源优先级、年份、适用地区，以及同一字段的冲突说明。
 
 ### 2026-05-24 多来源 Guideline 合并与冲突标注
 
-本轮目标：同一疾病存在多篇指南时，Skill Builder 不再静默合并所有字段，而是保留来源优先级、年份、地区，并对字段冲突打标，交给诊断报告和前端提示人工复核。
+本轮目标：同一疾病存在多篇指南时，Knowledge Builder 不再静默合并所有字段，而是保留来源优先级、年份、地区，并对字段冲突打标，交给诊断报告和前端提示人工复核。
 
 修改文件：
 
 - `tools/guideline_source_import_tool.py`
-- `tools/skill_builder_tool.py`
+- `tools/knowledge_builder_tool.py`
 - `contracts/medical_contracts.py`
 - `agents/diagnosis_agent.py`
 - `web/app.js`
 - `web/app.css`
-- `tests/test_guideline_skill_builder.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `tests/test_guideline_import_pipeline.py`
 - `tests/test_contracts.py`
 - `tests/test_http_entrypoint.py`
@@ -1914,7 +1914,7 @@ python -m unittest discover -v
 - `GuidelineSourceImportTool` 会把这些字段写入：
   - `sources`
   - section-level `citations`
-- `SkillBuilderTool` 新增：
+- `KnowledgeBuilderTool` 新增：
   - `source_priority`：按 `source_priority`、`publication_year` 排序后的来源摘要。
   - `guideline_conflicts`：当前检测 `required_image_views` 多来源不一致。
   - `quality_control.conflict_status`
@@ -1923,7 +1923,7 @@ python -m unittest discover -v
   - 仍保留合并后的 union 字段给 Agent 使用。
   - 同时标记 `resolution=merged_union_review_required`，明确需要人工复核。
   - 不让系统擅自裁决哪篇指南“正确”。
-- `SkillDescriptor` 透传：
+- `KnowledgeDescriptor` 透传：
   - `source_priority`
   - `guideline_conflicts`
 - `DiagnosisDoctorAgent` 的 `guideline_evidence` 新增：
@@ -1936,11 +1936,11 @@ python -m unittest discover -v
 验证命令：
 
 ```bash
-python -m unittest tests.test_guideline_skill_builder.GuidelineSkillBuilderTest.test_guideline_source_import_converts_raw_guideline_text_to_catalog_entry tests.test_guideline_skill_builder.GuidelineSkillBuilderTest.test_skill_builder_marks_multi_source_conflicts_and_source_priority tests.test_guideline_skill_builder.GuidelineSkillBuilderTest.test_guideline_search_result_builds_actionable_guideline_skill -v
-python -m unittest tests.test_guideline_import_pipeline.GuidelineImportPipelineTest.test_diagnosis_report_exposes_guideline_conflicts_and_source_priority tests.test_contracts.ContractBoundaryTest.test_skill_descriptor_preserves_guideline_citations -v
+python -m unittest tests.test_guideline_knowledge_builder.GuidelineKnowledgeBuilderTest.test_guideline_source_import_converts_raw_guideline_text_to_catalog_entry tests.test_guideline_knowledge_builder.GuidelineKnowledgeBuilderTest.test_knowledge_builder_marks_multi_source_conflicts_and_source_priority tests.test_guideline_knowledge_builder.GuidelineKnowledgeBuilderTest.test_guideline_search_result_builds_actionable_guideline_knowledge -v
+python -m unittest tests.test_guideline_import_pipeline.GuidelineImportPipelineTest.test_diagnosis_report_exposes_guideline_conflicts_and_source_priority tests.test_contracts.ContractBoundaryTest.test_knowledge_descriptor_preserves_guideline_citations -v
 python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
 node --check web/app.js
-python -m unittest tests.test_guideline_skill_builder tests.test_guideline_import_pipeline tests.test_contracts tests.test_http_entrypoint tests.test_service_entrypoint -v
+python -m unittest tests.test_guideline_knowledge_builder tests.test_guideline_import_pipeline tests.test_contracts tests.test_http_entrypoint tests.test_service_entrypoint -v
 python -m unittest discover -v
 ```
 
@@ -1954,15 +1954,15 @@ python -m unittest discover -v
 
 - 目前冲突检测先覆盖 `required_image_views`。下一步可以继续扩展冲突检测字段到 `clinical_features`、`visual_protocol.required_modalities`、`staging_rules`，并增加冲突严重度分级。
 
-### 2026-05-24 Guideline Skill Builder 封板收尾
+### 2026-05-24 Guideline Knowledge Builder 封板收尾
 
-本轮目标：完成“真实指南 -> guideline skill”链路最后三个收尾：扩展冲突检测字段、增加冲突严重度分级、补完整 quality gate。
+本轮目标：完成“真实指南 -> guideline knowledge”链路最后三个收尾：扩展冲突检测字段、增加冲突严重度分级、补完整 quality gate。
 
 修改文件：
 
-- `tools/skill_builder_tool.py`
+- `tools/knowledge_builder_tool.py`
 - `web/app.js`
-- `tests/test_guideline_skill_builder.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `goalnew.md`
 
 已完成：
@@ -1982,8 +1982,8 @@ python -m unittest discover -v
   - `highest_conflict_severity`
   - `missing_core_sections`
   - `core_section_status`
-  - `formal_skill_status`
-  - `can_enter_formal_guideline_skill`
+  - `formal_knowledge_status`
+  - `can_enter_formal_guideline_knowledge`
 - formal gate 规则：
   - citation URL 缺失 -> `needs_review`
   - 有冲突 -> `needs_review`
@@ -1994,8 +1994,8 @@ python -m unittest discover -v
 验证命令：
 
 ```bash
-python -m unittest tests.test_guideline_skill_builder.GuidelineSkillBuilderTest.test_skill_builder_grades_conflicts_across_core_guideline_fields tests.test_guideline_skill_builder.GuidelineSkillBuilderTest.test_skill_builder_quality_gate_marks_missing_core_sections tests.test_guideline_skill_builder.GuidelineSkillBuilderTest.test_skill_builder_marks_multi_source_conflicts_and_source_priority -v
-python -m unittest tests.test_guideline_skill_builder tests.test_guideline_import_pipeline tests.test_contracts tests.test_http_entrypoint tests.test_service_entrypoint -v
+python -m unittest tests.test_guideline_knowledge_builder.GuidelineKnowledgeBuilderTest.test_knowledge_builder_grades_conflicts_across_core_guideline_fields tests.test_guideline_knowledge_builder.GuidelineKnowledgeBuilderTest.test_knowledge_builder_quality_gate_marks_missing_core_sections tests.test_guideline_knowledge_builder.GuidelineKnowledgeBuilderTest.test_knowledge_builder_marks_multi_source_conflicts_and_source_priority -v
+python -m unittest tests.test_guideline_knowledge_builder tests.test_guideline_import_pipeline tests.test_contracts tests.test_http_entrypoint tests.test_service_entrypoint -v
 node --check web/app.js
 python -m unittest discover -v
 ```
@@ -2008,7 +2008,7 @@ python -m unittest discover -v
 
 阶段结论：
 
-- “真实 URL/PDF -> raw guideline -> semantic sections -> catalog -> guideline skill -> source priority -> conflict annotation -> quality gate -> report/frontend 可见”已经闭环。
+- “真实 URL/PDF -> raw guideline -> semantic sections -> catalog -> guideline knowledge -> source priority -> conflict annotation -> quality gate -> report/frontend 可见”已经闭环。
 - 这部分可以阶段性封板。后续除非要做 LLM 精抽或指南编辑器，否则不需要继续扩大这个模块。
 
 ### 2026-05-24 Memory Manager v1
@@ -2032,12 +2032,12 @@ python -m unittest discover -v
   - `updated_at`
   - `patient_memory`
   - `image_memory`
-  - `skill_memory`
+  - `knowledge_memory`
   - `reasoning_memory`
 - 四类 memory 标准化：
   - `patient_memory`：患者消息、患者信息、症状、意图、`qa_history`。
   - `image_memory`：图像路径、模态、部位、输出图、视觉证据、测量值、证据充分性、分割质量。
-  - `skill_memory`：选中的 skill、视觉模式、路由决策、指南证据、来源优先级、冲突、quality gate。
+  - `knowledge_memory`：选中的 knowledge、视觉模式、路由决策、指南证据、来源优先级、冲突、quality gate。
   - `reasoning_memory`：完整报告、诊断倾向、视觉输入契约、已用字段、已承认缺失字段、不确定性、随访和治疗建议。
 - 旧 `data/cases/*.json` 风格的 case 读取时自动 normalize 为 v1 视图；单纯读取不会重写旧文件。
 - 保留 `qa_memory` 作为兼容别名，但标准入口变为 `patient_memory.qa_history`。
@@ -2045,14 +2045,14 @@ python -m unittest discover -v
 - 新增最小检索能力：
   - `get_case_by_id(case_id)`
   - `find_cases_by_patient(patient_id)`
-  - `find_cases_by_disease(disease_name_or_skill_id)`
+  - `find_cases_by_disease(disease_name_or_knowledge_id)`
   - `get_latest_case_for_patient(patient_id)`
   - `list_recent_cases(limit=20)`
 - 新增 `build_audit_summary(case_id)`，输出到 `output/fake/memory_audit/<case_id>_audit.json`。
 - GaoDoctor 写入链路已改为显式写四类 memory，不再只依赖 MemoryManager 兜底：
-  - GaoDoctor 写 `patient_memory` 和 `skill_memory.routing_decision`。
+  - GaoDoctor 写 `patient_memory` 和 `knowledge_memory.routing_decision`。
   - Vision Agent 结果进入 `image_memory`。
-  - Skill Builder / Diagnosis skill 证据进入 `skill_memory`。
+  - Knowledge Builder / Diagnosis knowledge 证据进入 `knowledge_memory`。
   - Diagnosis Doctor 报告进入 `reasoning_memory`。
 - Follow-up QA 已改为通过 `get_evidence_bundle()` 取证据，并追加标准化 `qa_history`。
 
@@ -2062,7 +2062,7 @@ python -m unittest discover -v
 python -m unittest tests.test_memory_manager -v
 python -m unittest tests.test_memory_manager tests.test_mvp_flow -v
 python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint -v
-python -m unittest tests.test_guideline_import_pipeline tests.test_guideline_skill_builder tests.test_contracts -v
+python -m unittest tests.test_guideline_import_pipeline tests.test_guideline_knowledge_builder tests.test_contracts -v
 ```
 
 当前验证结果：
@@ -2078,7 +2078,7 @@ python -m unittest tests.test_guideline_import_pipeline tests.test_guideline_ski
 
 ### 2026-05-24 标准端到端展示样例
 
-本轮目标：做一条可演示的标准流程，把“上传图片 -> 自动选 skill -> 分割结果 -> 诊断报告 -> evidence bundle -> memory audit”串成一个稳定入口。
+本轮目标：做一条可演示的标准流程，把“上传图片 -> 自动选 knowledge -> 分割结果 -> 诊断报告 -> evidence bundle -> memory audit”串成一个稳定入口。
 
 修改文件：
 
@@ -2117,7 +2117,7 @@ python -m unittest tests.test_guideline_import_pipeline tests.test_guideline_ski
 验证命令：
 
 ```bash
-python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_femoral_head_skill_from_hip_xray_clues tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_keeps_default_skill_for_non_glioma_image tests.test_end_to_end_demo -v
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_femoral_head_knowledge_from_hip_xray_clues tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_keeps_default_knowledge_for_non_glioma_image tests.test_end_to_end_demo -v
 python -m scripts.end_to_end_demo
 python -m unittest tests.test_end_to_end_demo tests.test_service_entrypoint tests.test_mvp_flow -v
 ```
@@ -2165,7 +2165,7 @@ python -m unittest tests.test_end_to_end_demo tests.test_service_entrypoint test
   - completeness。
   - missing/unassessed 字段。
   - quality warnings。
-  - skill 摘要。
+  - knowledge 摘要。
 - Memory Audit 前端展示：
   - 四类 memory 完整性。
   - Agent trace。
@@ -2257,9 +2257,9 @@ python -m scripts.end_to_end_demo
 - service/http/mvp/memory 相关 44 个测试通过。
 - 标准 demo 脚本可继续运行，LLM 缺 key 时不会破坏诊断主流程。
 
-### 2026-05-24 Image-Symptom-Skill Alignment Plan
+### 2026-05-24 Image-Symptom-Knowledge Alignment Plan
 
-本轮目标：协调“患者描述 + 上传医疗图像 + guideline skill”，并正式处理“当前图像不足以按指南判断，需要补充其他影像”的情况。
+本轮目标：协调“患者描述 + 上传医疗图像 + guideline knowledge”，并正式处理“当前图像不足以按指南判断，需要补充其他影像”的情况。
 
 修改文件：
 
@@ -2267,7 +2267,7 @@ python -m scripts.end_to_end_demo
 - `api/service.py`
 - `agents/gaodoctor_agent.py`
 - `memory/memory_manager.py`
-- `skills/femoral_head_necrosis.yaml`
+- `knowledge/femoral_head_necrosis.yaml`
 - `tests/test_contracts.py`
 - `tests/test_service_entrypoint.py`
 - `tests/test_mvp_flow.py`
@@ -2279,9 +2279,9 @@ python -m scripts.end_to_end_demo
   - `partial_evidence`
   - `insufficient_evidence`
   - `contraindicated_or_wrong_modality`
-- `MedScopeService` 在 skill routing 后生成 `alignment_plan`：
+- `MedScopeService` 在 knowledge routing 后生成 `alignment_plan`：
   - 识别上传图像模态、部位、可用 MRI 序列。
-  - 结合已选 disease skill 生成视觉任务清单。
+  - 结合已选 disease knowledge 生成视觉任务清单。
   - 对股骨头坏死场景区分：
     - 普通髋部 X 光：`partial_evidence`
     - 询问早期/有没有/能否排除 + X 光：`insufficient_evidence`
@@ -2296,8 +2296,8 @@ python -m scripts.end_to_end_demo
   - 报告中明确说明“现有影像证据不足，需补充检查后判断”。
   - 返回疑似疾病与建议补充影像。
 - `MemoryManager` 的 evidence bundle 现在包含：
-  - `skill_evidence.alignment_plan`
-- `femoral_head_necrosis` skill 增加 `visual_protocol`：
+  - `knowledge_evidence.alignment_plan`
+- `femoral_head_necrosis` knowledge 增加 `visual_protocol`：
   - X 光可评估晚期结构改变。
   - 早期坏死与骨髓水肿需要 MRI。
   - X 光不足以排除早期病变。
@@ -2306,7 +2306,7 @@ python -m scripts.end_to_end_demo
 
 ```bash
 python -m unittest tests.test_contracts tests.test_service_entrypoint tests.test_mvp_flow -v
-python -m json.tool skills/femoral_head_necrosis.yaml >/tmp/fhn_skill_check.json
+python -m json.tool knowledge/femoral_head_necrosis.yaml >/tmp/fhn_knowledge_check.json
 python -m unittest discover -v
 ```
 
@@ -2314,7 +2314,7 @@ python -m unittest discover -v
 
 - alignment plan 靶向测试通过。
 - service / MVP / contract 相关 36 个测试通过。
-- `skills/femoral_head_necrosis.yaml` JSON 校验通过。
+- `knowledge/femoral_head_necrosis.yaml` JSON 校验通过。
 - 全量测试 172 个通过。
 - 临时真实 service 调用验证：
   - `analysis_status = insufficient_evidence`
@@ -2323,7 +2323,7 @@ python -m unittest discover -v
 
 ### 2026-05-24 前端展示 Alignment Plan
 
-本轮目标：把后端 `alignment_plan` 展示到交互前端，让“上传图像是否满足 skill 指南证据要求”可以直接演示。
+本轮目标：把后端 `alignment_plan` 展示到交互前端，让“上传图像是否满足 knowledge 指南证据要求”可以直接演示。
 
 修改文件：
 
@@ -2340,7 +2340,7 @@ python -m unittest discover -v
 - 前端新增 `证据协调` 面板：
   - 显示 `analysis_status`
   - 显示当前图像模态、部位、可用序列
-  - 显示选中的 skill
+  - 显示选中的 knowledge
   - 显示每个视觉任务是可执行还是缺少输入
   - 显示疑似疾病方向
   - 显示建议补充的影像
@@ -2380,14 +2380,14 @@ python -m unittest discover -v
 
 ### 2026-05-24 AlignmentPlanner 通用化
 
-本轮目标：把 `alignment_plan` 从 `api.service` 中的病种分支逻辑，升级为由 `skill.visual_protocol` 驱动的通用 planner，避免后续新增病种时反复改 service 主流程。
+本轮目标：把 `alignment_plan` 从 `api.service` 中的病种分支逻辑，升级为由 `knowledge.visual_protocol` 驱动的通用 planner，避免后续新增病种时反复改 service 主流程。
 
 修改文件：
 
 - `tools/alignment_planner.py`
 - `api/service.py`
-- `skills/femoral_head_necrosis.yaml`
-- `skills/diffuse_glioma_brats.yaml`
+- `knowledge/femoral_head_necrosis.yaml`
+- `knowledge/diffuse_glioma_brats.yaml`
 - `tests/test_alignment_planner.py`
 - `tests/test_service_entrypoint.py`
 - `goalnew.md`
@@ -2397,11 +2397,11 @@ python -m unittest discover -v
 - 新增 `AlignmentPlanner`：
   - 输入 `payload`
   - 输入 `routing_decision`
-  - 输入 `disease_skill.visual_protocol`
+  - 输入 `disease_knowledge.visual_protocol`
   - 输出标准 `AlignmentPlan`
 - `MedScopeService` 现在只做：
-  - skill routing
-  - load skill
+  - knowledge routing
+  - load knowledge
   - 调用 `AlignmentPlanner.build_plan(...)`
   - 不再保留 `_build_femoral_head_alignment_plan` / `_build_glioma_alignment_plan` 这类 alignment 病种分支。
 - `femoral_head_necrosis.visual_protocol` 增加：
@@ -2417,8 +2417,8 @@ python -m unittest discover -v
   - `suspected_conditions`
   - `diagnosis_scope`
 - 新增测试锁定：
-  - planner 能基于股骨头坏死 skill 生成 X 光早期证据不足 plan。
-  - planner 能基于胶质瘤 skill 生成 FLAIR MRI 部分证据 plan。
+  - planner 能基于股骨头坏死 knowledge 生成 X 光早期证据不足 plan。
+  - planner 能基于胶质瘤 knowledge 生成 FLAIR MRI 部分证据 plan。
   - service 使用注入的 planner，而不是自己生成 alignment 分支。
 
 验证命令：
@@ -2426,8 +2426,8 @@ python -m unittest discover -v
 ```bash
 python -m unittest tests.test_alignment_planner -v
 python -m unittest tests.test_alignment_planner tests.test_service_entrypoint tests.test_http_entrypoint tests.test_mvp_flow -v
-python -m json.tool skills/femoral_head_necrosis.yaml >/tmp/fhn_skill_check.json
-python -m json.tool skills/diffuse_glioma_brats.yaml >/tmp/glioma_skill_check.json
+python -m json.tool knowledge/femoral_head_necrosis.yaml >/tmp/fhn_knowledge_check.json
+python -m json.tool knowledge/diffuse_glioma_brats.yaml >/tmp/glioma_knowledge_check.json
 python -m unittest discover -v
 ```
 
@@ -2435,28 +2435,28 @@ python -m unittest discover -v
 
 - planner 单元测试 3 个通过。
 - 相关测试 42 个通过。
-- 两个 skill 文件 JSON 校验通过。
+- 两个 knowledge 文件 JSON 校验通过。
 - 全量测试 176 个通过。
 - 临时真实 service 调用验证：
   - `analysis_status = insufficient_evidence`
-  - 第一项视觉任务来自 skill：`assess_late_xray_findings`
+  - 第一项视觉任务来自 knowledge：`assess_late_xray_findings`
   - `required_next_images[0].modality = MRI`
   - `image_outputs.mask_path = not_generated`
 
 ### 2026-05-24 Visual Protocol Schema Validator
 
-本轮目标：先把 `visual_protocol` 做成可校验契约，避免 Skill Builder 生成“看起来像 guideline skill、但缺少图像-症状-skill 协调字段”的不完整正式 skill。
+本轮目标：先把 `visual_protocol` 做成可校验契约，避免 Knowledge Builder 生成“看起来像 guideline knowledge、但缺少图像-症状-knowledge 协调字段”的不完整正式 knowledge。
 
 修改文件：
 
 - `tools/visual_protocol_validator.py`
-- `tools/skill_builder_tool.py`
+- `tools/knowledge_builder_tool.py`
 - `tests/test_visual_protocol_validator.py`
 - `goalnew.md`
 
 已完成：
 
-- 新增 `VisualProtocolValidator`，用于校验 guideline skill 的 `visual_protocol`。
+- 新增 `VisualProtocolValidator`，用于校验 guideline knowledge 的 `visual_protocol`。
 - 当前强制检查：
   - `visual_protocol.disease_target`
   - `visual_protocol.alignment_tasks`
@@ -2469,51 +2469,51 @@ python -m unittest discover -v
   - `diagnosis_scope.allowed`
   - `diagnosis_scope.blocked`
   - `insufficiency_rules`
-- `SkillBuilderTool._attach_guideline_quality_control()` 已接入 validator。
+- `KnowledgeBuilderTool._attach_guideline_quality_control()` 已接入 validator。
 - `quality_control` 新增：
   - `visual_protocol_status`
   - `visual_protocol_errors`
   - `visual_protocol_warnings`
-- `formal_skill_status` 和 `can_enter_formal_guideline_skill` 现在受 `visual_protocol` 有效性约束：
+- `formal_knowledge_status` 和 `can_enter_formal_guideline_knowledge` 现在受 `visual_protocol` 有效性约束：
   - 缺少 `required_next_images` 或 `alignment_tasks` 时不能进入 `formal_ready`。
   - 缺少 `diagnosis_scope.blocked` 会进入 warning，用于提醒不能明确阻断哪些错误结论。
-- 两个静态 skill：
-  - `skills/femoral_head_necrosis.yaml`
-  - `skills/diffuse_glioma_brats.yaml`
+- 两个静态 knowledge：
+  - `knowledge/femoral_head_necrosis.yaml`
+  - `knowledge/diffuse_glioma_brats.yaml`
   已通过 validator。
 
 验证命令：
 
 ```bash
 python -m unittest tests.test_visual_protocol_validator -v
-python -m unittest tests.test_visual_protocol_validator tests.test_guideline_skill_builder tests.test_guideline_import_pipeline tests.test_alignment_planner tests.test_service_entrypoint -v
+python -m unittest tests.test_visual_protocol_validator tests.test_guideline_knowledge_builder tests.test_guideline_import_pipeline tests.test_alignment_planner tests.test_service_entrypoint -v
 ```
 
 当前验证结果：
 
 - `tests.test_visual_protocol_validator` 6 个测试通过。
-- Skill Builder、指南导入、AlignmentPlanner、Service 相关 44 个测试通过。
+- Knowledge Builder、指南导入、AlignmentPlanner、Service 相关 44 个测试通过。
 
 下一步：
 
-- 做 Skill Builder 自动生成 `visual_protocol`，让从指南文本/PDF 导入的 skill 不再只生成简化字段，而是尽量自动补齐 `alignment_tasks`、`required_next_images`、`diagnosis_scope` 和 `insufficiency_rules`。
+- 做 Knowledge Builder 自动生成 `visual_protocol`，让从指南文本/PDF 导入的 knowledge 不再只生成简化字段，而是尽量自动补齐 `alignment_tasks`、`required_next_images`、`diagnosis_scope` 和 `insufficiency_rules`。
 
-### 2026-05-24 Skill Builder 自动生成 Visual Protocol
+### 2026-05-24 Knowledge Builder 自动生成 Visual Protocol
 
-本轮目标：让 Skill Builder 不依赖人工手写完整 `visual_protocol`。当指南采集/导入只提取到 `required_image_views`、`vision_agent_tasks`、`visual_targets`、`staging_rules` 或半成品 `required_modalities` 时，自动补齐图像-症状-skill 协调所需字段。
+本轮目标：让 Knowledge Builder 不依赖人工手写完整 `visual_protocol`。当指南采集/导入只提取到 `required_image_views`、`vision_agent_tasks`、`visual_targets`、`staging_rules` 或半成品 `required_modalities` 时，自动补齐图像-症状-knowledge 协调所需字段。
 
 修改文件：
 
 - `tools/visual_protocol_builder.py`
-- `tools/skill_builder_tool.py`
-- `tests/test_guideline_skill_builder.py`
+- `tools/knowledge_builder_tool.py`
+- `tests/test_guideline_knowledge_builder.py`
 - `tests/test_visual_protocol_validator.py`
 - `goalnew.md`
 
 已完成：
 
 - 新增 `VisualProtocolBuilder`。
-- `SkillBuilderTool.build_guideline_skill_from_search()` 现在会在质量控制前调用 builder：
+- `KnowledgeBuilderTool.build_guideline_knowledge_from_search()` 现在会在质量控制前调用 builder：
   - 没有 `visual_protocol` 时，从指南字段生成一个协议。
   - 已有半成品 `visual_protocol` 时，保留已有字段并补齐缺失字段。
 - 自动生成/补齐字段包括：
@@ -2529,7 +2529,7 @@ python -m unittest tests.test_visual_protocol_validator tests.test_guideline_ski
   - `diagnosis_scope.allowed`
   - `diagnosis_scope.blocked`
   - `insufficiency_rules`
-- 股骨头坏死离线指南目录本身没有 `visual_protocol` 段，现在 Skill Builder 可自动生成有效协议：
+- 股骨头坏死离线指南目录本身没有 `visual_protocol` 段，现在 Knowledge Builder 可自动生成有效协议：
   - 自动推断 MRI 是下一步关键影像。
   - 自动生成 `blocked` 约束，避免把 X 光阴性误当作无病。
 - 胶质瘤指南目录原先只有半成品 `required_modalities`，现在可自动补齐：
@@ -2537,21 +2537,21 @@ python -m unittest tests.test_visual_protocol_validator tests.test_guideline_ski
   - `required_next_images`
   - `diagnosis_scope`
   - `insufficiency_rules`
-- `formal_skill_status` 现在能正确区分：
-  - 可推导出完整视觉协议的 guideline skill：`formal_ready`
-  - 只有症状、没有影像任务/模态依据的 guideline skill：`needs_review`
+- `formal_knowledge_status` 现在能正确区分：
+  - 可推导出完整视觉协议的 guideline knowledge：`formal_ready`
+  - 只有症状、没有影像任务/模态依据的 guideline knowledge：`needs_review`
 
 验证命令：
 
 ```bash
-python -m unittest tests.test_guideline_skill_builder.GuidelineSkillBuilderTest.test_skill_builder_uses_guideline_search_for_guideline_based_skill tests.test_guideline_skill_builder.GuidelineSkillBuilderTest.test_guideline_search_result_builds_actionable_guideline_skill -v
-python -m unittest tests.test_visual_protocol_validator tests.test_guideline_skill_builder tests.test_guideline_import_pipeline tests.test_alignment_planner tests.test_service_entrypoint tests.test_guideline_source_collector -v
+python -m unittest tests.test_guideline_knowledge_builder.GuidelineKnowledgeBuilderTest.test_knowledge_builder_uses_guideline_search_for_guideline_based_knowledge tests.test_guideline_knowledge_builder.GuidelineKnowledgeBuilderTest.test_guideline_search_result_builds_actionable_guideline_knowledge -v
+python -m unittest tests.test_visual_protocol_validator tests.test_guideline_knowledge_builder tests.test_guideline_import_pipeline tests.test_alignment_planner tests.test_service_entrypoint tests.test_guideline_source_collector -v
 ```
 
 当前验证结果：
 
 - 自动生成 visual protocol 的两个靶向测试通过。
-- Validator、Skill Builder、指南导入、AlignmentPlanner、Service、真实网页/PDF 指南采集器相关 50 个测试通过。
+- Validator、Knowledge Builder、指南导入、AlignmentPlanner、Service、真实网页/PDF 指南采集器相关 50 个测试通过。
 
 下一步：
 
@@ -2559,7 +2559,7 @@ python -m unittest tests.test_visual_protocol_validator tests.test_guideline_ski
 
 ### 2026-05-24 Diagnosis Agent 受 Alignment Plan 强约束
 
-本轮目标：让诊断医生 Agent 和 follow-up QA 都不能绕过 `alignment_plan`。如果图像-症状-skill 协调层已经标记证据不足、模态不匹配或存在 blocked 结论，报告和追问必须显式承认这些限制。
+本轮目标：让诊断医生 Agent 和 follow-up QA 都不能绕过 `alignment_plan`。如果图像-症状-knowledge 协调层已经标记证据不足、模态不匹配或存在 blocked 结论，报告和追问必须显式承认这些限制。
 
 修改文件：
 
@@ -2575,7 +2575,7 @@ python -m unittest tests.test_visual_protocol_validator tests.test_guideline_ski
 - GaoDoctor 正常诊断链路现在会把 service 生成的 `alignment_plan` 传给诊断医生 Agent。
 - 诊断医生 LLM prompt 的 user payload 现在包含：
   - `visual_result`
-  - `disease_skill`
+  - `disease_knowledge`
   - `alignment_plan`
   - `required_report_fields`
 - 如果 `alignment_plan.analysis_status` 是：
@@ -2617,7 +2617,7 @@ python -m unittest tests.test_diagnosis_llm_workflow tests.test_llm_routing test
 
 ### 2026-05-24 前端与 Memory Audit 增强
 
-本轮目标：让端到端演示不需要打开原始 JSON，也能看到四类 memory、skill 质量、alignment 约束、QA 安全回退和证据缺失状态。
+本轮目标：让端到端演示不需要打开原始 JSON，也能看到四类 memory、knowledge 质量、alignment 约束、QA 安全回退和证据缺失状态。
 
 修改文件：
 
@@ -2633,7 +2633,7 @@ python -m unittest tests.test_diagnosis_llm_workflow tests.test_llm_routing test
 - `MemoryManager.build_audit_summary()` 新增 `memory_type_details`：
   - `patient_memory`：patient、intent、symptom、QA 数量摘要。
   - `image_memory`：modality、body_part、segmentation_quality、measurement 数量、缺失证据数量、是否有 overlay。
-  - `skill_memory`：selected_skill、used_skill、skill_type、formal_skill_status、visual_protocol_status。
+  - `knowledge_memory`：selected_knowledge、used_knowledge、knowledge_type、formal_knowledge_status、visual_protocol_status。
   - `reasoning_memory`：diagnostic_tendency、used_visual_fields、missing_visual_fields_acknowledged、不确定性和 follow-up 数量。
 - audit 新增 `alignment_summary`：
   - `analysis_status`
@@ -2641,8 +2641,8 @@ python -m unittest tests.test_diagnosis_llm_workflow tests.test_llm_routing test
   - `blocked_scopes`
   - `required_next_images`
   - `visual_task_status_counts`
-- audit 新增 `skill_quality`：
-  - `formal_skill_status`
+- audit 新增 `knowledge_quality`：
+  - `formal_knowledge_status`
   - `visual_protocol_status`
   - `visual_protocol_errors`
   - `visual_protocol_warnings`
@@ -2658,10 +2658,10 @@ python -m unittest tests.test_diagnosis_llm_workflow tests.test_llm_routing test
 - 前端 `Memory Trace` 面板新增渲染：
   - `Memory Details`
   - `Alignment Summary`
-  - `Skill Quality`
+  - `Knowledge Quality`
   - `QA Safety`
-- 前端 `证据充分性` 面板的 Skill 区域新增展示：
-  - `formal_skill_status`
+- 前端 `证据充分性` 面板的 Knowledge 区域新增展示：
+  - `formal_knowledge_status`
   - `visual_protocol_status`
 - 追问 thinking / 防重复发送仍保留。
 
@@ -2684,13 +2684,13 @@ python -m unittest discover -v
 当前四步目标状态：
 
 - [x] visual_protocol schema validator
-- [x] Skill Builder 自动生成 visual_protocol
+- [x] Knowledge Builder 自动生成 visual_protocol
 - [x] 诊断 Agent 受 alignment_plan 强约束
 - [x] 前端和 memory audit 增强
 
 ### 2026-05-24 标准端到端演示样例固化
 
-本轮目标：把“上传图片 + 自动选 skill + 分割结果 + 诊断报告 + evidence bundle + memory audit”固化成一条可演示流程，并提供一键 demo 脚本和验收测试。
+本轮目标：把“上传图片 + 自动选 knowledge + 分割结果 + 诊断报告 + evidence bundle + memory audit”固化成一条可演示流程，并提供一键 demo 脚本和验收测试。
 
 修改文件：
 
@@ -2746,7 +2746,7 @@ python -m unittest discover -v
 当前标准 demo 状态：
 
 - [x] 上传图片
-- [x] 自动选择 skill
+- [x] 自动选择 knowledge
 - [x] 视觉分割或证据不足跳过分割
 - [x] 输出分割图/overlay 或明确 `not_generated`
 - [x] 输出诊断报告
@@ -2775,11 +2775,11 @@ python -m unittest discover -v
 
 - MemoryManager 新增 `list_case_summaries(limit)`：
   - 返回近期病例的安全摘要。
-  - 包含 `case_id`、`patient_id`、`selected_skill`、`analysis_status`、影像模态、诊断倾向和 QA 数量。
+  - 包含 `case_id`、`patient_id`、`selected_knowledge`、`analysis_status`、影像模态、诊断倾向和 QA 数量。
   - 不暴露完整 `patient_message`。
 - MemoryManager 新增 `build_case_replay(case_id)`：
   - 回放 `GaoDoctorAgent` 患者入口。
-  - 回放 `SkillBuilderAgent` skill 路由和 alignment 状态。
+  - 回放 `KnowledgeBuilderAgent` knowledge 路由和 alignment 状态。
   - 回放 `VisionAgent` 视觉证据、测量、completeness 和分割质量。
   - 回放 `DiagnosisDoctorAgent` 诊断倾向、关键证据和不确定性。
   - 回放 `MemoryManager` evidence bundle / audit 状态。
@@ -2801,7 +2801,7 @@ GET /v1/memory/cases/{case_id}/audit
   - `memory_audit_path`
 - 前端 `Memory Trace` 面板新增 `Memory Replay` 区域：
   - 展示每一步 Agent 名称。
-  - 展示患者入口、skill 路由、视觉证据、诊断推理、memory audit、follow-up QA。
+  - 展示患者入口、knowledge 路由、视觉证据、诊断推理、memory audit、follow-up QA。
   - 如果响应中没有 `memory_replay`，会通过 `/v1/memory/cases/{case_id}/replay` 拉取。
 - 标准 demo 已重新运行，两个病例 response JSON 均包含 `memory_replay`。
 
@@ -2839,7 +2839,7 @@ python -m unittest discover -v
 
 ### 2026-05-24 通用视觉工具路由与 QC 门控底座
 
-本轮目标：把视觉 Agent 从“某个病种分割 demo”向“skill 驱动的通用视觉工具路由框架”推进。核心原则是：Skill 定义视觉任务和缺失约束，Vision Agent 根据任务选择工具、生成任务级结果，并用 QC 决定结果是否能进入诊断推理。
+本轮目标：把视觉 Agent 从“某个病种分割 demo”向“knowledge 驱动的通用视觉工具路由框架”推进。核心原则是：Knowledge 定义视觉任务和缺失约束，Vision Agent 根据任务选择工具、生成任务级结果，并用 QC 决定结果是否能进入诊断推理。
 
 修改文件：
 
@@ -2881,7 +2881,7 @@ python -m unittest discover -v
   - `medsam2`：注册为 `candidate_segmenter`，即通用候选病灶生成器，而不是最终真理。
   - `xray_fhn_detector`：X 光股骨头结构征象规则/检测工具占位能力。
 - 新增 `VisualToolRegistry` 和 `VisualToolRouter`：
-  - 从 skill 的 `visual_protocol.alignment_tasks` 生成 `VisualTask`。
+  - 从 knowledge 的 `visual_protocol.alignment_tasks` 生成 `VisualTask`。
   - 根据 available modalities 判断 `missing_input`。
   - 优先选择专病工具。
   - 没有专病工具时允许回退到 MedSAM2 candidate。
@@ -2910,7 +2910,7 @@ python -m unittest discover -v
 验收命令：
 
 ```bash
-python -m unittest tests.test_contracts.ContractBoundaryTest.test_visual_task_contract_is_derived_from_skill_protocol_task tests.test_contracts.ContractBoundaryTest.test_visual_tool_capability_contract_declares_supported_tasks_and_modalities tests.test_contracts.ContractBoundaryTest.test_segmentation_result_contract_blocks_low_quality_from_diagnosis tests.test_contracts.ContractBoundaryTest.test_segmentation_result_rejects_unsupported_status tests.test_visual_tool_router tests.test_brats_vision_tools.BratsVisionToolsTest.test_vision_agent_attaches_tool_routing_and_qc_task_results -v
+python -m unittest tests.test_contracts.ContractBoundaryTest.test_visual_task_contract_is_derived_from_knowledge_protocol_task tests.test_contracts.ContractBoundaryTest.test_visual_tool_capability_contract_declares_supported_tasks_and_modalities tests.test_contracts.ContractBoundaryTest.test_segmentation_result_contract_blocks_low_quality_from_diagnosis tests.test_contracts.ContractBoundaryTest.test_segmentation_result_rejects_unsupported_status tests.test_visual_tool_router tests.test_brats_vision_tools.BratsVisionToolsTest.test_vision_agent_attaches_tool_routing_and_qc_task_results -v
 python -m unittest tests.test_diagnosis_llm_workflow.DiagnosisLlmWorkflowTest.test_diagnosis_agent_excludes_not_usable_segmentation_measurements -v
 python -m unittest tests.test_contracts tests.test_visual_tool_router tests.test_brats_vision_tools tests.test_diagnosis_llm_workflow tests.test_medsam2_segmentation_tool tests.test_mvp_flow -v
 python -m scripts.end_to_end_demo --suite
@@ -2930,7 +2930,7 @@ python -m unittest tests.test_brats_vision_tools tests.test_medsam2_segmentation
 
 当前视觉 Agent 状态：
 
-- [x] skill 定义视觉任务和缺失约束
+- [x] knowledge 定义视觉任务和缺失约束
 - [x] VisualTask / SegmentationResult / VisualToolCapability 契约
 - [x] visual tool registry
 - [x] VisualToolRouter
@@ -2942,19 +2942,19 @@ python -m unittest tests.test_brats_vision_tools tests.test_medsam2_segmentation
 - [ ] 专病模型真实 runner 仍需按工具注册表逐步接入
 - [ ] 解剖区域合理性、多 prompt 稳定性、多模态一致性 QC 仍是下一阶段增强项
 
-### 2026-05-25 Skill 驱动多征象视觉证据 Bundle
+### 2026-05-25 Knowledge 驱动多征象视觉证据 Bundle
 
 本轮目标：回应“同一张医疗图像可能存在多个病情/多个征象”的主线需求，把无 mask 输入链路从“生成一个分割 summary”推进为“生成可直接传给诊断 Agent 的多征象视觉证据包”。该证据包仍然只描述影像观测，不输出最终诊断。
 
 修改文件：
 
-- `scripts/no_mask_skill_visual_pipeline_demo.py`
-- `tests/test_no_mask_skill_visual_pipeline_demo.py`
+- `scripts/no_mask_knowledge_visual_pipeline_demo.py`
+- `tests/test_no_mask_knowledge_visual_pipeline_demo.py`
 - `goalnew.md`
 
 已完成：
 
-- `scripts.no_mask_skill_visual_pipeline_demo` 在完成 anatomy reference + finding segmentation 后，会生成顶层 `visual_evidence_bundle`。
+- `scripts.no_mask_knowledge_visual_pipeline_demo` 在完成 anatomy reference + finding segmentation 后，会生成顶层 `visual_evidence_bundle`。
 - `visual_evidence_bundle` 当前包含：
   - `schema_version`
   - `disease_target`
@@ -2988,8 +2988,8 @@ python -m unittest tests.test_brats_vision_tools tests.test_medsam2_segmentation
 验收命令：
 
 ```bash
-python -m unittest tests.test_no_mask_skill_visual_pipeline_demo -v
-python -m unittest tests.test_no_mask_skill_visual_pipeline_demo tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_visual_protocol_validator tests.test_diagnosis_llm_workflow tests.test_contracts tests.test_visual_tool_router -v
+python -m unittest tests.test_no_mask_knowledge_visual_pipeline_demo -v
+python -m unittest tests.test_no_mask_knowledge_visual_pipeline_demo tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_visual_protocol_validator tests.test_diagnosis_llm_workflow tests.test_contracts tests.test_visual_tool_router -v
 ```
 
 当前验证结果：
@@ -2999,7 +2999,7 @@ python -m unittest tests.test_no_mask_skill_visual_pipeline_demo tests.test_no_m
 
 当前视觉 Agent 状态追加：
 
-- [x] 无 mask 医疗图像可以由 skill finding_targets 驱动生成多个候选征象。
+- [x] 无 mask 医疗图像可以由 knowledge finding_targets 驱动生成多个候选征象。
 - [x] 每个候选征象可以分别调用 MedSAM2 生成 mask / overlay。
 - [x] 多个候选征象可汇总为 `visual_evidence_bundle`，包含文本证据、数值证据和诊断输入 payload。
 - [x] `GaoDoctorAgent` 主流程会把 `visual_result` 汇总为 `image_memory.visual_evidence_bundle`。
@@ -3050,7 +3050,7 @@ python -m unittest tests.test_no_mask_skill_visual_pipeline_demo tests.test_no_m
 
 ```bash
 python -m unittest tests.test_mvp_flow.MedScopeMvpFlowTest.test_gaodoctor_persists_multifinding_visual_evidence_bundle_to_memory -v
-python -m unittest tests.test_mvp_flow tests.test_memory_manager tests.test_no_mask_skill_visual_pipeline_demo tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_diagnosis_llm_workflow tests.test_contracts tests.test_visual_tool_router -v
+python -m unittest tests.test_mvp_flow tests.test_memory_manager tests.test_no_mask_knowledge_visual_pipeline_demo tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_diagnosis_llm_workflow tests.test_contracts tests.test_visual_tool_router -v
 ```
 
 当前验证结果：
@@ -3096,7 +3096,7 @@ python -m unittest tests.test_mvp_flow tests.test_memory_manager tests.test_no_m
 python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_adds_evidence_bundle_and_memory_audit_from_case_memory -v
 python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
 node --check web/app.js
-python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_mvp_flow tests.test_memory_manager tests.test_no_mask_skill_visual_pipeline_demo tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_candidate_diagnosis_demo -v
+python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_mvp_flow tests.test_memory_manager tests.test_no_mask_knowledge_visual_pipeline_demo tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_candidate_diagnosis_demo -v
 ```
 
 当前验证结果：
@@ -3117,9 +3117,9 @@ python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint test
 修改文件：
 
 - `scripts/no_mask_medsam2_segmentation_demo.py`
-- `scripts/no_mask_skill_visual_pipeline_demo.py`
+- `scripts/no_mask_knowledge_visual_pipeline_demo.py`
 - `tests/test_no_mask_medsam2_segmentation_demo.py`
-- `tests/test_no_mask_skill_visual_pipeline_demo.py`
+- `tests/test_no_mask_knowledge_visual_pipeline_demo.py`
 - `goalnew.md`
 
 已完成：
@@ -3134,23 +3134,23 @@ python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint test
   - `anatomy_match`
   - `anatomy_candidates_evaluated`
   - 选中的 `anatomy_name`
-- `run_no_mask_skill_visual_pipeline_demo(...)` 会从 anatomy segmentation summary 的多个 anatomy findings 中提取 candidates，并传给 finding segmentation。
+- `run_no_mask_knowledge_visual_pipeline_demo(...)` 会从 anatomy segmentation summary 的多个 anatomy findings 中提取 candidates，并传给 finding segmentation。
 - 新增测试覆盖：
   - 单个 finding 位于右侧时，不使用第一个左侧 anatomy mask，而是选择右侧 overlap 最大的 anatomy mask。
-  - skill pipeline 的 anatomy reference 阶段返回左右两个股骨头时，finding 阶段可正确匹配右侧股骨头。
+  - knowledge pipeline 的 anatomy reference 阶段返回左右两个股骨头时，finding 阶段可正确匹配右侧股骨头。
 
 验收命令：
 
 ```bash
 python -m unittest tests.test_no_mask_medsam2_segmentation_demo.NoMaskMedSAM2SegmentationDemoTest.test_demo_matches_each_finding_to_best_overlapping_anatomy_candidate -v
-python -m unittest tests.test_no_mask_skill_visual_pipeline_demo.NoMaskSkillVisualPipelineDemoTest.test_pipeline_passes_multiple_anatomy_masks_for_same_side_matching -v
-python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_skill_visual_pipeline_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_mvp_flow tests.test_memory_manager tests.test_service_entrypoint tests.test_http_entrypoint -v
+python -m unittest tests.test_no_mask_knowledge_visual_pipeline_demo.NoMaskKnowledgeVisualPipelineDemoTest.test_pipeline_passes_multiple_anatomy_masks_for_same_side_matching -v
+python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_knowledge_visual_pipeline_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_mvp_flow tests.test_memory_manager tests.test_service_entrypoint tests.test_http_entrypoint -v
 ```
 
 当前验证结果：
 
 - anatomy overlap 匹配单测通过。
-- skill pipeline 多 anatomy candidate 传递测试通过。
+- knowledge pipeline 多 anatomy candidate 传递测试通过。
 - no-mask、MVP、memory、service、HTTP/frontend 相关 64 个测试通过。
 
 下一步：
@@ -3186,7 +3186,7 @@ python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_ma
 python -m unittest tests.test_no_mask_medsam2_segmentation_demo.NoMaskMedSAM2SegmentationDemoTest.test_demo_matches_each_finding_to_best_overlapping_anatomy_candidate -v
 python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_frontend_assets_are_served_from_allowlist -v
 node --check web/app.js
-python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_skill_visual_pipeline_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_mvp_flow tests.test_memory_manager tests.test_service_entrypoint tests.test_http_entrypoint -v
+python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_knowledge_visual_pipeline_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_mvp_flow tests.test_memory_manager tests.test_service_entrypoint tests.test_http_entrypoint -v
 ```
 
 当前验证结果：
@@ -3202,19 +3202,19 @@ python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_ma
 
 ### 2026-05-25 真实 FHN no-mask 多征象演示核验
 
-本轮目标：用真实 Gemini + MedSAM2 的 FHN no-mask 演示产物，确认 skill 驱动的多征象定位、MedSAM2 分割、anatomy matching、数值证据和诊断输入契约能串起来。
+本轮目标：用真实 Gemini + MedSAM2 的 FHN no-mask 演示产物，确认 knowledge 驱动的多征象定位、MedSAM2 分割、anatomy matching、数值证据和诊断输入契约能串起来。
 
 修改文件：
 
-- `output/fake/fhn_auto_skill_visual_pipeline_anatomy_match_demo/README.md`
+- `output/fake/fhn_auto_knowledge_visual_pipeline_anatomy_match_demo/README.md`
 - `goalnew.md`
 
 已完成：
 
 - 已核验真实演示输出目录：
-  - `output/fake/fhn_auto_skill_visual_pipeline_anatomy_match_demo/summary.json`
-  - `output/fake/fhn_auto_skill_visual_pipeline_anatomy_match_demo/finding_segmentation/summary.json`
-  - `output/fake/fhn_auto_skill_visual_pipeline_anatomy_match_demo/diagnosis/candidate_diagnosis_report.json`
+  - `output/fake/fhn_auto_knowledge_visual_pipeline_anatomy_match_demo/summary.json`
+  - `output/fake/fhn_auto_knowledge_visual_pipeline_anatomy_match_demo/finding_segmentation/summary.json`
+  - `output/fake/fhn_auto_knowledge_visual_pipeline_anatomy_match_demo/diagnosis/candidate_diagnosis_report.json`
 - `visual_evidence_bundle.present_findings` 包含 5 个候选征象：
   - `sclerotic_band`
   - `sclerotic_band`
@@ -3240,10 +3240,10 @@ python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_ma
 验证命令：
 
 ```bash
-python -m json.tool output/fake/fhn_auto_skill_visual_pipeline_anatomy_match_demo/summary.json >/tmp/fhn_anatomy_match_summary_check.json
-python -m json.tool output/fake/fhn_auto_skill_visual_pipeline_anatomy_match_demo/finding_segmentation/summary.json >/tmp/fhn_anatomy_match_finding_check.json
-python -m json.tool output/fake/fhn_auto_skill_visual_pipeline_anatomy_match_demo/diagnosis/candidate_diagnosis_report.json >/tmp/fhn_anatomy_match_diagnosis_check.json
-python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_skill_visual_pipeline_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_mvp_flow tests.test_memory_manager tests.test_service_entrypoint tests.test_http_entrypoint -v
+python -m json.tool output/fake/fhn_auto_knowledge_visual_pipeline_anatomy_match_demo/summary.json >/tmp/fhn_anatomy_match_summary_check.json
+python -m json.tool output/fake/fhn_auto_knowledge_visual_pipeline_anatomy_match_demo/finding_segmentation/summary.json >/tmp/fhn_anatomy_match_finding_check.json
+python -m json.tool output/fake/fhn_auto_knowledge_visual_pipeline_anatomy_match_demo/diagnosis/candidate_diagnosis_report.json >/tmp/fhn_anatomy_match_diagnosis_check.json
+python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_knowledge_visual_pipeline_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_mvp_flow tests.test_memory_manager tests.test_service_entrypoint tests.test_http_entrypoint -v
 node --check web/app.js
 ```
 
@@ -3260,11 +3260,11 @@ node --check web/app.js
 
 下一步：
 
-- 把这条真实 FHN no-mask pipeline 接入标准 demo/API 演示入口，形成“上传普通医疗图像 -> 自动选 FHN skill -> VLM 给 MedSAM2 box prompt -> 输出病灶 overlay + 多征象数值 bundle -> Diagnosis Agent 报告”的可复现实例。
+- 把这条真实 FHN no-mask pipeline 接入标准 demo/API 演示入口，形成“上传普通医疗图像 -> 自动选 FHN knowledge -> VLM 给 MedSAM2 box prompt -> 输出病灶 overlay + 多征象数值 bundle -> Diagnosis Agent 报告”的可复现实例。
 
 ### 2026-05-25 FHN no-mask 接入 GaoDoctor/API/标准 Demo
 
-本轮目标：把真实 FHN no-mask pipeline 从独立脚本接入主流程，让 API/service 和标准 demo 可以显式运行“上传普通医疗图像 -> FHN skill -> VLM box prompt -> MedSAM2 分割 -> 多征象数值 bundle -> Diagnosis Agent 报告”。
+本轮目标：把真实 FHN no-mask pipeline 从独立脚本接入主流程，让 API/service 和标准 demo 可以显式运行“上传普通医疗图像 -> FHN knowledge -> VLM box prompt -> MedSAM2 分割 -> 多征象数值 bundle -> Diagnosis Agent 报告”。
 
 修改文件：
 
@@ -3277,7 +3277,7 @@ node --check web/app.js
 已完成：
 
 - `GaoDoctorAgent` 新增可注入的 `no_mask_visual_pipeline_runner`。
-- 当 `disease_key=femoral_head_necrosis` 且 `vision_mode=no_mask_skill` 时，高医生会调用 no-mask skill visual pipeline，而不是旧的 `VisionAgent.analyze_image()` 简化路径。
+- 当 `disease_key=femoral_head_necrosis` 且 `vision_mode=no_mask_knowledge` 时，高医生会调用 no-mask knowledge visual pipeline，而不是旧的 `VisionAgent.analyze_image()` 简化路径。
 - no-mask pipeline 返回的 `visual_analysis_result` 会继续走现有 Diagnosis Agent、MemoryManager、evidence bundle 和 API/service 附加逻辑。
 - 标准 demo suite 新增可选参数：
   - `include_fhn_no_mask=True`
@@ -3293,8 +3293,8 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
   - 若该文件不存在，才回退到占位 X 光图。
 - 单元测试使用 fake runner，不触发真实 API，但验证：
   - GaoDoctor 调用了 no-mask runner。
-  - runner 收到原始 `patient_message`、`image_path`、`disease_key` 和 disease skill。
-  - case memory 保存 `selected_vision_mode=no_mask_skill`。
+  - runner 收到原始 `patient_message`、`image_path`、`disease_key` 和 disease knowledge。
+  - case memory 保存 `selected_vision_mode=no_mask_knowledge`。
   - API/service response 透出 `visual_evidence_bundle`。
   - 标准 demo 第三个病例包含 anatomy match。
 
@@ -3315,8 +3315,8 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
   - `output/fake/standard_demo_with_fhn_no_mask/cases/fhn_no_mask_multifinding/artifacts/fhn_no_mask_multifinding_audit.json`
 - 真实 FHN no-mask case：
   - `case_id=case_20260525_014915_107451`
-  - `selected_skill=femoral_head_necrosis`
-  - `selected_vision_mode=no_mask_skill`
+  - `selected_knowledge=femoral_head_necrosis`
+  - `selected_vision_mode=no_mask_knowledge`
   - `present_findings=['sclerotic_band', 'cystic_change', 'sclerotic_band', 'collapse']`
   - `finding_count=4`
   - `total_area_px=5266`
@@ -3331,8 +3331,8 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 验证命令：
 
 ```bash
-python -m unittest tests.test_mvp_flow.MedScopeMvpFlowTest.test_gaodoctor_runs_fhn_no_mask_skill_pipeline_when_requested tests.test_end_to_end_demo.EndToEndDemoTest.test_standard_demo_suite_can_include_fhn_no_mask_multifinding_case -v
-python -m unittest tests.test_end_to_end_demo tests.test_mvp_flow tests.test_service_entrypoint tests.test_http_entrypoint tests.test_no_mask_skill_visual_pipeline_demo tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_candidate_diagnosis_demo -v
+python -m unittest tests.test_mvp_flow.MedScopeMvpFlowTest.test_gaodoctor_runs_fhn_no_mask_knowledge_pipeline_when_requested tests.test_end_to_end_demo.EndToEndDemoTest.test_standard_demo_suite_can_include_fhn_no_mask_multifinding_case -v
+python -m unittest tests.test_end_to_end_demo tests.test_mvp_flow tests.test_service_entrypoint tests.test_http_entrypoint tests.test_no_mask_knowledge_visual_pipeline_demo tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_candidate_diagnosis_demo -v
 python -m py_compile agents/gaodoctor_agent.py scripts/end_to_end_demo.py
 python -m scripts.end_to_end_demo --suite
 python -m json.tool output/fake/standard_demo_with_fhn_no_mask/standard_demo_summary.json >/tmp/standard_demo_with_fhn_summary_check.json
@@ -3352,11 +3352,11 @@ python -m unittest discover -v
 
 下一步：
 
-- 把前端“一键标准样例”增加一个“FHN no-mask 多征象样例”按钮，让浏览器界面也能直接触发 `vision_mode=no_mask_skill`，并展示多征象 bundle、overlay、memory audit。
+- 把前端“一键标准样例”增加一个“FHN no-mask 多征象样例”按钮，让浏览器界面也能直接触发 `vision_mode=no_mask_knowledge`，并展示多征象 bundle、overlay、memory audit。
 
 ### 2026-05-25 前端 FHN no-mask 多征象样例入口
 
-本轮目标：把刚接入 API/service 的 FHN no-mask 主线暴露到浏览器交互界面，让前端可以一键触发 `vision_mode=no_mask_skill`，并复用已有多征象 bundle、overlay、evidence bundle 和 memory audit 展示。
+本轮目标：把刚接入 API/service 的 FHN no-mask 主线暴露到浏览器交互界面，让前端可以一键触发 `vision_mode=no_mask_knowledge`，并复用已有多征象 bundle、overlay、evidence bundle 和 memory audit 展示。
 
 修改文件：
 
@@ -3374,9 +3374,9 @@ python -m unittest discover -v
   - `sampleVisionMode`
 - `buildCasePayload()` 会在样例需要时显式传：
   - `disease_key=femoral_head_necrosis`
-  - `vision_mode=no_mask_skill`
+  - `vision_mode=no_mask_knowledge`
 - 新增 `loadFhnNoMaskSample()`：
-  - 填入患者描述：`右髋疼痛，上传 X 光，请根据股骨头坏死 skill 自动圈出候选征象`
+  - 填入患者描述：`右髋疼痛，上传 X 光，请根据股骨头坏死 knowledge 自动圈出候选征象`
   - 使用图像：`output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png`
   - 填入症状：`髋关节疼痛`
   - 关闭 sample mask
@@ -3395,7 +3395,7 @@ python -m unittest tests.test_http_entrypoint tests.test_service_entrypoint test
 python -m unittest discover -v
 curl -s http://127.0.0.1:8000/health
 curl -s http://127.0.0.1:8000/ | rg 'FHN no-mask|fhnNoMaskButton'
-curl -s http://127.0.0.1:8000/static/app.js | rg 'runFhnNoMaskSample|no_mask_skill|femoral_head_necrosis'
+curl -s http://127.0.0.1:8000/static/app.js | rg 'runFhnNoMaskSample|no_mask_knowledge|femoral_head_necrosis'
 ```
 
 当前验证结果：
@@ -3408,7 +3408,7 @@ curl -s http://127.0.0.1:8000/static/app.js | rg 'runFhnNoMaskSample|no_mask_ski
 - 已重启本地 HTTP server：`http://127.0.0.1:8000`。
 - `GET /health` 返回 `{"status": "ok"}`。
 - 前端 HTML 已包含 `FHN no-mask 多征象样例` / `fhnNoMaskButton`。
-- 前端 JS 已包含 `runFhnNoMaskSample`、`no_mask_skill`、`femoral_head_necrosis`。
+- 前端 JS 已包含 `runFhnNoMaskSample`、`no_mask_knowledge`、`femoral_head_necrosis`。
 
 下一步：
 
@@ -3426,10 +3426,10 @@ curl -s http://127.0.0.1:8000/static/app.js | rg 'runFhnNoMaskSample|no_mask_ski
 
 ```json
 {
-  "patient_message": "右髋疼痛，上传 X 光，请根据股骨头坏死 skill 自动圈出候选征象",
+  "patient_message": "右髋疼痛，上传 X 光，请根据股骨头坏死 knowledge 自动圈出候选征象",
   "image_path": "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png",
   "disease_key": "femoral_head_necrosis",
-  "vision_mode": "no_mask_skill",
+  "vision_mode": "no_mask_knowledge",
   "patient_info": {
     "symptoms": ["髋关节疼痛"]
   }
@@ -3441,8 +3441,8 @@ curl -s http://127.0.0.1:8000/static/app.js | rg 'runFhnNoMaskSample|no_mask_ski
 - `case_id=case_20260525_015527_055252`
 - `intent=diagnosis`
 - `analysis_status=partial_evidence`
-- `selected_skill=femoral_head_necrosis`
-- `selected_vision_mode=no_mask_skill`
+- `selected_knowledge=femoral_head_necrosis`
+- `selected_vision_mode=no_mask_knowledge`
 - `present_findings=['sclerotic_band', 'collapse', 'sclerotic_band', 'collapse']`
 - `numeric_evidence.finding_count=4`
 - `numeric_evidence.total_area_px=6530`
@@ -3546,16 +3546,16 @@ python -m unittest discover -v
 
 ### 2026-05-25 视觉 Agent 多征象重叠质量控制
 
-本轮目标：一张医疗图像中允许存在多个候选病灶/征象，但如果多个 skill finding 最终由 MedSAM2 分割成高度重叠或同一块 mask，不能把它们当作多个独立强证据传给诊断 Agent。
+本轮目标：一张医疗图像中允许存在多个候选病灶/征象，但如果多个 knowledge finding 最终由 MedSAM2 分割成高度重叠或同一块 mask，不能把它们当作多个独立强证据传给诊断 Agent。
 
 修改文件：
 
 - `scripts/no_mask_medsam2_segmentation_demo.py`
 - `scripts/no_mask_candidate_diagnosis_demo.py`
-- `scripts/no_mask_skill_visual_pipeline_demo.py`
+- `scripts/no_mask_knowledge_visual_pipeline_demo.py`
 - `agents/gaodoctor_agent.py`
 - `tests/test_no_mask_medsam2_segmentation_demo.py`
-- `tests/test_no_mask_skill_visual_pipeline_demo.py`
+- `tests/test_no_mask_knowledge_visual_pipeline_demo.py`
 - `goalnew.md`
 
 已完成：
@@ -3586,7 +3586,7 @@ python -m unittest discover -v
 
 ```bash
 python -m unittest tests.test_no_mask_medsam2_segmentation_demo -v
-python -m unittest tests.test_no_mask_skill_visual_pipeline_demo -v
+python -m unittest tests.test_no_mask_knowledge_visual_pipeline_demo -v
 python -m unittest tests.test_no_mask_candidate_diagnosis_demo -v
 python -m unittest tests.test_mvp_flow tests.test_service_entrypoint -v
 python -m unittest discover -v
@@ -3596,7 +3596,7 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 当前验证结果：
 
 - no-mask MedSAM2 分割质量控制测试通过。
-- no-mask skill visual pipeline 质量 warning 透传测试通过。
+- no-mask knowledge visual pipeline 质量 warning 透传测试通过。
 - no-mask candidate diagnosis demo 回归通过。
 - MVP flow 与 service entrypoint 回归通过。
 - 全量 `python -m unittest discover -v`：246 个测试通过。
@@ -3705,7 +3705,7 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 验证命令：
 
 ```bash
-python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_skill_visual_pipeline_demo -v
+python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_knowledge_visual_pipeline_demo -v
 python -m unittest tests.test_diagnosis_llm_workflow -v
 python -m unittest tests.test_mvp_flow tests.test_service_entrypoint tests.test_end_to_end_demo -v
 python -m unittest discover -v
@@ -3714,7 +3714,7 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 
 当前验证结果：
 
-- no-mask segmentation / no-mask skill pipeline：11 个测试通过。
+- no-mask segmentation / no-mask knowledge pipeline：11 个测试通过。
 - diagnosis LLM workflow：20 个测试通过。
 - MVP / Service / End-to-end demo：32 个测试通过。
 - 全量 `python -m unittest discover -v`：250 个测试通过。
@@ -3748,10 +3748,10 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 修改文件：
 
 - `scripts/no_mask_medsam2_segmentation_demo.py`
-- `scripts/no_mask_skill_visual_pipeline_demo.py`
+- `scripts/no_mask_knowledge_visual_pipeline_demo.py`
 - `agents/gaodoctor_agent.py`
 - `tests/test_no_mask_medsam2_segmentation_demo.py`
-- `tests/test_no_mask_skill_visual_pipeline_demo.py`
+- `tests/test_no_mask_knowledge_visual_pipeline_demo.py`
 - `goalnew.md`
 
 已完成：
@@ -3782,8 +3782,8 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 
 ```bash
 python -m unittest tests.test_no_mask_medsam2_segmentation_demo.NoMaskMedSAM2SegmentationDemoTest.test_demo_marks_mask_outside_prompt_box_as_not_diagnosis_usable -v
-python -m unittest tests.test_no_mask_skill_visual_pipeline_demo.NoMaskSkillVisualPipelineDemoTest.test_pipeline_excludes_misaligned_masks_from_present_findings -v
-python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_skill_visual_pipeline_demo tests.test_diagnosis_llm_workflow -v
+python -m unittest tests.test_no_mask_knowledge_visual_pipeline_demo.NoMaskKnowledgeVisualPipelineDemoTest.test_pipeline_excludes_misaligned_masks_from_present_findings -v
+python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_knowledge_visual_pipeline_demo tests.test_diagnosis_llm_workflow -v
 python -m unittest discover -v
 python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir output/fake/standard_demo_with_fhn_no_mask_qc
 ```
@@ -3793,7 +3793,7 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 - 单测红绿闭环已确认：
   - mask 完全跑出 VLM bbox 时，先因缺少 `box_mask_alignment` 失败。
   - 实现后该测试通过。
-- no-mask segmentation / no-mask skill pipeline / diagnosis LLM workflow：33 个测试通过。
+- no-mask segmentation / no-mask knowledge pipeline / diagnosis LLM workflow：33 个测试通过。
 - 全量 `python -m unittest discover -v`：252 个测试通过。
 - 标准端到端 demo 已重新生成：
   - `output/fake/standard_demo_with_fhn_no_mask_qc/standard_demo_summary.json`
@@ -3820,12 +3820,12 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 - `tools/structured_visual_fact_builder.py`
 - `contracts/medical_contracts.py`
 - `scripts/no_mask_candidate_diagnosis_demo.py`
-- `scripts/no_mask_skill_visual_pipeline_demo.py`
+- `scripts/no_mask_knowledge_visual_pipeline_demo.py`
 - `agents/gaodoctor_agent.py`
 - `agents/diagnosis_agent.py`
 - `tests/test_contracts.py`
 - `tests/test_no_mask_candidate_diagnosis_demo.py`
-- `tests/test_no_mask_skill_visual_pipeline_demo.py`
+- `tests/test_no_mask_knowledge_visual_pipeline_demo.py`
 - `tests/test_diagnosis_llm_workflow.py`
 - `tests/test_mvp_flow.py`
 - `goalnew.md`
@@ -3863,11 +3863,11 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 验证命令：
 
 ```bash
-python -m unittest tests.test_no_mask_skill_visual_pipeline_demo.NoMaskSkillVisualPipelineDemoTest.test_pipeline_uses_skill_anatomy_reference_before_finding_segmentation -v
+python -m unittest tests.test_no_mask_knowledge_visual_pipeline_demo.NoMaskKnowledgeVisualPipelineDemoTest.test_pipeline_uses_knowledge_anatomy_reference_before_finding_segmentation -v
 python -m unittest tests.test_mvp_flow.MedScopeMvpFlowTest.test_gaodoctor_persists_multifinding_visual_evidence_bundle_to_memory -v
 python -m unittest tests.test_diagnosis_llm_workflow.DiagnosisLlmWorkflowTest.test_diagnosis_agent_can_use_structured_visual_facts_without_raw_findings -v
 python -m unittest tests.test_no_mask_candidate_diagnosis_demo.NoMaskCandidateDiagnosisDemoTest.test_visual_result_reuses_findings_from_segmentation_summary -v
-python -m unittest tests.test_contracts tests.test_no_mask_candidate_diagnosis_demo tests.test_no_mask_skill_visual_pipeline_demo tests.test_diagnosis_llm_workflow tests.test_mvp_flow -v
+python -m unittest tests.test_contracts tests.test_no_mask_candidate_diagnosis_demo tests.test_no_mask_knowledge_visual_pipeline_demo tests.test_diagnosis_llm_workflow tests.test_mvp_flow -v
 python -m unittest discover -v
 python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir output/fake/standard_demo_with_fhn_no_mask_qc
 ```
@@ -3889,7 +3889,7 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 
 阶段收敛判断：
 
-- 视觉 Agent 第一版主线到这里收敛：skill 约束定位、MedSAM2 分割、mask/overlay、面积与解剖归一化、侧别、多 finding、重叠非独立证据、box-mask 对齐质控、structured facts、memory/API 持久化均已打通。
+- 视觉 Agent 第一版主线到这里收敛：knowledge 约束定位、MedSAM2 分割、mask/overlay、面积与解剖归一化、侧别、多 finding、重叠非独立证据、box-mask 对齐质控、structured facts、memory/API 持久化均已打通。
 - 后续暂不继续扩视觉 Agent 架构，不换模型、不做大重构；只保留 bug 修和必要的字段稳定化。
 
 下一步：
@@ -4010,7 +4010,7 @@ curl -s http://127.0.0.1:8000/health
 - 全量 `python -m unittest discover -v`：257 个测试通过。
 - HTTP API 已用最新代码重启，`/health` 返回 `{"status":"ok"}`。
 - 通过 `/v1/medscope` 新建默认病例 `case_20260525_111737_326632`，并验证：
-  - `/v1/memory/cases/{case_id}/evidence-bundle` 可返回 `patient_context`、`image_evidence`、`skill_evidence`、`reasoning_evidence`。
+  - `/v1/memory/cases/{case_id}/evidence-bundle` 可返回 `patient_context`、`image_evidence`、`knowledge_evidence`、`reasoning_evidence`。
   - `/v1/memory/cases/{case_id}/audit` 可返回四类 memory completeness 和 `qa_safety`。
 
 阶段收敛判断：
@@ -4173,11 +4173,11 @@ curl -s http://127.0.0.1:8000/v1/demo/standard/cases/fhn_no_mask_multifinding/re
 
 下一步：
 
-- 建议做“演示讲解态收敛”：生成一个简短的中文 demo script / walkthrough，按五个 Agent 顺序解释当前标准样例，包括上传图像、自动选 skill、病灶分割图、诊断采用证据、排除证据、memory audit 和追问 QA。
+- 建议做“演示讲解态收敛”：生成一个简短的中文 demo script / walkthrough，按五个 Agent 顺序解释当前标准样例，包括上传图像、自动选 knowledge、病灶分割图、诊断采用证据、排除证据、memory audit 和追问 QA。
 
 ### 2026-05-25 标准 demo walkthrough
 
-本轮目标：生成一份可直接用于现场讲解的中文 demo walkthrough，不继续改主链路代码。重点是把当前标准样例按五个 Agent 串起来，解释上传图片、自动选 skill、病灶图、采用/排除证据、memory audit 和追问 QA。
+本轮目标：生成一份可直接用于现场讲解的中文 demo walkthrough，不继续改主链路代码。重点是把当前标准样例按五个 Agent 串起来，解释上传图片、自动选 knowledge、病灶图、采用/排除证据、memory audit 和追问 QA。
 
 新增文件：
 
@@ -4191,10 +4191,10 @@ curl -s http://127.0.0.1:8000/v1/demo/standard/cases/fhn_no_mask_multifinding/re
   - `GET /v1/demo/standard/cases/fhn_no_mask_multifinding/response`
 - walkthrough 按五个 Agent 组织：
   - 高医生 Agent：唯一前门、意图识别、分发和汇总。
-  - Skill Builder Agent：加载 `femoral_head_necrosis_v0.1` guideline skill。
+  - Knowledge Builder Agent：加载 `femoral_head_necrosis_v0.1` guideline knowledge。
   - 视觉 Agent：VLM box prompt、MedSAM2 candidate mask、测量和 `structured_visual_facts`。
   - 诊断医生 Agent：只消费结构化证据，生成 used/excluded visual facts。
-  - Memory Manager：保存 patient/image/skill/reasoning 四类 memory 和 audit。
+  - Memory Manager：保存 patient/image/knowledge/reasoning 四类 memory 和 audit。
 - walkthrough 使用当前真实标准 demo 产物中的关键事实：
   - `case_id=case_20260525_111052_813246`
   - `structured_visual_facts` 数量：4
@@ -4213,7 +4213,7 @@ curl -s http://127.0.0.1:8000/v1/demo/standard/cases/fhn_no_mask_multifinding/re
 
 ```bash
 wc -l output/fake/standard_demo_walkthrough.md
-rg 'GaoDoctorAgent|Skill Builder|Vision|Diagnosis|Memory|诊断采用证据|排除证据|finding_1_sclerotic_band|finding_3_cystic_change|non_independent_evidence|used_count|excluded_count' output/fake/standard_demo_walkthrough.md
+rg 'GaoDoctorAgent|Knowledge Builder|Vision|Diagnosis|Memory|诊断采用证据|排除证据|finding_1_sclerotic_band|finding_3_cystic_change|non_independent_evidence|used_count|excluded_count' output/fake/standard_demo_walkthrough.md
 sed -n '1,80p' output/fake/standard_demo_walkthrough.md
 ```
 
@@ -4275,7 +4275,7 @@ sed -n '1,80p' output/fake/standard_demo_walkthrough.md
 - dry run 验证 memory audit：
   - `patient_memory=true`
   - `image_memory=true`
-  - `skill_memory=true`
+  - `knowledge_memory=true`
   - `reasoning_memory=true`
   - `visual_fact_usage.used_count=2`
   - `visual_fact_usage.excluded_count=2`
@@ -4350,10 +4350,10 @@ curl -s -X POST http://127.0.0.1:8000/v1/demo/standard/cases/fhn_no_mask_multifi
 
 - 按五个 Agent 汇总当前状态：
   - 高医生 Agent：唯一前门、自动路由、QA 约束已闭环。
-  - Skill Builder Agent：guideline skill MVP 已闭环，真实大规模指南发现仍属下一阶段。
+  - Knowledge Builder Agent：guideline knowledge MVP 已闭环，真实大规模指南发现仍属下一阶段。
   - 视觉 Agent：通用候选分割 MVP 已闭环，临床级分割精度未收敛。
   - 诊断医生 Agent：evidence-constrained diagnosis 与 visual_fact_usage 审计已闭环。
-  - Memory Manager：patient/image/skill/reasoning 四类 memory 与 audit 已闭环。
+  - Memory Manager：patient/image/knowledge/reasoning 四类 memory 与 audit 已闭环。
 - 报告引用当前已验证证据：
   - `/health` 返回 `{"status":"ok"}`
   - `GET /v1/demo/standard` 返回 3 个 `ok` case
@@ -4374,7 +4374,7 @@ curl -s -X POST http://127.0.0.1:8000/v1/demo/standard/cases/fhn_no_mask_multifi
   - 全自动医学指南发现平台
   - 继续重构前端布局
 - 报告给出下一阶段真正该做的三件事：
-  1. 选择一个新病种跑完整 guideline skill 流。
+  1. 选择一个新病种跑完整 guideline knowledge 流。
   2. 建立视觉 Agent 评测线。
   3. 固化演示版与研究版边界。
 - 报告建议将当前版本冻结为：
@@ -4384,7 +4384,7 @@ curl -s -X POST http://127.0.0.1:8000/v1/demo/standard/cases/fhn_no_mask_multifi
 
 ```bash
 wc -l output/fake/mvp_status_by_agents.md
-rg '高医生 Agent|Skill Builder Agent|视觉 Agent|诊断医生 Agent|Memory Manager|MVP v0.1|下一阶段真正该做的三件事|used_count=2|excluded_count=2|260 个测试' output/fake/mvp_status_by_agents.md
+rg '高医生 Agent|Knowledge Builder Agent|视觉 Agent|诊断医生 Agent|Memory Manager|MVP v0.1|下一阶段真正该做的三件事|used_count=2|excluded_count=2|260 个测试' output/fake/mvp_status_by_agents.md
 sed -n '1,120p' output/fake/mvp_status_by_agents.md
 ```
 
@@ -4400,7 +4400,7 @@ sed -n '1,120p' output/fake/mvp_status_by_agents.md
 
 下一步：
 
-- 如果继续推进，建议开启新阶段：选一个新病种，用真实指南采集器生成 guideline skill，再跑一条新的端到端样例，而不是继续改当前标准 demo。
+- 如果继续推进，建议开启新阶段：选一个新病种，用真实指南采集器生成 guideline knowledge，再跑一条新的端到端样例，而不是继续改当前标准 demo。
 
 ### 2026-05-25 下一阶段病种选择：IPF / 特发性肺纤维化
 
@@ -4415,31 +4415,31 @@ sed -n '1,120p' output/fake/mvp_status_by_agents.md
 - FHN no-mask 标准 demo 已建议冻结为 `MedScope Agent MVP v0.1 - guideline-aware visual evidence demo`。
 - 当前不再继续在 FHN demo 上追加小功能。
 - 下一阶段建议选 IPF / 特发性肺纤维化，目标版本为：
-  - `MedScope Agent MVP v0.2 - real guideline skill + CT visual evidence demo`
+  - `MedScope Agent MVP v0.2 - real guideline knowledge + CT visual evidence demo`
 
 选择 IPF 的原因：
 
 - 有 ATS / ERS / JRS / ALAT 官方指南来源。
-- HRCT 是诊断路径里的关键影像输入，适合验证 skill 驱动视觉 Agent。
+- HRCT 是诊断路径里的关键影像输入，适合验证 knowledge 驱动视觉 Agent。
 - 指南里有可结构化的 HRCT pattern：UIP、probable UIP、indeterminate for UIP、alternative diagnosis。
 - 有公开 CT 数据候选：OSIC Pulmonary Fibrosis Progression 及相关肺分割 mask 数据集。
 - 医疗安全边界清晰：视觉 Agent 只能输出结构化影像证据，不能单独给出最终 IPF 诊断。
 
 下一阶段收敛标准：
 
-- Skill Builder 能基于真实 IPF 指南生成 `idiopathic_pulmonary_fibrosis_hrct` guideline skill。
-- 高医生 Agent 能根据主诉和胸部 CT / HRCT 自动选择该 skill。
-- 视觉 Agent 能按 skill 输出纤维化候选区域、overlay、mask、分布和结构化数值证据。
+- Knowledge Builder 能基于真实 IPF 指南生成 `idiopathic_pulmonary_fibrosis_hrct` guideline knowledge。
+- 高医生 Agent 能根据主诉和胸部 CT / HRCT 自动选择该 knowledge。
+- 视觉 Agent 能按 knowledge 输出纤维化候选区域、overlay、mask、分布和结构化数值证据。
 - Diagnosis Agent 只消费 evidence bundle，并在证据不足时明确建议补充 HRCT、肺功能、病史和 ILD 多学科评估。
-- Memory audit 能完整记录 patient_memory、image_memory、skill_memory、reasoning_memory。
+- Memory audit 能完整记录 patient_memory、image_memory、knowledge_memory、reasoning_memory。
 
 下一步：
 
-- 直接进入“真实网页 / PDF 指南采集器 -> IPF guideline skill 草案”。
+- 直接进入“真实网页 / PDF 指南采集器 -> IPF guideline knowledge 草案”。
 
-### 2026-05-25 IPF 真实指南采集器与 guideline skill 草案
+### 2026-05-25 IPF 真实指南采集器与 guideline knowledge 草案
 
-本轮目标：按照下一阶段收敛方向，先完成“真实网页 / PDF 指南采集器 -> IPF guideline skill 草案”的第一版，不进入视觉 Agent 大重构。
+本轮目标：按照下一阶段收敛方向，先完成“真实网页 / PDF 指南采集器 -> IPF guideline knowledge 草案”的第一版，不进入视觉 Agent 大重构。
 
 代码变更：
 
@@ -4450,30 +4450,30 @@ sed -n '1,120p' output/fake/mvp_status_by_agents.md
 - 扩展 `tools/guideline_source_collector_tool.py`：
   - 采集 raw guideline text 时保留 `publication_year`、`region`、`source_priority`。
   - 这些字段会继续进入 `GuidelineSourceImportTool` 的 source catalog。
-- 新增 `scripts/ipf_guideline_skill_demo.py`：
-  - 默认输出到 `output/fake/ipf_guideline_skill_demo/`。
+- 新增 `scripts/ipf_guideline_knowledge_demo.py`：
+  - 默认输出到 `output/fake/ipf_guideline_knowledge_demo/`。
   - disease_key 固定为 `idiopathic_pulmonary_fibrosis_hrct`。
   - 内置两个真实指南来源：
     - 2022 ATS / ERS / JRS / ALAT IPF update：PMC 页面。
     - 2018 ATS / ERS / JRS / ALAT IPF diagnosis guideline：PubMed 页面。
   - 支持 `--collect-sources` 真实抓取网页/PDF 来源。
-  - 同时生成结构化 raw guideline 草案、source catalog 和 guideline skill 草案。
-- 新增 `tests/test_ipf_guideline_skill_demo.py`。
+  - 同时生成结构化 raw guideline 草案、source catalog 和 guideline knowledge 草案。
+- 新增 `tests/test_ipf_guideline_knowledge_demo.py`。
 - 扩展 `tests/test_guideline_source_collector.py`，覆盖 priority metadata 透传。
 
 新增输出：
 
-- `output/fake/ipf_guideline_skill_demo/raw/ats_ers_jrs_alat_ipf_2022_structured_raw.txt`
-- `output/fake/ipf_guideline_skill_demo/raw/ats_ers_jrs_alat_ipf_diagnosis_2018_structured_raw.txt`
-- `output/fake/ipf_guideline_skill_demo/collected_sources/ats_ers_jrs_alat_ipf_2022_collected_raw.txt`
-- `output/fake/ipf_guideline_skill_demo/collected_sources/ats_ers_jrs_alat_ipf_diagnosis_2018_collected_raw.txt`
-- `output/fake/ipf_guideline_skill_demo/guideline_sources.json`
-- `output/fake/ipf_guideline_skill_demo/idiopathic_pulmonary_fibrosis_hrct.yaml`
+- `output/fake/ipf_guideline_knowledge_demo/raw/ats_ers_jrs_alat_ipf_2022_structured_raw.txt`
+- `output/fake/ipf_guideline_knowledge_demo/raw/ats_ers_jrs_alat_ipf_diagnosis_2018_structured_raw.txt`
+- `output/fake/ipf_guideline_knowledge_demo/collected_sources/ats_ers_jrs_alat_ipf_2022_collected_raw.txt`
+- `output/fake/ipf_guideline_knowledge_demo/collected_sources/ats_ers_jrs_alat_ipf_diagnosis_2018_collected_raw.txt`
+- `output/fake/ipf_guideline_knowledge_demo/guideline_sources.json`
+- `output/fake/ipf_guideline_knowledge_demo/idiopathic_pulmonary_fibrosis_hrct.yaml`
 
 真实采集结果：
 
 ```text
-python -m scripts.ipf_guideline_skill_demo --collect-sources --timeout-seconds 10
+python -m scripts.ipf_guideline_knowledge_demo --collect-sources --timeout-seconds 10
 ```
 
 - `source_count=2`
@@ -4485,9 +4485,9 @@ python -m scripts.ipf_guideline_skill_demo --collect-sources --timeout-seconds 1
   - `content_type=text/html`
   - `char_count=3534`
 
-生成的 IPF skill 草案包含：
+生成的 IPF knowledge 草案包含：
 
-- `skill_type=guideline_based`
+- `knowledge_type=guideline_based`
 - `path_type=guideline_aware`
 - `required_image_views` 包含：
   - `HRCT chest`
@@ -4503,16 +4503,16 @@ python -m scripts.ipf_guideline_skill_demo --collect-sources --timeout-seconds 1
   - `traction_bronchiectasis_candidate`
   - `fibrosis_candidate`
 - `visual_protocol.required_modalities` 明确这些视觉任务需要 HRCT / thin-section CT。
-- `quality_control.formal_skill_status=formal_ready`
+- `quality_control.formal_knowledge_status=formal_ready`
 
 验证命令：
 
 ```bash
 python -m unittest tests.test_guideline_source_collector.GuidelineSourceCollectorTest.test_collect_html_guideline_source_preserves_priority_metadata -v
-python -m unittest tests.test_ipf_guideline_skill_demo -v
-python -m scripts.ipf_guideline_skill_demo
-python -m scripts.ipf_guideline_skill_demo --collect-sources --timeout-seconds 10
-python -m unittest tests.test_guideline_source_collector tests.test_guideline_import_pipeline tests.test_guideline_skill_builder tests.test_ipf_guideline_skill_demo -v
+python -m unittest tests.test_ipf_guideline_knowledge_demo -v
+python -m scripts.ipf_guideline_knowledge_demo
+python -m scripts.ipf_guideline_knowledge_demo --collect-sources --timeout-seconds 10
+python -m unittest tests.test_guideline_source_collector tests.test_guideline_import_pipeline tests.test_guideline_knowledge_builder tests.test_ipf_guideline_knowledge_demo -v
 python -m unittest discover -v
 ```
 
@@ -4520,28 +4520,28 @@ python -m unittest discover -v
 
 - 新增测试先按预期失败：
   - CLI 不认识 `--publication-year / --region / --source-priority`。
-  - `scripts.ipf_guideline_skill_demo` 不存在。
+  - `scripts.ipf_guideline_knowledge_demo` 不存在。
 - 实现后新增测试通过。
-- 指南采集 / 导入 / Skill Builder 相关 29 个测试通过。
+- 指南采集 / 导入 / Knowledge Builder 相关 29 个测试通过。
 - 全量回归：262 个测试通过。
 
 阶段判断：
 
 - “真实网页/PDF 指南采集器”已经从通用工具走到 IPF 真实来源样例。
-- 当前 IPF skill 仍是 `output/fake/` 下的草案，尚未确认进入正式 `skills/`。
+- 当前 IPF knowledge 仍是 `output/fake/` 下的草案，尚未确认进入正式 `knowledge/`。
 - 下一步不应继续改采集器本身，应该进入：
   - OSIC CT 数据接入计划。
   - IPF visual_protocol 对 Vision Agent 的执行链路。
   - 让高医生 Agent 根据“咳嗽/气短 + 胸部 CT/HRCT”自动选择 `idiopathic_pulmonary_fibrosis_hrct`。
 
-### 2026-05-25 IPF skill 正式接入与自动路由
+### 2026-05-25 IPF knowledge 正式接入与自动路由
 
-本轮目标：把上一轮 `output/fake` 下的 IPF guideline skill 草案接入正式系统入口，让高医生 / API 编排层能自动选择该 skill。视觉 CT 数据和 OSIC 接入留到下一阶段，不在本轮混做。
+本轮目标：把上一轮 `output/fake` 下的 IPF guideline knowledge 草案接入正式系统入口，让高医生 / API 编排层能自动选择该 knowledge。视觉 CT 数据和 OSIC 接入留到下一阶段，不在本轮混做。
 
 代码与数据变更：
 
-- 新增正式 skill：
-  - `skills/idiopathic_pulmonary_fibrosis_hrct.yaml`
+- 新增正式 knowledge：
+  - `knowledge/idiopathic_pulmonary_fibrosis_hrct.yaml`
 - 更新默认指南 source catalog：
   - `data/guidelines/guideline_sources.json`
   - 新增 `idiopathic_pulmonary_fibrosis_hrct`
@@ -4557,16 +4557,16 @@ python -m unittest discover -v
   - 支持识别 chest / lung / pulmonary / IPF / UIP / 胸 / 肺为胸部影像上下文。
   - CT 模态可满足 `HRCT chest` / `thin-section chest CT` 视觉任务要求。
 - 更新测试：
-  - `tests/test_guideline_skill_builder.py`
+  - `tests/test_guideline_knowledge_builder.py`
   - `tests/test_visual_protocol_validator.py`
   - `tests/test_service_entrypoint.py`
 
 新增验证覆盖：
 
 - 默认 `GuidelineSearchTool()` 能找到 IPF 指南来源。
-- `SkillBuilderTool` 能从默认 catalog 构建 IPF guideline skill。
-- `skills/idiopathic_pulmonary_fibrosis_hrct.yaml` 通过 `VisualProtocolValidator`。
-- `MedScopeService` 能根据“干咳、气短、HRCT、特发性肺纤维化、UIP”等线索自动选择 IPF skill。
+- `KnowledgeBuilderTool` 能从默认 catalog 构建 IPF guideline knowledge。
+- `knowledge/idiopathic_pulmonary_fibrosis_hrct.yaml` 通过 `VisualProtocolValidator`。
+- `MedScopeService` 能根据“干咳、气短、HRCT、特发性肺纤维化、UIP”等线索自动选择 IPF knowledge。
 - alignment plan 能识别：
   - `modality=CT`
   - `available_sequences` 包含 `HRCT`
@@ -4576,10 +4576,10 @@ python -m unittest discover -v
 验证命令：
 
 ```bash
-python -m unittest tests.test_guideline_skill_builder.GuidelineSkillBuilderTest.test_guideline_search_finds_ipf_hrct_source -v
-python -m unittest tests.test_visual_protocol_validator.VisualProtocolValidatorTest.test_static_guideline_skills_have_valid_visual_protocol -v
-python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_ipf_skill_from_hrct_chest_clues -v
-python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_guideline_skill_builder tests.test_visual_protocol_validator tests.test_ipf_guideline_skill_demo -v
+python -m unittest tests.test_guideline_knowledge_builder.GuidelineKnowledgeBuilderTest.test_guideline_search_finds_ipf_hrct_source -v
+python -m unittest tests.test_visual_protocol_validator.VisualProtocolValidatorTest.test_static_guideline_knowledges_have_valid_visual_protocol -v
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_ipf_knowledge_from_hrct_chest_clues -v
+python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_guideline_knowledge_builder tests.test_visual_protocol_validator tests.test_ipf_guideline_knowledge_demo -v
 python -m unittest discover -v
 ```
 
@@ -4587,7 +4587,7 @@ python -m unittest discover -v
 
 - 新增测试先按预期失败：
   - default source catalog 找不到 IPF。
-  - `skills/idiopathic_pulmonary_fibrosis_hrct.yaml` 不存在。
+  - `knowledge/idiopathic_pulmonary_fibrosis_hrct.yaml` 不存在。
   - 服务入口不会自动选择 IPF。
 - 实现后，三个新增定向测试通过。
 - 相关模块回归：63 个测试通过。
@@ -4595,8 +4595,8 @@ python -m unittest discover -v
 
 阶段判断：
 
-- IPF 已从“草案 skill”进入系统正式 skill 列表。
-- 高医生入口 / API 编排层已经能自动选择 IPF skill。
+- IPF 已从“草案 knowledge”进入系统正式 knowledge 列表。
+- 高医生入口 / API 编排层已经能自动选择 IPF knowledge。
 - 这一小阶段已收敛。
 
 下一步：
@@ -4673,7 +4673,7 @@ python -m scripts.osic_ipf_dataset --check-download-readiness
 python -m unittest tests.test_osic_ipf_dataset -v
 python -m scripts.osic_ipf_dataset --validate-manifest
 python -m scripts.osic_ipf_dataset --check-download-readiness --kaggle-config-path /private/tmp/missing_kaggle_for_medscope.json
-python -m unittest tests.test_osic_ipf_dataset tests.test_ipf_guideline_skill_demo tests.test_service_entrypoint tests.test_guideline_skill_builder tests.test_visual_protocol_validator -v
+python -m unittest tests.test_osic_ipf_dataset tests.test_ipf_guideline_knowledge_demo tests.test_service_entrypoint tests.test_guideline_knowledge_builder tests.test_visual_protocol_validator -v
 python -m unittest discover -v
 ```
 
@@ -4693,7 +4693,7 @@ python -m unittest discover -v
 
 - 做 `ipf_visual_demo` 的 dry-run/manifest-aware 脚本：
   - 当 manifest 仍为 `pending_download` 时，清晰返回缺数据和下载要求。
-  - 当 manifest 有本地 CT case 时，加载 `idiopathic_pulmonary_fibrosis_hrct` skill，生成 visual task plan 和 evidence bundle skeleton。
+  - 当 manifest 有本地 CT case 时，加载 `idiopathic_pulmonary_fibrosis_hrct` knowledge，生成 visual task plan 和 evidence bundle skeleton。
   - 在没有 fibrosis mask 时，只允许输出 anatomy/context 证据，不得伪造纤维化分割结果。
 
 ### 2026-05-25 IPF visual demo dry-run 与 Vision Agent v0.1 收敛
@@ -4710,13 +4710,13 @@ IPF visual demo 当前行为：
 
 - 默认 `data/external/osic_ipf_manifest.json` 仍为 `cases=[]`，运行 `python -m scripts.ipf_visual_demo` 返回 `status=pending_download`。
 - 没有本地 OSIC CT case 时，不生成 evidence bundle，不生成假 mask。
-- 若 manifest 中存在本地 CT case，脚本会加载 `idiopathic_pulmonary_fibrosis_hrct` skill，生成 alignment plan 和 `ipf_visual_evidence_bundle.v1`。
+- 若 manifest 中存在本地 CT case，脚本会加载 `idiopathic_pulmonary_fibrosis_hrct` knowledge，生成 alignment plan 和 `ipf_visual_evidence_bundle.v1`。
 - 若只有 lung mask，bundle 会明确标记 `lung_mask_status=available_anatomy_only`，且说明 lung mask 不是 fibrosis lesion label。
 - honeycombing / reticulation / traction bronchiectasis / fibrosis candidate mask 等字段保持 `unassessed` 或 missing，不转写为阴性或 0。
 
 Vision Agent v0.1 冻结边界：
 
-- 收敛标准是 skill 约束的图像证据提取闭环，而不是所有疾病的临床级分割准确率。
+- 收敛标准是 knowledge 约束的图像证据提取闭环，而不是所有疾病的临床级分割准确率。
 - Visual Agent 输出两类结果：
   - 图像产物：`mask_path`、`overlay_path`、上传图路径。
   - 结构化证据：`structured_visual_facts`、`measurements`、`completeness`、`quality_warnings`、`visual_fact_usage`、`evidence_bundle`。
@@ -4727,14 +4727,14 @@ Vision Agent v0.1 冻结边界：
 
 - FHN no-mask 多征象样例：展示 VLM box prompt + MedSAM2 candidate mask + measurements + 质量门控 + 诊断证据采用/排除。
 - BraTS / 胶质瘤样例：展示 reference mask / MedSAM2 后端、overlay、体积测量和 modality completeness。
-- IPF / OSIC dry-run：展示真实指南 skill 和数据集入口，但在缺少本地 CT / fibrosis mask 时不伪造病灶分割。
+- IPF / OSIC dry-run：展示真实指南 knowledge 和数据集入口，但在缺少本地 CT / fibrosis mask 时不伪造病灶分割。
 
 验证命令：
 
 ```bash
 python -m unittest tests.test_ipf_visual_demo -v
 python -m scripts.ipf_visual_demo
-python -m unittest tests.test_end_to_end_demo tests.test_no_mask_skill_visual_pipeline_demo tests.test_no_mask_medsam2_segmentation_demo tests.test_ipf_visual_demo -v
+python -m unittest tests.test_end_to_end_demo tests.test_no_mask_knowledge_visual_pipeline_demo tests.test_no_mask_medsam2_segmentation_demo tests.test_ipf_visual_demo -v
 python -m unittest discover -v
 ```
 
@@ -4748,7 +4748,7 @@ python -m unittest discover -v
 
 - Vision Agent 主线 v0.1 可以收敛。
 - 后续不要在这一阶段继续追求所有病种的精准分割。
-- 下一阶段应选择一个真实数据闭环，围绕一个疾病完成“真实图像 + guideline skill + VLM prompt + MedSAM2 mask + measurements + diagnosis + memory audit”。
+- 下一阶段应选择一个真实数据闭环，围绕一个疾病完成“真实图像 + guideline knowledge + VLM prompt + MedSAM2 mask + measurements + diagnosis + memory audit”。
 
 ### 2026-05-25 真实数据闭环主线脚本
 
@@ -4792,12 +4792,12 @@ python -m scripts.mainline_real_dataset_demo
   - whole tumor：1.0
   - tumor core：1.0
   - enhancing tumor：1.0
-- end-to-end selected_skill：`diffuse_glioma_brats`
+- end-to-end selected_knowledge：`diffuse_glioma_brats`
 - end-to-end selected_vision_mode：`ground_truth`
 
 重要边界：
 
-- 当前真实数据闭环证明的是“真实数据集标注 -> skill-driven Vision Agent -> 结构化证据 -> Diagnosis Agent -> evidence bundle -> memory audit”。
+- 当前真实数据闭环证明的是“真实数据集标注 -> knowledge-driven Vision Agent -> 结构化证据 -> Diagnosis Agent -> evidence bundle -> memory audit”。
 - 它还不证明无 reference mask 的自动分割能力。
 - 要宣称“自动圈出病灶”，下一阶段必须运行 MedSAM2 或专病分割后端，不使用 reference mask 作为输入，并对模型 mask 与 reference mask 做 Dice/QC 对比。
 
@@ -4981,7 +4981,7 @@ python -m unittest discover -v
 
 ### 2026-05-25 真实 VLM bbox -> MedSAM2 -> 诊断 Agent 收敛样例
 
-本轮目标：把“真实 VLM 根据 skill 生成 bbox prompt”继续接到真实 MedSAM2 分割，再把 Vision Agent 输出的结构化 evidence bundle 传给诊断 Agent，形成一条可演示主线。
+本轮目标：把“真实 VLM 根据 knowledge 生成 bbox prompt”继续接到真实 MedSAM2 分割，再把 Vision Agent 输出的结构化 evidence bundle 传给诊断 Agent，形成一条可演示主线。
 
 真实输入：
 
@@ -5055,7 +5055,7 @@ python -m unittest tests.test_brats_vision_tools -v
 
 阶段判断：
 
-- 真实主线已跑通到：真实图像 -> skill/VLM bbox -> MedSAM2 mask/overlay/数值 -> Diagnosis Agent LLM 报告。
+- 真实主线已跑通到：真实图像 -> knowledge/VLM bbox -> MedSAM2 mask/overlay/数值 -> Diagnosis Agent LLM 报告。
 - 当前仍未把这条真实链路整合成前端一键按钮；前端目前还主要消费已有 API/demo artifacts。
 
 ### 2026-05-25 真实 VLM + MedSAM2 样例 HTTP demo API 收敛
@@ -5199,7 +5199,7 @@ curl -s -X POST http://127.0.0.1:8099/v1/demo/real-vlm-medsam2/qa \
 
 - `POST /v1/demo/real-vlm-medsam2/qa` 返回 `alignment_plan`。
 - `alignment_plan.analysis_status=partial_evidence`。
-- `alignment_plan.selected_skill=diffuse_glioma_brats`。
+- `alignment_plan.selected_knowledge=diffuse_glioma_brats`。
 - `memory_replay.steps` 最后一项为 `follow_up_qa`。
 - `follow_up_qa.evidence_bundle_used=true`。
 
@@ -5289,7 +5289,7 @@ PY
 
 ### 2026-05-25 真实 VLM + MedSAM2 视觉任务明细契约
 
-本轮目标：把真实样例 response 从“只有总体视觉证据”继续收敛为“能审计视觉 Agent 按 skill 执行了哪些任务、哪些分割结果可用于诊断”的结构。
+本轮目标：把真实样例 response 从“只有总体视觉证据”继续收敛为“能审计视觉 Agent 按 knowledge 执行了哪些任务、哪些分割结果可用于诊断”的结构。
 
 新增到 `GET /v1/demo/real-vlm-medsam2/response`：
 
@@ -5303,7 +5303,7 @@ PY
 
 - `segmentation_results` 是视觉 Agent 的逐任务结果，例如 `segment_whole_tumor` 已完成且 `diagnosis_usable=true`。
 - `missing_input` 任务会保留在结果里，例如 `tumor_core` 和 `enhancing_tumor` 因缺少 T1/T1ce/T2 不进入诊断可用证据。
-- `visual_tool_plan` 记录 skill 视觉协议如何路由到工具，例如 `brats_model` / MedSAM2 相关工具。
+- `visual_tool_plan` 记录 knowledge 视觉协议如何路由到工具，例如 `brats_model` / MedSAM2 相关工具。
 - `visual_task_status_counts` 不再硬编码，改为从实际分割任务明细统计。
 
 ### 2026-05-25 前端展示视觉任务明细
@@ -5320,7 +5320,7 @@ PY
 展示语义：
 
 - 每个分割任务显示 `task_name`、`target`、`status`、`diagnosis_usable`、`selected_tool`、mask/overlay 路径和测量值。
-- 每个视觉工具计划显示 skill 视觉任务、所需模态、路由到的工具、工具角色和 reason。
+- 每个视觉工具计划显示 knowledge 视觉任务、所需模态、路由到的工具、工具角色和 reason。
 - `diagnosis_usable=true` 明确显示为“诊断可用”；缺输入或不可用的任务显示为“不用于诊断”。
 
 ### 2026-05-25 真实样例视觉证据采用/排除审计
@@ -5408,66 +5408,66 @@ PY
 - 对 NIfTI / DICOM 等浏览器不可直接显示的原始影像，左侧优先显示导出的 slice preview，右侧显示 segmentation overlay。
 - mask 路径仍属于视觉 Agent 内部工作产物，不作为患者端主要输入或主要展示。
 
-### 2026-05-25 Skill Routing 职责边界收敛
+### 2026-05-25 Knowledge Routing 职责边界收敛
 
-本轮目标：明确“自动选择 skill”属于高医生/Orchestrator 的前置分诊决策，不属于 DiagnosisDoctorAgent 的诊断推理职责。
+本轮目标：明确“自动选择 knowledge”属于高医生/Orchestrator 的前置分诊决策，不属于 DiagnosisDoctorAgent 的诊断推理职责。
 
 新增/调整：
 
 - `MedScopeService` 将完整 `routing_decision` 传入 `GaoDoctorAgent`
-- `GaoDoctorAgent` 在保存 `skill_memory.routing_decision` 时优先使用上游 routing decision
+- `GaoDoctorAgent` 在保存 `knowledge_memory.routing_decision` 时优先使用上游 routing decision
 - 保留直接调用 `GaoDoctorAgent` 时的本地 fallback routing decision
 - 新增测试确认 service handoff 和 memory 中的 routing scope 都是 `orchestrator_api`
 
 当前语义：
 
 - API 顶层 response 的 `routing_decision.agent_scope=orchestrator_api`
-- memory audit 中 `skill_memory.routing_decision.agent_scope=orchestrator_api`
-- DiagnosisDoctorAgent 不负责自动选择 skill，只消费已加载 skill、视觉证据和 evidence bundle
-- GaoDoctorAgent 仍负责病例入口、视觉/诊断协同和患者解释，但不覆盖上游 skill routing 审计来源
+- memory audit 中 `knowledge_memory.routing_decision.agent_scope=orchestrator_api`
+- DiagnosisDoctorAgent 不负责自动选择 knowledge，只消费已加载 knowledge、视觉证据和 evidence bundle
+- GaoDoctorAgent 仍负责病例入口、视觉/诊断协同和患者解释，但不覆盖上游 knowledge routing 审计来源
 
-### 2026-05-25 Memory Replay / Audit Skill Routing 归属收敛
+### 2026-05-25 Memory Replay / Audit Knowledge Routing 归属收敛
 
-本轮目标：前一轮已经把 `routing_decision` 保存成 Orchestrator 来源，本轮继续让 memory replay 和 audit 也明确表达这个职责边界，避免回放链路里误以为 SkillBuilderAgent 或 DiagnosisDoctorAgent 负责自动选 skill。
+本轮目标：前一轮已经把 `routing_decision` 保存成 Orchestrator 来源，本轮继续让 memory replay 和 audit 也明确表达这个职责边界，避免回放链路里误以为 KnowledgeBuilderAgent 或 DiagnosisDoctorAgent 负责自动选 knowledge。
 
 新增/调整：
 
-- `memory_replay.steps[].event=skill_routing` 的 agent 从 `SkillBuilderAgent` 调整为 `GaoDoctorAgent`
-- skill routing replay 步骤新增 `decision_owner`
-- skill routing replay 步骤新增完整 `routing_decision`
-- skill routing replay 步骤新增 `skill_builder_action`
-- `memory_audit.memory_type_details.skill_memory` 新增 `routing_agent_scope`
-- `memory_audit.memory_type_details.skill_memory` 新增 `routing_source`
-- `memory_audit.memory_type_details.skill_memory` 新增 `skill_builder_action`
+- `memory_replay.steps[].event=knowledge_routing` 的 agent 从 `KnowledgeBuilderAgent` 调整为 `GaoDoctorAgent`
+- knowledge routing replay 步骤新增 `decision_owner`
+- knowledge routing replay 步骤新增完整 `routing_decision`
+- knowledge routing replay 步骤新增 `knowledge_builder_action`
+- `memory_audit.memory_type_details.knowledge_memory` 新增 `routing_agent_scope`
+- `memory_audit.memory_type_details.knowledge_memory` 新增 `routing_source`
+- `memory_audit.memory_type_details.knowledge_memory` 新增 `knowledge_builder_action`
 - `memory_audit.agent_io_summary.GaoDoctorAgent` 新增 `routing_decision`
 
 当前语义：
 
-- GaoDoctor/Orchestrator 负责根据患者描述、图像路径和症状自动选择 skill
-- SkillBuilderAgent 的动作只作为 `skill_builder_action` 记录，例如 `load_existing_skill`
-- DiagnosisDoctorAgent 不出现在 skill routing 步骤里
-- replay 和 audit 都能证明同一件事：选 skill 是诊断前的分诊/协调动作，不是诊断推理动作
+- GaoDoctor/Orchestrator 负责根据患者描述、图像路径和症状自动选择 knowledge
+- KnowledgeBuilderAgent 的动作只作为 `knowledge_builder_action` 记录，例如 `load_existing_knowledge`
+- DiagnosisDoctorAgent 不出现在 knowledge routing 步骤里
+- replay 和 audit 都能证明同一件事：选 knowledge 是诊断前的分诊/协调动作，不是诊断推理动作
 
-### 2026-05-25 前端 Memory Replay 展示 Skill Routing 归属
+### 2026-05-25 前端 Memory Replay 展示 Knowledge Routing 归属
 
-本轮目标：后端 replay/audit 已经有 skill routing 归属字段，前端 `Memory Replay` 也要能直接看见这些字段，避免只能从 JSON 或 memory 文件里判断。
+本轮目标：后端 replay/audit 已经有 knowledge routing 归属字段，前端 `Memory Replay` 也要能直接看见这些字段，避免只能从 JSON 或 memory 文件里判断。
 
 新增展示字段：
 
 - `decision_owner`
 - `routing_source`
-- `skill_builder_action`
+- `knowledge_builder_action`
 
 当前语义：
 
-- `decision_owner=orchestrator_api` 时，说明 skill 自动选择来自高医生/Orchestrator 分诊层
+- `decision_owner=orchestrator_api` 时，说明 knowledge 自动选择来自高医生/Orchestrator 分诊层
 - `routing_source=auto|explicit|default` 显示本次是自动选择、显式指定还是默认流程
-- `skill_builder_action=load_existing_skill|generate_guideline_skill|none` 显示 SkillBuilder 在该次路由中承担的是加载、生成还是未参与
-- 前端仍不把 DiagnosisDoctorAgent 展示为 skill routing 的执行者
+- `knowledge_builder_action=load_existing_knowledge|generate_guideline_knowledge|none` 显示 KnowledgeBuilder 在该次路由中承担的是加载、生成还是未参与
+- 前端仍不把 DiagnosisDoctorAgent 展示为 knowledge routing 的执行者
 
 ### 2026-05-25 真实 VLM+MedSAM2 Demo Replay 归属一致化
 
-本轮目标：普通 MemoryManager replay 已经把 `skill_routing` 归属到 GaoDoctor/Orchestrator，但真实 VLM+MedSAM2 demo response 使用手写 replay 构造，仍显示为 `Skill Builder`。这会让演示路径和主线语义不一致。
+本轮目标：普通 MemoryManager replay 已经把 `knowledge_routing` 归属到 GaoDoctor/Orchestrator，但真实 VLM+MedSAM2 demo response 使用手写 replay 构造，仍显示为 `Knowledge Builder`。这会让演示路径和主线语义不一致。
 
 新增/调整：
 
@@ -5476,17 +5476,17 @@ PY
 - 真实 demo replay 第一步新增 `decision_owner=orchestrator_api`
 - 真实 demo replay 第一步新增完整 `routing_decision`
 - 真实 demo replay 第一步新增 `selected_vision_mode=medsam2`
-- 真实 demo replay 第一步新增 `skill_builder_action=load_existing_skill`
+- 真实 demo replay 第一步新增 `knowledge_builder_action=load_existing_knowledge`
 
 当前语义：
 
 - 真实 demo、标准 memory replay、前端展示三者都保持一致
-- SkillBuilder 不再被展示为“自动选择 skill”的执行者
-- SkillBuilder 在真实 demo 中只作为已存在 guideline skill 的加载动作记录
+- KnowledgeBuilder 不再被展示为“自动选择 knowledge”的执行者
+- KnowledgeBuilder 在真实 demo 中只作为已存在 guideline knowledge 的加载动作记录
 
 ### 2026-05-25 前端真实样例 Fallback Replay 归属一致化
 
-本轮目标：前端优先读取 `/v1/demo/real-vlm-medsam2/response`，但如果该完整 response 不可用，会 fallback 到分项 artifact 拼装 payload。这个 fallback 路径里仍手写 `agent: "Skill Builder"`，会在降级展示时重新引入职责归属不一致。
+本轮目标：前端优先读取 `/v1/demo/real-vlm-medsam2/response`，但如果该完整 response 不可用，会 fallback 到分项 artifact 拼装 payload。这个 fallback 路径里仍手写 `agent: "Knowledge Builder"`，会在降级展示时重新引入职责归属不一致。
 
 新增/调整：
 
@@ -5494,31 +5494,31 @@ PY
 - fallback replay 第一步新增 `decision_owner=orchestrator_api`
 - fallback replay 第一步新增完整 `routing_decision`
 - fallback replay 第一步新增 `selected_vision_mode=medsam2`
-- fallback replay 第一步新增 `skill_builder_action=load_existing_skill`
-- 静态前端测试禁止再出现 `agent: "Skill Builder", event: "skill_routing"`
+- fallback replay 第一步新增 `knowledge_builder_action=load_existing_knowledge`
+- 静态前端测试禁止再出现 `agent: "Knowledge Builder", event: "knowledge_routing"`
 
 当前语义：
 
 - 正常完整 response 路径和 fallback artifact 拼装路径都保持同一职责边界
-- 即使真实样例 response 不可用，前端降级展示也不会把 SkillBuilder 显示为自动选 skill 的执行者
+- 即使真实样例 response 不可用，前端降级展示也不会把 KnowledgeBuilder 显示为自动选 knowledge 的执行者
 
 ### 2026-05-25 真实 Demo / Fallback Agent Trace 归属一致化
 
-本轮目标：`memory_replay` 已经收敛到 GaoDoctor/Orchestrator 负责 skill routing，但真实 demo 的 `memory_audit.agents_traced` 和前端 fallback 里仍有旧标签，容易让展示层误读为 `Skill/VLM prompt` 是一个独立 Agent 或 SkillBuilder 在负责自动选 skill。
+本轮目标：`memory_replay` 已经收敛到 GaoDoctor/Orchestrator 负责 knowledge routing，但真实 demo 的 `memory_audit.agents_traced` 和前端 fallback 里仍有旧标签，容易让展示层误读为 `Knowledge/VLM prompt` 是一个独立 Agent 或 KnowledgeBuilder 在负责自动选 knowledge。
 
 新增/调整：
 
-- 当时阶段先把真实 VLM+MedSAM2 response 的 `memory_audit.agents_traced` 与 replay 归属拉齐，避免继续出现旧标签 `Skill/VLM prompt`
+- 当时阶段先把真实 VLM+MedSAM2 response 的 `memory_audit.agents_traced` 与 replay 归属拉齐，避免继续出现旧标签 `Knowledge/VLM prompt`
 - 后续已进一步修正：`VLM Prompt` 不再作为独立 Agent 出现在 `agents_traced`，而是作为 `VisionAgent / vlm_prompt_generation` 的工具来源
 - 真实 VLM+MedSAM2 QA response 复用同一条五 Agent trace，并在追问场景追加 `GaoDoctorAgent QA`
 - 前端 fallback payload 的 `memory_audit.agents_traced` 同步跟随五 Agent trace
-- 静态前端测试禁止继续出现旧标签 `Skill/VLM prompt`
+- 静态前端测试禁止继续出现旧标签 `Knowledge/VLM prompt`
 
 当前语义：
 
-- GaoDoctorAgent：入口协调、自动选 skill、追问 QA
-- SkillBuilderAgent：加载或生成 guideline skill，不承担最终诊断
-- VisionAgent：根据 skill finding targets 生成 VLM box prompt，调用 MedSAM2 等视觉工具，并输出病灶图和数值证据
+- GaoDoctorAgent：入口协调、自动选 knowledge、追问 QA
+- KnowledgeBuilderAgent：加载或生成 guideline knowledge，不承担最终诊断
+- VisionAgent：根据 knowledge finding targets 生成 VLM box prompt，调用 MedSAM2 等视觉工具，并输出病灶图和数值证据
 - DiagnosisDoctorAgent：只消费 evidence bundle 和视觉证据，生成诊断报告
 - MemoryManager：持久化四类 memory，并生成 evidence bundle、audit、replay
 
@@ -5535,11 +5535,11 @@ python -m unittest discover -v
 
 ### 2026-05-25 标准 Audit / 真实 Demo 补齐 MemoryManager Trace
 
-本轮目标：上一轮已把真实 demo 和 fallback 的前五个职责节点统一，但标准 `MemoryManager.build_audit_summary()` 的 `agents_traced` 仍没有把 `MemoryManager` 自己列入 trace，且顺序仍是 `GaoDoctorAgent -> VisionAgent -> SkillBuilderAgent -> DiagnosisDoctorAgent`。这会削弱五 Agent 展示里 Memory Manager 的审计角色。
+本轮目标：上一轮已把真实 demo 和 fallback 的前五个职责节点统一，但标准 `MemoryManager.build_audit_summary()` 的 `agents_traced` 仍没有把 `MemoryManager` 自己列入 trace，且顺序仍是 `GaoDoctorAgent -> VisionAgent -> KnowledgeBuilderAgent -> DiagnosisDoctorAgent`。这会削弱五 Agent 展示里 Memory Manager 的审计角色。
 
 新增/调整：
 
-- 标准 memory audit 的 `agents_traced` 调整为：`GaoDoctorAgent -> SkillBuilderAgent -> VisionAgent -> DiagnosisDoctorAgent -> MemoryManager`
+- 标准 memory audit 的 `agents_traced` 调整为：`GaoDoctorAgent -> KnowledgeBuilderAgent -> VisionAgent -> DiagnosisDoctorAgent -> MemoryManager`
 - 真实 VLM+MedSAM2 demo response 的 `memory_audit.agents_traced` 在 Diagnosis 后追加 `MemoryManager`
 - 真实 VLM+MedSAM2 QA response 的 `memory_audit.agents_traced` 保持基础 trace 后再追加 `GaoDoctorAgent QA`
 - 前端真实样例 fallback payload 的 `memory_audit.agents_traced` 同步追加 `MemoryManager`
@@ -5547,7 +5547,7 @@ python -m unittest discover -v
 当前语义：
 
 - GaoDoctorAgent：患者入口、自动路由、协调下游 Agent
-- SkillBuilderAgent：加载/生成 skill 和 guideline evidence
+- KnowledgeBuilderAgent：加载/生成 knowledge 和 guideline evidence
 - VisionAgent：调用视觉工具或 MedSAM2，输出病灶图和结构化数值证据
 - DiagnosisDoctorAgent：基于 evidence bundle 做诊断推理
 - MemoryManager：持久化四类 memory，并生成 evidence bundle、audit、replay
@@ -5565,7 +5565,7 @@ python -m py_compile memory/memory_manager.py api/http_server.py tests/test_memo
 
 ### 2026-05-25 真实 Demo Replay 补齐 Patient Intake
 
-本轮目标：标准 `MemoryManager.build_case_replay()` 的第一步是 `patient_intake`，但真实 VLM+MedSAM2 demo 的手写 replay 直接从 `skill_routing` 开始。这样在前端演示时，真实 demo 看起来像是从中间步骤启动，和“高医生作为统一入口”的 5-Agent 语义不一致。
+本轮目标：标准 `MemoryManager.build_case_replay()` 的第一步是 `patient_intake`，但真实 VLM+MedSAM2 demo 的手写 replay 直接从 `knowledge_routing` 开始。这样在前端演示时，真实 demo 看起来像是从中间步骤启动，和“高医生作为统一入口”的 5-Agent 语义不一致。
 
 新增/调整：
 
@@ -5576,10 +5576,10 @@ python -m py_compile memory/memory_manager.py api/http_server.py tests/test_memo
 
 当前语义：
 
-- 当时阶段的真实 demo replay 顺序为：`patient_intake -> skill_routing -> visual_evidence -> diagnosis_report`
-- 后续已进一步修正为：`patient_intake -> skill_routing -> skill_loading -> vlm_prompt_generation -> visual_evidence -> diagnosis_report -> memory_audit`
+- 当时阶段的真实 demo replay 顺序为：`patient_intake -> knowledge_routing -> visual_evidence -> diagnosis_report`
+- 后续已进一步修正为：`patient_intake -> knowledge_routing -> knowledge_loading -> vlm_prompt_generation -> visual_evidence -> diagnosis_report -> memory_audit`
 - QA 场景在上述基础上追加 `GaoDoctorAgent / follow_up_qa`
-- 自动选 skill 仍是第二步，属于高医生/Orchestrator 的分诊决策，不再作为真实 demo 的起始入口
+- 自动选 knowledge 仍是第二步，属于高医生/Orchestrator 的分诊决策，不再作为真实 demo 的起始入口
 
 验证：
 
@@ -5591,23 +5591,23 @@ python -m py_compile api/http_server.py tests/test_http_entrypoint.py
 
 结果：HTTP 入口测试已通过 23 项。
 
-### 2026-05-25 Replay 补齐 SkillBuilder Loading 步骤
+### 2026-05-25 Replay 补齐 KnowledgeBuilder Loading 步骤
 
-本轮目标：`agents_traced` 已经包含 `SkillBuilderAgent`，但标准 replay 和真实 VLM+MedSAM2 demo replay 里只有 `GaoDoctorAgent / skill_routing`，没有单独展示 SkillBuilder 的“加载/生成 skill”职责。这样五 Agent 演示里 SkillBuilder 仍然缺一环。
+本轮目标：`agents_traced` 已经包含 `KnowledgeBuilderAgent`，但标准 replay 和真实 VLM+MedSAM2 demo replay 里只有 `GaoDoctorAgent / knowledge_routing`，没有单独展示 KnowledgeBuilder 的“加载/生成 knowledge”职责。这样五 Agent 演示里 KnowledgeBuilder 仍然缺一环。
 
 新增/调整：
 
-- 标准 `MemoryManager.build_case_replay()` 在 `skill_routing` 后新增 `SkillBuilderAgent / skill_loading`
-- 真实 VLM+MedSAM2 demo response 在 `skill_routing` 后新增 `SkillBuilderAgent / skill_loading`
+- 标准 `MemoryManager.build_case_replay()` 在 `knowledge_routing` 后新增 `KnowledgeBuilderAgent / knowledge_loading`
+- 真实 VLM+MedSAM2 demo response 在 `knowledge_routing` 后新增 `KnowledgeBuilderAgent / knowledge_loading`
 - 真实 VLM+MedSAM2 QA response 复用同一 replay 链路，最后再追加 `follow_up_qa`
-- 前端真实样例 fallback payload 同步新增 `SkillBuilderAgent / skill_loading`
-- 前端 `Memory Replay` 新增 `skill_loading` 标签和摘要字段：`action`、`selected_skill`、`skill_type`、`evidence_level`、`formal_skill_status`、`visual_protocol_status`
+- 前端真实样例 fallback payload 同步新增 `KnowledgeBuilderAgent / knowledge_loading`
+- 前端 `Memory Replay` 新增 `knowledge_loading` 标签和摘要字段：`action`、`selected_knowledge`、`knowledge_type`、`evidence_level`、`formal_knowledge_status`、`visual_protocol_status`
 
 当前语义：
 
-- `GaoDoctorAgent / skill_routing` 只负责选择哪个 skill、哪个 vision mode
-- `SkillBuilderAgent / skill_loading` 负责加载或生成 skill，并展示 skill 质量状态
-- 真实 demo 无 QA replay 顺序进一步收敛为：`patient_intake -> skill_routing -> skill_loading -> vlm_prompt_generation -> visual_evidence -> diagnosis_report -> memory_audit`
+- `GaoDoctorAgent / knowledge_routing` 只负责选择哪个 knowledge、哪个 vision mode
+- `KnowledgeBuilderAgent / knowledge_loading` 负责加载或生成 knowledge，并展示 knowledge 质量状态
+- 真实 demo 无 QA replay 顺序进一步收敛为：`patient_intake -> knowledge_routing -> knowledge_loading -> vlm_prompt_generation -> visual_evidence -> diagnosis_report -> memory_audit`
 
 验证：
 
@@ -5622,11 +5622,11 @@ python -m py_compile memory/memory_manager.py api/http_server.py tests/test_memo
 
 ### 2026-05-25 VLM Prompt 从 Agent Trace 降为 VisionAgent 工具步骤
 
-本轮目标：`agents_traced` 用于展示五个正式 Agent，但真实 VLM+MedSAM2 demo 里仍把 `VLM Prompt` 放进 `agents_traced`，相当于出现第六个 Agent。按照当前架构，VLM prompt 生成应属于 VisionAgent 内部的工具/子步骤，不应该和 GaoDoctor、SkillBuilder、Vision、Diagnosis、Memory 并列。
+本轮目标：`agents_traced` 用于展示五个正式 Agent，但真实 VLM+MedSAM2 demo 里仍把 `VLM Prompt` 放进 `agents_traced`，相当于出现第六个 Agent。按照当前架构，VLM prompt 生成应属于 VisionAgent 内部的工具/子步骤，不应该和 GaoDoctor、KnowledgeBuilder、Vision、Diagnosis、Memory 并列。
 
 新增/调整：
 
-- 真实 VLM+MedSAM2 demo response 的 `memory_audit.agents_traced` 改为只包含五个正式 Agent：`GaoDoctorAgent -> SkillBuilderAgent -> VisionAgent -> DiagnosisDoctorAgent -> MemoryManager`
+- 真实 VLM+MedSAM2 demo response 的 `memory_audit.agents_traced` 改为只包含五个正式 Agent：`GaoDoctorAgent -> KnowledgeBuilderAgent -> VisionAgent -> DiagnosisDoctorAgent -> MemoryManager`
 - 真实 VLM+MedSAM2 QA response 复用同一五 Agent trace，再追加 `GaoDoctorAgent QA`
 - 前端真实样例 fallback payload 的 `agents_traced` 同步改为五 Agent
 - `memory_replay` 中原 `VLM Prompt / visual_evidence` 步骤改为 `VisionAgent / vlm_prompt_generation`，并用 `tool=VLM Prompt` 标记具体工具来源
@@ -5636,7 +5636,7 @@ python -m py_compile memory/memory_manager.py api/http_server.py tests/test_memo
 
 - `agents_traced` 只回答“哪几个 Agent 参与了”
 - `memory_replay.steps` 可以展示 Agent 内部工具步骤，例如 VisionAgent 的 VLM prompt generation
-- 真实 demo 无 QA replay 顺序保持完整：`patient_intake -> skill_routing -> skill_loading -> vlm_prompt_generation -> visual_evidence -> diagnosis_report -> memory_audit`
+- 真实 demo 无 QA replay 顺序保持完整：`patient_intake -> knowledge_routing -> knowledge_loading -> vlm_prompt_generation -> visual_evidence -> diagnosis_report -> memory_audit`
 
 验证：
 
@@ -5662,8 +5662,8 @@ python -m py_compile api/http_server.py tests/test_http_entrypoint.py
 
 当前语义：
 
-- 当时阶段无 QA 的真实 demo replay 顺序为：`patient_intake -> skill_routing -> visual_evidence -> diagnosis_report -> memory_audit`
-- 后续已进一步修正为：`patient_intake -> skill_routing -> skill_loading -> vlm_prompt_generation -> visual_evidence -> diagnosis_report -> memory_audit`
+- 当时阶段无 QA 的真实 demo replay 顺序为：`patient_intake -> knowledge_routing -> visual_evidence -> diagnosis_report -> memory_audit`
+- 后续已进一步修正为：`patient_intake -> knowledge_routing -> knowledge_loading -> vlm_prompt_generation -> visual_evidence -> diagnosis_report -> memory_audit`
 - QA 场景在上述基础上追加 `GaoDoctorAgent / follow_up_qa`
 - `MemoryManager / memory_audit` 步骤显式展示 `evidence_bundle_status=available`、`audit_status=available` 和质量警告
 
@@ -5684,14 +5684,14 @@ python -m py_compile api/http_server.py tests/test_http_entrypoint.py
 新增/调整：
 
 - 旧的 Agent Trace 阶段记录改为“当时阶段性写法，后续已修正”
-- 当前语义统一为五个正式 Agent：`GaoDoctorAgent -> SkillBuilderAgent -> VisionAgent -> DiagnosisDoctorAgent -> MemoryManager`
-- 真实 demo replay 当前顺序统一写为：`patient_intake -> skill_routing -> skill_loading -> vlm_prompt_generation -> visual_evidence -> diagnosis_report -> memory_audit`
+- 当前语义统一为五个正式 Agent：`GaoDoctorAgent -> KnowledgeBuilderAgent -> VisionAgent -> DiagnosisDoctorAgent -> MemoryManager`
+- 真实 demo replay 当前顺序统一写为：`patient_intake -> knowledge_routing -> knowledge_loading -> vlm_prompt_generation -> visual_evidence -> diagnosis_report -> memory_audit`
 - 保留 `VLM Prompt` 作为 VisionAgent 工具来源，而不是独立 Agent
 
 验证：
 
 ```bash
-rg -n "VLM Prompt.*VisionAgent|VisionAgent/MedSAM2|五个职责节点：.*VLM Prompt|VLM Prompt：|VLM Prompt -> VisionAgent|skill_loading -> VLM Prompt|skill_routing -> VLM Prompt" goalnew.md
+rg -n "VLM Prompt.*VisionAgent|VisionAgent/MedSAM2|五个职责节点：.*VLM Prompt|VLM Prompt：|VLM Prompt -> VisionAgent|knowledge_loading -> VLM Prompt|knowledge_routing -> VLM Prompt" goalnew.md
 ```
 
 结果：只剩“后续已修正”和“工具来源”语义，没有残留把 `VLM Prompt` 当独立 Agent 的当前结论。
@@ -5721,7 +5721,7 @@ rg -n "VLM Prompt.*VisionAgent|VisionAgent/MedSAM2|五个职责节点：.*VLM Pr
 
 当前语义：
 
-- `VisionAgent / vlm_prompt_generation`：内部工具为 `VLM Prompt`，负责根据 skill 和图像生成候选框
+- `VisionAgent / vlm_prompt_generation`：内部工具为 `VLM Prompt`，负责根据 knowledge 和图像生成候选框
 - `VisionAgent / visual_evidence`：内部工具为 `MedSAM2`，负责根据候选框生成 mask/overlay 和数值证据
 - 二者都属于 VisionAgent，不进入 `agents_traced` 的正式 Agent 列表
 
@@ -5743,7 +5743,7 @@ python -m py_compile api/http_server.py tests/test_http_entrypoint.py
 
 - 标准 `MemoryManager.build_case_replay()` 的 `VisionAgent / visual_evidence` 步骤新增 `selected_vision_mode`
 - 同一步骤新增 `tool`
-- `selected_vision_mode` 优先来自 `skill_memory.selected_vision_mode`，缺失时回退到 `skill_memory.routing_decision.selected_vision_mode`
+- `selected_vision_mode` 优先来自 `knowledge_memory.selected_vision_mode`，缺失时回退到 `knowledge_memory.routing_decision.selected_vision_mode`
 - `tool` 优先从 `visual_evidence.visual_tool_plan` 或 `visual_evidence_bundle.visual_tool_plan` 中提取最后一个工具名
 - 当缺少 visual tool plan 时，按 vision mode 回退：
   - `medsam2` -> `MedSAM2`
@@ -5768,11 +5768,11 @@ python -m unittest discover -v
 
 ### 2026-05-25 Memory Audit Agent I/O 补齐五 Agent
 
-本轮目标：`agents_traced` 已经统一为五个正式 Agent，但标准 `MemoryManager.build_audit_summary()` 的 `agent_io_summary` 仍只列出四个 Agent，缺少 `MemoryManager` 自己，且顺序为 `GaoDoctorAgent -> VisionAgent -> SkillBuilderAgent -> DiagnosisDoctorAgent`，与五 Agent trace 不一致。
+本轮目标：`agents_traced` 已经统一为五个正式 Agent，但标准 `MemoryManager.build_audit_summary()` 的 `agent_io_summary` 仍只列出四个 Agent，缺少 `MemoryManager` 自己，且顺序为 `GaoDoctorAgent -> VisionAgent -> KnowledgeBuilderAgent -> DiagnosisDoctorAgent`，与五 Agent trace 不一致。
 
 新增/调整：
 
-- `agent_io_summary` 顺序统一为：`GaoDoctorAgent -> SkillBuilderAgent -> VisionAgent -> DiagnosisDoctorAgent -> MemoryManager`
+- `agent_io_summary` 顺序统一为：`GaoDoctorAgent -> KnowledgeBuilderAgent -> VisionAgent -> DiagnosisDoctorAgent -> MemoryManager`
 - `agent_io_summary` 的 key 列表现在必须与 `agents_traced` 一致
 - `VisionAgent` I/O 摘要新增：
   - `selected_vision_mode`
@@ -5803,7 +5803,7 @@ python -m unittest tests.test_memory_manager.MemoryManagerQueryTest.test_build_a
 
 - 真实 VLM+MedSAM2 demo response 的 `memory_audit.agent_io_summary` 补齐五 Agent：
   - `GaoDoctorAgent`
-  - `SkillBuilderAgent`
+  - `KnowledgeBuilderAgent`
   - `VisionAgent`
   - `DiagnosisDoctorAgent`
   - `MemoryManager`
@@ -5957,10 +5957,10 @@ node --check web/app.js
 
 需求记录：
 
-- 高医生没有找到合适 clinical guideline skill 时，应调用 SkillBuilder 尝试创建 skill
-- 如果创建出的 guideline skill 仍然无法覆盖当前图像/症状/证据条件，系统必须输出“无法基于现有证据判断，需要补充检查”，不能乱诊断
-- 第二种模式是 discovery mode：SkillBuilder 的 DataMind 负责提出 data-mined hypothesis，并设计/记录验证逻辑
-- DataMind 输出不是正式医疗指南，不能伪装成 guideline-based skill，也不能直接进入正式临床诊断结论
+- 高医生没有找到合适 clinical guideline knowledge 时，应调用 KnowledgeBuilder 尝试创建 knowledge
+- 如果创建出的 guideline knowledge 仍然无法覆盖当前图像/症状/证据条件，系统必须输出“无法基于现有证据判断，需要补充检查”，不能乱诊断
+- 第二种模式是 discovery mode：KnowledgeBuilder 的 DataMind 负责提出 data-mined hypothesis，并设计/记录验证逻辑
+- DataMind 输出不是正式医疗指南，不能伪装成 guideline-based knowledge，也不能直接进入正式临床诊断结论
 - discovery mode 的输出应明确：
   - hypothesis 来源
   - teacher/gold-standard signal 是否存在
@@ -5972,14 +5972,14 @@ node --check web/app.js
 
 ### 2026-05-25 前端 Memory Trace 补齐四类 Memory 职责说明
 
-本轮目标：Memory Manager 已经按 `patient_memory`、`image_memory`、`skill_memory`、`reasoning_memory` 四类保存和审计，但前端 Memory Trace 只显示状态和 detail，演示时仍需要口头解释四类 memory 分别做什么。
+本轮目标：Memory Manager 已经按 `patient_memory`、`image_memory`、`knowledge_memory`、`reasoning_memory` 四类保存和审计，但前端 Memory Trace 只显示状态和 detail，演示时仍需要口头解释四类 memory 分别做什么。
 
 新增/调整：
 
 - `Memory Trace -> 四类 Memory` 区块新增职责说明：
   - `patient_memory`：患者输入
   - `image_memory`：图像与视觉证据
-  - `skill_memory`：Skill / 指南 / 路由
+  - `knowledge_memory`：Knowledge / 指南 / 路由
   - `reasoning_memory`：诊断推理与报告
 - 新增 `renderMemoryRoleSummary()`，只负责展示说明，不改 memory 数据结构
 - 新增 `.memory-role-list` / `.memory-role-item` 样式，桌面双列、窄屏单列
@@ -6038,7 +6038,7 @@ python -m unittest discover -v
     - `vision`：`numpy`、`nibabel`
     - `dev`：当前完整本地测试/demo 需要的 `numpy`、`nibabel`
     - `medsam2-wrapper`：仅包含 wrapper 侧需要的 `numpy`、`nibabel`
-  - package discovery 覆盖 `agents`、`api`、`contracts`、`llm`、`memory`、`scripts`、`skill_editor`、`tools`
+  - package discovery 覆盖 `agents`、`api`、`contracts`、`llm`、`memory`、`scripts`、`knowledge_editor`、`tools`
 - 更新 `README.md` / `README.zh-CN.md`
   - 安装方式改为 `python -m pip install -e .`
   - 视觉流程改为 `python -m pip install -e ".[vision]"`
@@ -6076,7 +6076,7 @@ python -m pip install -e . --no-deps --dry-run
 - 新增 `tests/test_public_demo_fixture.py`
   - 验证 fixture image / manifest 存在
   - 验证路径不依赖 `data/external` 或 `output/real`
-  - 验证 manifest payload 能让 service 路由到 `femoral_head_necrosis` + `no_mask_skill`
+  - 验证 manifest payload 能让 service 路由到 `femoral_head_necrosis` + `no_mask_knowledge`
 - 更新 `README.md` / `README.zh-CN.md`
   - 增加 `python -m scripts.prepare_public_demo_fixture --output-dir output/fake/public_demo_fixture`
   - 明确该图是合成样例，不是临床图像或分割 benchmark
@@ -6094,7 +6094,7 @@ git diff --check
 
 当前边界：
 
-- 该 fixture 只验证 fresh-clone 上传、路由、skill selection 和 service payload。
+- 该 fixture 只验证 fresh-clone 上传、路由、knowledge selection 和 service payload。
 - 不宣称真实病灶定位、分割质量或临床诊断能力。
 
 ### 2026-06-04 Visual Backend Contract 标准化
@@ -6203,7 +6203,7 @@ python -m unittest discover -v
 
 ### 2026-06-04 Segmentation Benchmark Metric Gate 补齐
 
-本轮目标：上一轮 benchmark 入口只能证明 readiness 和“没有 reference mask 时不伪造指标”。本轮补齐 metric-ready case 的质量门统计，让真实标注 case 接入时可以明确 pass/fail，但仍不能升级诊断或 formal skill。
+本轮目标：上一轮 benchmark 入口只能证明 readiness 和“没有 reference mask 时不伪造指标”。本轮补齐 metric-ready case 的质量门统计，让真实标注 case 接入时可以明确 pass/fail，但仍不能升级诊断或 formal knowledge。
 
 新增/调整：
 
@@ -6215,7 +6215,7 @@ python -m unittest discover -v
 - `tests/test_segmentation_benchmark.py`
   - 增加 metric-ready fixture 测试
   - 验证低于阈值时进入 `metric_fail_case_count`
-  - 验证即使有 metrics，也不会允许 `diagnosis_allowed` 或 `formal_skill_update_allowed`
+  - 验证即使有 metrics，也不会允许 `diagnosis_allowed` 或 `formal_knowledge_update_allowed`
 - `benchmarks/segmentation/README.md` / README / 中文 README
   - 明确后续真实标注 case 应通过 manifest `metric_gates` 做质量门验证。
 
@@ -6384,10 +6384,10 @@ python -m unittest discover -v
 - 新增 `docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md`
   - 作为 Git 可跟踪的当前阶段入口
   - 说明 FHN 样板 evidence protocol MVP 的范围
-  - 串联 skill protocol、visual execution strategy、evidence bundle、bounded diagnosis、multi-image input 和 memory audit
+  - 串联 knowledge protocol、visual execution strategy、evidence bundle、bounded diagnosis、multi-image input 和 memory audit
   - 明确 `output/real` 中的本地演示产物路径
   - 明确不能夸大的边界：不是临床诊断系统、不是稳定 X 光分割、不是严格 AP + frog-lateral benchmark
-  - 给出下一轮建议 goal：真实 VLM、多体位数据、ROI/landmark 质量门控、APTR/FPTR 测量、Skill Builder proposal gate
+  - 给出下一轮建议 goal：真实 VLM、多体位数据、ROI/landmark 质量门控、APTR/FPTR 测量、Knowledge Builder proposal gate
 - 更新 `README.md`
   - 在架构文档列表中加入 `docs/FHN_EVIDENCE_PROTOCOL_MVP_20260604.md`
 - 更新 `output/real/MedScope项目关键成果整理/README.md`
@@ -6434,7 +6434,7 @@ git diff --check
   - 三个核心 Agent
   - API / service 边界
   - contracts / memory
-  - FHN skill 与 visual tools
+  - FHN knowledge 与 visual tools
   - web 前端
   - 对应 unittest
 - 不建议默认提交的文件：
@@ -6497,7 +6497,7 @@ git diff --check
   - `image_001`
   - `image_002`
   - `view_hint`
-- `GaoDoctorAgent._run_multi_view_no_mask_skill_visual_pipeline()` 会逐张调用 no-mask visual pipeline
+- `GaoDoctorAgent._run_multi_view_no_mask_knowledge_visual_pipeline()` 会逐张调用 no-mask visual pipeline
 - `GaoDoctorAgent._annotate_visual_result_image_context()` 会给每张图的 finding / segmentation result / visual tool plan 注入：
   - `image_id`
   - `view_hint`
@@ -6576,7 +6576,7 @@ python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app
 
 - 先用 `onfh_ap_lateral_cc0_pair` 跑一次“同病例 AP+lateral 多图输入”真实演示。
 - 同时继续找或请求一组真实去标识化 AP + 蛙式位病例。
-- 若暂时没有严格 AP+frog 数据，先在 skill 中补 APTR / FPTR measurement protocol 占位，标记 `requires_landmark_quality` 与 `not_usable_until_validated`。
+- 若暂时没有严格 AP+frog 数据，先在 knowledge 中补 APTR / FPTR measurement protocol 占位，标记 `requires_landmark_quality` 与 `not_usable_until_validated`。
 
 ### 2026-06-04 CC0 AP + lateral 多图 Agent 演示
 
@@ -6608,8 +6608,8 @@ python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app
 
 运行结果：
 
-- `routing_decision.selected_skill = femoral_head_necrosis`
-- `routing_decision.selected_vision_mode = no_mask_skill`
+- `routing_decision.selected_knowledge = femoral_head_necrosis`
+- `routing_decision.selected_vision_mode = no_mask_knowledge`
 - `analysis_status = partial_evidence`
 - `runner_call_count = 2`
 - `per_image_result_count = 2`
@@ -6641,8 +6641,8 @@ assert summary['per_image_result_count'] == 2
 assert summary['image_context']['view_coverage']['provided_views'] == ['ap_pelvis', 'lateral']
 assert 'frog_lateral' in summary['image_context']['view_coverage']['missing_views']
 assert bundle['image_evidence']['visual_evidence_bundle']['numeric_evidence']['finding_count'] == 4
-assert response['routing_decision']['selected_skill'] == 'femoral_head_necrosis'
-assert response['routing_decision']['selected_vision_mode'] == 'no_mask_skill'
+assert response['routing_decision']['selected_knowledge'] == 'femoral_head_necrosis'
+assert response['routing_decision']['selected_vision_mode'] == 'no_mask_knowledge'
 PY
 ```
 
@@ -6865,7 +6865,7 @@ python -m unittest tests.test_http_entrypoint -v
 
 ### 2026-06-03 前端静态资源 Cache Buster 更新
 
-本轮目标：前端这几轮连续修改了患者报告、QA 展示、多图上传和旧结果清理，但 `web/index.html` 仍引用旧的 `app.js?v=skill-review-20260528`，浏览器或服务器部署后可能继续加载旧 JS，导致用户看到的仍是旧行为。
+本轮目标：前端这几轮连续修改了患者报告、QA 展示、多图上传和旧结果清理，但 `web/index.html` 仍引用旧的 `app.js?v=knowledge-review-20260528`，浏览器或服务器部署后可能继续加载旧 JS，导致用户看到的仍是旧行为。
 
 新增/调整：
 
@@ -6874,7 +6874,7 @@ python -m unittest tests.test_http_entrypoint -v
 - `web/index.html` 的 JS 引用改为：
   - `/static/app.js?v=frontend-demo-20260603`
 - 新增测试确认：
-  - 根页面不再包含旧 `skill-review-20260528`
+  - 根页面不再包含旧 `knowledge-review-20260528`
   - CSS / JS 都带当前 cache buster
   - `/static/app.css?v=frontend-demo-20260603` 可正常服务
   - `/static/app.js?v=frontend-demo-20260603` 可正常服务
@@ -6938,7 +6938,7 @@ python -m unittest discover -v
 
 ### 2026-06-03 FHN Integrated Reasoning Summary
 
-本轮目标：`DiagnosisAgent` 已经分别输出影像证据、量化证据、鉴别考虑、临床上下文、缺失证据和下一步建议，但缺少一个把这些多维 evidence 汇总成患者可读诊断边界的结构。为跑通 `skill schema -> visual execution strategy -> structured evidence_bundle -> bounded diagnosis report` 的最后一段，需要在 FHN 样板路径中增加受约束综合推理摘要。
+本轮目标：`DiagnosisAgent` 已经分别输出影像证据、量化证据、鉴别考虑、临床上下文、缺失证据和下一步建议，但缺少一个把这些多维 evidence 汇总成患者可读诊断边界的结构。为跑通 `knowledge schema -> visual execution strategy -> structured evidence_bundle -> bounded diagnosis report` 的最后一段，需要在 FHN 样板路径中增加受约束综合推理摘要。
 
 新增/调整：
 
@@ -6956,7 +6956,7 @@ python -m unittest discover -v
 
 当前语义：
 
-- `integrated_reasoning_summary` 不重新诊断，只整合已经由 evidence bundle 和 skill protocol 约束过的字段。
+- `integrated_reasoning_summary` 不重新诊断，只整合已经由 evidence bundle 和 knowledge protocol 约束过的字段。
 - FHN X-ray 场景下，如果 `early_osteonecrosis` 缺 MRI 支持，综合摘要会保持“不能确认目标疾病”。
 - `collapse` 等 measurement-only 证据必须有可用 ROI/contour/landmark 质量，质量不足时只进入不可用测量列表。
 - `trabecular_blurring` 等探索性影像特征只能进入 exploratory targets，不能升级为强诊断证据。
@@ -7080,38 +7080,38 @@ python -m unittest discover -v
 
 结果：目标普通 QA 模板测试通过；旧 QA 模板相关测试通过；diff 空白检查通过；QA、MVP、Service、Memory 相关 `84` 个 unittest 通过；全量 `381` 个 unittest 通过。
 
-### 2026-06-03 Orchestrator 本地 Skill 边界收紧
+### 2026-06-03 Orchestrator 本地 Knowledge 边界收紧
 
-本轮目标：修正 `selected_skill` 的语义边界。Orchestrator 生成 primary hypothesis / selected skill 只代表“应该优先检查这个方向”，不能自动等价于“本地正式 guideline skill 已存在并已加载”。
+本轮目标：修正 `selected_knowledge` 的语义边界。Orchestrator 生成 primary hypothesis / selected knowledge 只代表“应该优先检查这个方向”，不能自动等价于“本地正式 guideline knowledge 已存在并已加载”。
 
 新增/调整：
 
-- `SkillRoutingDecision` 支持由 Orchestrator 显式传入 `skill_builder_action`
-- `skill_builder_action` 合法值保持受控：
+- `KnowledgeRoutingDecision` 支持由 Orchestrator 显式传入 `knowledge_builder_action`
+- `knowledge_builder_action` 合法值保持受控：
   - `none`
-  - `load_existing_skill`
-  - `search_or_generate_skill`
-- `MedScopeService` 在构建 routing decision 时先尝试加载本地 skill：
-  - 本地 skill 存在：`load_existing_skill`
-  - 本地 skill 缺失：`search_or_generate_skill`
+  - `load_existing_knowledge`
+  - `search_or_generate_knowledge`
+- `MedScopeService` 在构建 routing decision 时先尝试加载本地 knowledge：
+  - 本地 knowledge 存在：`load_existing_knowledge`
+  - 本地 knowledge 缺失：`search_or_generate_knowledge`
   - 没有 primary hypothesis：`none`
-- `skill_search_reason` 在本地 skill 缺失时明确说明：
+- `knowledge_search_reason` 在本地 knowledge 缺失时明确说明：
   - 当前只是 primary clinical hypothesis
-  - local skill 未找到
-  - 应由 Skill Builder 搜索指南并生成 proposal skill 后再进入受约束诊断
-- 新增测试覆盖：显式选择 `rare_hip_disorder` 但本地 skill 缺失时，不能标记为 `load_existing_skill`
+  - local knowledge 未找到
+  - 应由 Knowledge Builder 搜索指南并生成 proposal knowledge 后再进入受约束诊断
+- 新增测试覆盖：显式选择 `rare_hip_disorder` 但本地 knowledge 缺失时，不能标记为 `load_existing_knowledge`
 
 当前语义：
 
 - 用户不需要先指定疾病，Orchestrator 可以从症状、部位、模态生成 clinical hypotheses
-- 选中 hypothesis 只是 skill routing / evidence acquisition 的入口，不是诊断结论
-- 本地 skill 是否存在由 service 边界真实检查
-- Skill Builder 路径和已有正式 skill 路径被明确区分
+- 选中 hypothesis 只是 knowledge routing / evidence acquisition 的入口，不是诊断结论
+- 本地 knowledge 是否存在由 service 边界真实检查
+- Knowledge Builder 路径和已有正式 knowledge 路径被明确区分
 
 验证：
 
 ```bash
-python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_does_not_mark_missing_local_skill_as_loaded -v
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_does_not_mark_missing_local_knowledge_as_loaded -v
 python -m unittest tests.test_contracts tests.test_service_entrypoint -v
 ```
 
@@ -7127,49 +7127,49 @@ git diff --check
 
 结果：相关 `97` 个 unittest、全量 `366` 个 unittest 与 diff 空白检查均已通过。
 
-### 2026-06-03 缺失本地 Skill 的 Proposal-only 安全分支
+### 2026-06-03 缺失本地 Knowledge 的 Proposal-only 安全分支
 
-本轮目标：上一阶段已经把 `selected_skill` 和 `load_existing_skill` 解耦，但如果本地正式 skill 缺失，Service 仍可能继续进入 GaoDoctor / Vision / Diagnosis 链路。该行为不安全，因为 hypothesis 不能替代已审核 guideline skill。
+本轮目标：上一阶段已经把 `selected_knowledge` 和 `load_existing_knowledge` 解耦，但如果本地正式 knowledge 缺失，Service 仍可能继续进入 GaoDoctor / Vision / Diagnosis 链路。该行为不安全，因为 hypothesis 不能替代已审核 guideline knowledge。
 
 新增/调整：
 
 - `MedScopeService.handle_request()` 在 routing 后新增早停分支：
-  - `skill_builder_action == search_or_generate_skill` 时不再进入 alignment / VisionAgent / DiagnosisAgent
-  - 改为调用 `SkillBuilderTool.prepare_skill(..., persist=False)`
-  - 返回 `intent=skill_proposal`
-  - 返回 `analysis_status=skill_proposal_required`
+  - `knowledge_builder_action == search_or_generate_knowledge` 时不再进入 alignment / VisionAgent / DiagnosisAgent
+  - 改为调用 `KnowledgeBuilderTool.prepare_knowledge(..., persist=False)`
+  - 返回 `intent=knowledge_proposal`
+  - 返回 `analysis_status=knowledge_proposal_required`
 - proposal-only 响应明确包含：
-  - `skill_builder_proposal`
+  - `knowledge_builder_proposal`
   - `formal_update_allowed=false`
   - `diagnosis_allowed=false`
   - `review_required=true`
-  - `missing_evidence: formal_guideline_skill`
+  - `missing_evidence: formal_guideline_knowledge`
   - 下一步建议：搜索指南、人工审核、审核后再运行视觉与诊断
-- `prepare_skill(..., persist=False)` 复用现有 Skill Builder 能力：
+- `prepare_knowledge(..., persist=False)` 复用现有 Knowledge Builder 能力：
   - 有指南来源时可生成 guideline candidate
   - 无指南来源时退回 data-mined hypothesis
-  - 均不写入正式 `skills/*.yaml`
+  - 均不写入正式 `knowledge/*.yaml`
 - HTTP `/v1/medscope` 现在会把该 proposal-only payload 原样返回给前端。
-- 前端 `renderReport()` 新增 `renderSkillProposalReport()`：
+- 前端 `renderReport()` 新增 `renderKnowledgeProposalReport()`：
   - 在普通 `reply_to_patient` 之前渲染 proposal 报告区
-  - 显示“Skill Builder 候选草案”
+  - 显示“Knowledge Builder 候选草案”
   - 明确提示“不能直接诊断”
   - 显示 `formal_update_allowed` 和 `diagnosis_allowed`
 
 当前语义：
 
 - Orchestrator 可以生成 clinical hypothesis。
-- 本地正式 skill 存在时，才进入标准 evidence acquisition 和 diagnosis。
-- 本地正式 skill 缺失时，只能进入 proposal-only Skill Builder 路径。
-- proposal skill 不能污染正式 skill 库，不能直接驱动诊断。
+- 本地正式 knowledge 存在时，才进入标准 evidence acquisition 和 diagnosis。
+- 本地正式 knowledge 缺失时，只能进入 proposal-only Knowledge Builder 路径。
+- proposal knowledge 不能污染正式 knowledge 库，不能直接驱动诊断。
 
 验证：
 
 ```bash
-python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_returns_proposal_only_skill_when_local_skill_is_missing -v
-python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_post_medscope_returns_skill_proposal_when_selected_skill_is_missing -v
-python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_skill_proposal_report_before_plain_reply -v
-python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_contracts tests.test_mvp_flow tests.test_guideline_skill_builder -v
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_returns_proposal_only_knowledge_when_local_knowledge_is_missing -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_post_medscope_returns_knowledge_proposal_when_selected_knowledge_is_missing -v
+python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_app_js_renders_knowledge_proposal_report_before_plain_reply -v
+python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_contracts tests.test_mvp_flow tests.test_guideline_knowledge_builder -v
 python -m unittest discover -v
 node --check web/app.js
 git diff --check
@@ -7177,13 +7177,13 @@ git diff --check
 
 结果：目标 service / HTTP / frontend 测试通过，相关 `115` 个 unittest 通过，全量 `369` 个 unittest、JS 语法检查与 diff 空白检查均已通过。
 
-### 2026-06-03 本地 Skill 缺必要 Protocol 的 Proposal-only 分支
+### 2026-06-03 本地 Knowledge 缺必要 Protocol 的 Proposal-only 分支
 
-本轮目标：上一阶段已处理“本地 skill 文件不存在”的情况，但还需要处理“本地 skill 文件存在、却缺少可执行/可推理 protocol”的情况。这样的 skill 不能因为文件存在就进入 VisionAgent / DiagnosisAgent。
+本轮目标：上一阶段已处理“本地 knowledge 文件不存在”的情况，但还需要处理“本地 knowledge 文件存在、却缺少可执行/可推理 protocol”的情况。这样的 knowledge 不能因为文件存在就进入 VisionAgent / DiagnosisAgent。
 
 新增/调整：
 
-- `MedScopeService._skill_builder_action_for()` 现在不只检查文件是否存在，还检查本地 skill 是否具备必要 protocol。
+- `MedScopeService._knowledge_builder_action_for()` 现在不只检查文件是否存在，还检查本地 knowledge 是否具备必要 protocol。
 - 向后兼容的有效 protocol 字段包括：
   - `visual_protocol`
   - `imaging_evidence_protocol`
@@ -7191,24 +7191,24 @@ git diff --check
   - `differential_diagnosis_protocol`
   - `clinical_context_protocol`
   - `integrated_reasoning_protocol`
-- 本地 skill 存在但这些 protocol 全部缺失时：
-  - `skill_builder_action=search_or_generate_skill`
-  - `skill_search_reason` 明确说明 `local skill is missing required protocol`
+- 本地 knowledge 存在但这些 protocol 全部缺失时：
+  - `knowledge_builder_action=search_or_generate_knowledge`
+  - `knowledge_search_reason` 明确说明 `local knowledge is missing required protocol`
   - Service 进入 proposal-only 分支
   - 不调用 GaoDoctor / VisionAgent / DiagnosisAgent
-- 本地正式 skill 已具备 `visual_protocol` 或多维 protocol 时，仍保持 `load_existing_skill`，不影响 FHN、glioma、IPF 等现有主线。
+- 本地正式 knowledge 已具备 `visual_protocol` 或多维 protocol 时，仍保持 `load_existing_knowledge`，不影响 FHN、glioma、IPF 等现有主线。
 
 当前语义：
 
 - “本地有文件”不再等于“可以诊断”。
-- “本地有可执行/可推理 protocol 的正式 skill”才允许进入 evidence acquisition 和 diagnosis。
-- 缺 protocol 的 skill 只能进入 Skill Builder proposal / review 路径，避免后续 agent 基于空壳 skill 误推理。
+- “本地有可执行/可推理 protocol 的正式 knowledge”才允许进入 evidence acquisition 和 diagnosis。
+- 缺 protocol 的 knowledge 只能进入 Knowledge Builder proposal / review 路径，避免后续 agent 基于空壳 knowledge 误推理。
 
 验证：
 
 ```bash
-python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_returns_proposal_only_when_local_skill_lacks_protocol -v
-python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_contracts tests.test_mvp_flow tests.test_guideline_skill_builder tests.test_visual_protocol_validator -v
+python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_returns_proposal_only_when_local_knowledge_lacks_protocol -v
+python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_contracts tests.test_mvp_flow tests.test_guideline_knowledge_builder tests.test_visual_protocol_validator -v
 python -m unittest discover -v
 node --check web/app.js
 git diff --check
@@ -7218,30 +7218,30 @@ git diff --check
 
 ### 2026-06-03 本地 Visual Protocol 有效性校验
 
-本轮目标：上一阶段只检查本地 skill 是否具备 protocol 字段，但 `visual_protocol` 可能是空壳或结构无效。无效 protocol 不能驱动 VisionAgent / DiagnosisAgent。
+本轮目标：上一阶段只检查本地 knowledge 是否具备 protocol 字段，但 `visual_protocol` 可能是空壳或结构无效。无效 protocol 不能驱动 VisionAgent / DiagnosisAgent。
 
 新增/调整：
 
 - `MedScopeService` 接入 `VisualProtocolValidator`。
-- 对 `guideline_based` 且包含 `visual_protocol` 的本地 skill 做严格校验。
+- 对 `guideline_based` 且包含 `visual_protocol` 的本地 knowledge 做严格校验。
 - 无效 `visual_protocol` 会进入 proposal-only 分支：
-  - `skill_builder_action=search_or_generate_skill`
-  - `skill_search_reason` 包含 `invalid visual_protocol`
+  - `knowledge_builder_action=search_or_generate_knowledge`
+  - `knowledge_search_reason` 包含 `invalid visual_protocol`
   - 不调用 GaoDoctor / VisionAgent / DiagnosisAgent
-- 有效 `visual_protocol` 的正式 skill 仍保持 `load_existing_skill`。
-- 只包含多维 evidence protocol 的 skill 后续需要进一步校验；不能再只按“字段存在”视为可执行。
+- 有效 `visual_protocol` 的正式 knowledge 仍保持 `load_existing_knowledge`。
+- 只包含多维 evidence protocol 的 knowledge 后续需要进一步校验；不能再只按“字段存在”视为可执行。
 
 当前语义：
 
 - “本地有 protocol 字段”不等于“可执行”。
 - `visual_protocol` 必须通过 contract validator，才能进入标准证据采集和诊断链路。
-- 无效 protocol 只允许进入 Skill Builder proposal / review，不允许形成诊断。
+- 无效 protocol 只允许进入 Knowledge Builder proposal / review，不允许形成诊断。
 
 验证：
 
 ```bash
 python -m unittest tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_returns_proposal_only_when_local_visual_protocol_is_invalid -v
-python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_mvp_flow tests.test_visual_protocol_validator tests.test_guideline_skill_builder -v
+python -m unittest tests.test_service_entrypoint tests.test_http_entrypoint tests.test_mvp_flow tests.test_visual_protocol_validator tests.test_guideline_knowledge_builder -v
 python -m unittest discover -v
 node --check web/app.js
 git diff --check
@@ -7255,23 +7255,23 @@ git diff --check
 
 新增/调整：
 
-- `MedScopeService._skill_protocol_readiness()` 新增多维 protocol readiness 判定。
+- `MedScopeService._knowledge_protocol_readiness()` 新增多维 protocol readiness 判定。
 - 新增 `_validate_imaging_evidence_protocol()`：
   - `imaging_evidence_protocol` 必须是非空 dict
   - 必须声明 `disease_target`
   - 必须包含非空 `finding_targets`
   - 每个 finding target 必须声明 `target` 和 `execution_mode`
-- 本地 skill 如果只有 supporting protocols：
+- 本地 knowledge 如果只有 supporting protocols：
   - `quantitative_evidence_protocol`
   - `differential_diagnosis_protocol`
   - `clinical_context_protocol`
   - `integrated_reasoning_protocol`
   则不能进入标准诊断链路，会进入 proposal-only 分支。
 - 无效 `imaging_evidence_protocol` 会进入 proposal-only 分支：
-  - `skill_builder_action=search_or_generate_skill`
-  - `skill_search_reason` 包含 `invalid imaging_evidence_protocol`
+  - `knowledge_builder_action=search_or_generate_knowledge`
+  - `knowledge_search_reason` 包含 `invalid imaging_evidence_protocol`
   - 不调用 GaoDoctor / VisionAgent / DiagnosisAgent
-- 有效 `visual_protocol` 或有效 `imaging_evidence_protocol` 才能让本地正式 skill 进入 evidence acquisition 和 diagnosis。
+- 有效 `visual_protocol` 或有效 `imaging_evidence_protocol` 才能让本地正式 knowledge 进入 evidence acquisition 和 diagnosis。
 
 当前语义：
 
@@ -7293,11 +7293,11 @@ git diff --check
 
 ### 2026-06-03 Clinical Hypotheses Routing 输出
 
-本轮目标：用户不应该必须先说“我怀疑自己是股骨头坏死”，系统才能选择 FHN skill。Orchestrator 需要根据症状、部位和图像线索先生成候选 clinical hypotheses，再选择 primary skill 进入证据采集。
+本轮目标：用户不应该必须先说“我怀疑自己是股骨头坏死”，系统才能选择 FHN knowledge。Orchestrator 需要根据症状、部位和图像线索先生成候选 clinical hypotheses，再选择 primary knowledge 进入证据采集。
 
 新增/调整：
 
-- `SkillRoutingDecision` 新增 `clinical_hypotheses` 字段。
+- `KnowledgeRoutingDecision` 新增 `clinical_hypotheses` 字段。
 - `MedScopeService._build_routing_decision()` 现在会输出：
   - primary hypothesis
   - differential candidates
@@ -7310,15 +7310,15 @@ git diff --check
 
 当前语义：
 
-- Orchestrator 负责 hypothesis generation / skill routing，不负责最终诊断。
-- `selected_skill` 仍是本轮证据采集的 primary skill。
-- `clinical_hypotheses` 是候选假设队列，用来解释为什么查这个 skill，以及为什么保留鉴别方向。
-- DiagnosisAgent 仍然只基于 evidence_bundle + skill protocol 推理，不重新选 skill、不直接看原图。
+- Orchestrator 负责 hypothesis generation / knowledge routing，不负责最终诊断。
+- `selected_knowledge` 仍是本轮证据采集的 primary knowledge。
+- `clinical_hypotheses` 是候选假设队列，用来解释为什么查这个 knowledge，以及为什么保留鉴别方向。
+- DiagnosisAgent 仍然只基于 evidence_bundle + knowledge protocol 推理，不重新选 knowledge、不直接看原图。
 
 验证：
 
 ```bash
-python -m unittest tests.test_contracts.ContractBoundaryTest.test_skill_routing_decision_contract_preserves_hypothesis_and_initial_evidence_status tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_femoral_head_skill_from_hip_xray_clues -v
+python -m unittest tests.test_contracts.ContractBoundaryTest.test_knowledge_routing_decision_contract_preserves_hypothesis_and_initial_evidence_status tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_femoral_head_knowledge_from_hip_xray_clues -v
 python -m unittest tests.test_contracts tests.test_service_entrypoint tests.test_http_entrypoint tests.test_memory_manager tests.test_mvp_flow -v
 ```
 
@@ -7326,7 +7326,7 @@ python -m unittest tests.test_contracts tests.test_service_entrypoint tests.test
 
 ### 2026-06-03 Clinical Hypotheses 前端与 Memory Audit 展示
 
-本轮目标：上一阶段 `routing_decision` 已经输出 `clinical_hypotheses`，但前端和 memory audit 仍主要展示 `primary_hypothesis` / `differential_skill_candidates`，容易让用户误以为系统只是在选择一个疾病标签。本轮把候选假设队列显式接到展示层和审计层。
+本轮目标：上一阶段 `routing_decision` 已经输出 `clinical_hypotheses`，但前端和 memory audit 仍主要展示 `primary_hypothesis` / `differential_knowledge_candidates`，容易让用户误以为系统只是在选择一个疾病标签。本轮把候选假设队列显式接到展示层和审计层。
 
 新增/调整：
 
@@ -7337,7 +7337,7 @@ python -m unittest tests.test_contracts tests.test_service_entrypoint tests.test
   - status 的患者可读标签
   - reason
 - 前端明确提示：这不是诊断结论，只是根据症状、部位和影像类型决定先检查哪些 evidence。
-- `MemoryManager.build_audit_summary()` 的 `memory_type_details.skill_memory` 新增：
+- `MemoryManager.build_audit_summary()` 的 `memory_type_details.knowledge_memory` 新增：
   - `clinical_hypotheses`
   - `clinical_hypotheses_count`
 - Memory Audit 因此能追溯 Orchestrator 当时生成了哪些候选假设，以及哪些只是鉴别保留。
@@ -7345,8 +7345,8 @@ python -m unittest tests.test_contracts tests.test_service_entrypoint tests.test
 当前语义：
 
 - 前端展示不改变诊断逻辑。
-- Orchestrator 的候选假设队列只解释 skill routing 和 evidence acquisition。
-- DiagnosisAgent 仍只使用 evidence_bundle + skill protocol 做受约束推理。
+- Orchestrator 的候选假设队列只解释 knowledge routing 和 evidence acquisition。
+- DiagnosisAgent 仍只使用 evidence_bundle + knowledge protocol 做受约束推理。
 
 验证：
 
@@ -7369,14 +7369,14 @@ python -m unittest tests.test_http_entrypoint tests.test_memory_manager tests.te
   - `primary_hypothesis`
   - `differential_retained`
   - `hypotheses_are_diagnosis=false`
-  - role 说明：候选假设只指导 skill routing 和 evidence acquisition
+  - role 说明：候选假设只指导 knowledge routing 和 evidence acquisition
 - `target_disease_assessment` 新增轻量边界字段：
   - `routing_role=primary_hypothesis`
   - `routing_boundary=Primary hypothesis must be supported by evidence_bundle before diagnosis.`
 
 当前语义：
 
-- DiagnosisAgent 仍不重新选 skill，不直接看原图。
+- DiagnosisAgent 仍不重新选 knowledge，不直接看原图。
 - clinical hypotheses 不会被计入 `supports_target_disease`。
 - 主假设评估仍由 evidence_bundle 的可用证据、缺失证据和质量门控决定。
 - 鉴别保留仍是 bounded differential considerations，不开放式改诊断。
@@ -7406,7 +7406,7 @@ python -m unittest tests.test_fhn_evidence_protocol tests.test_diagnosis_llm_wor
 当前语义：
 
 - 用户不需要先指定“我怀疑股骨头坏死”，系统可以根据症状、部位和图像生成候选假设。
-- 前端会同时展示“为什么优先查这个 skill”和“为什么还保留鉴别方向”。
+- 前端会同时展示“为什么优先查这个 knowledge”和“为什么还保留鉴别方向”。
 - 主假设仍不是诊断结论；诊断结论必须受 evidence bundle、缺失证据、质量门控和模态限制约束。
 
 验证：
@@ -7423,7 +7423,7 @@ python -m unittest discover -v
 
 ### 2026-06-03 Prompt Clinical Context 进入 FHN 证据链路
 
-本轮目标：FHN skill 已经定义 `clinical_context_protocol`，DiagnosisAgent 也能按 `patient_info` 提取风险因素；但真实前端/HTTP 使用时，用户常把“长期激素、饮酒、外伤史”等病史直接写在患者描述里。如果 Service 不把这些自由文本线索保留到 `patient_info.clinical_context`，后续 DiagnosisAgent、MemoryManager 和 QA 的 evidence bundle 就无法稳定使用这部分临床上下文。
+本轮目标：FHN knowledge 已经定义 `clinical_context_protocol`，DiagnosisAgent 也能按 `patient_info` 提取风险因素；但真实前端/HTTP 使用时，用户常把“长期激素、饮酒、外伤史”等病史直接写在患者描述里。如果 Service 不把这些自由文本线索保留到 `patient_info.clinical_context`，后续 DiagnosisAgent、MemoryManager 和 QA 的 evidence bundle 就无法稳定使用这部分临床上下文。
 
 新增/调整：
 
@@ -7501,7 +7501,7 @@ python -m unittest discover -v
   - `evidence_type=differential_reasoning`
   - `primary_hypothesis`
   - `routing_evidence_status`
-  - `differential_skill_candidates`
+  - `differential_knowledge_candidates`
   - `considerations`
   - `diagnosis_usable=false`
   - `diagnosis_usable_level=bounded_differential_only`
@@ -7512,7 +7512,7 @@ python -m unittest discover -v
 
 - 鉴别推理证据用于解释“为什么保留替代解释 / 非特异征象 / 证据不足”。
 - 它不是开放式新诊断，也不能因为存在候选鉴别就替代 primary hypothesis。
-- DiagnosisAgent 仍不看原图、不重新选 skill；该 evidence 只来自 routing decision 和受约束报告。
+- DiagnosisAgent 仍不看原图、不重新选 knowledge；该 evidence 只来自 routing decision 和受约束报告。
 
 验证：
 
@@ -7578,7 +7578,7 @@ python -m unittest discover -v
 - 新增 `renderStructuredErrorPanel()`：
   - `medsam2_not_ready` 显示为“部署检查未通过”
   - `action_items` 显示为“需要处理”
-  - `routing_decision` 显示本次自动选择的 skill / hypothesis / evidence status
+  - `routing_decision` 显示本次自动选择的 knowledge / hypothesis / evidence status
   - `medsam2_configuration` 显示关键配置是否存在
 - `renderCaseError()` 优先渲染结构化错误卡片。
 - 运行分析失败时，顶部状态栏只显示短提示，例如“分割后端未配置，详情见报告区”，避免长串底层配置文本挤占界面。
@@ -7631,20 +7631,20 @@ python -m unittest tests.test_http_entrypoint -v
 
 ### 2026-06-03 Orchestrator Hypothesis Generation 语义修正
 
-本轮目标：修正“患者必须先说怀疑某个病才会调用对应 skill”的误解。更合理的流程是：患者只描述症状和上传图像时，Clinical Orchestrator 先生成 clinical hypothesis / differential candidates，再查本地 skill 库，已有 skill 就直接加载，缺失时才进入 Skill Builder / Guideline proposal。
+本轮目标：修正“患者必须先说怀疑某个病才会调用对应 knowledge”的误解。更合理的流程是：患者只描述症状和上传图像时，Clinical Orchestrator 先生成 clinical hypothesis / differential candidates，再查本地 knowledge 库，已有 knowledge 就直接加载，缺失时才进入 Knowledge Builder / Guideline proposal。
 
 新增/调整：
 
-- `SkillRoutingDecision` 新增 `requires_evidence_acquisition` 状态。
+- `KnowledgeRoutingDecision` 新增 `requires_evidence_acquisition` 状态。
 - 普通“左髋疼痛 + X 光”不再把路由状态写成 `insufficient`，而是：
   - `primary_hypothesis=femoral_head_necrosis`
-  - `selected_skill=femoral_head_necrosis`
+  - `selected_knowledge=femoral_head_necrosis`
   - `routing_evidence_status=requires_evidence_acquisition`
-  - `differential_skill_candidates` 包含退变、外伤后改变、发育性髋臼发育不良相关退变等受约束候选方向
+  - `differential_knowledge_candidates` 包含退变、外伤后改变、发育性髋臼发育不良相关退变等受约束候选方向
 - 只有出现退变、外伤、感染、肿瘤样骨破坏等明确替代解释线索时，路由状态才升级为 `requires_differential_review`。
-- `skill_search_reason` 区分：
-  - 用户明确怀疑 FHN：作为 primary clinical hypothesis 加载已有 skill
-  - 用户未指定疾病：基于 hip pain + hip X-ray 生成候选假设并加载已有 skill
+- `knowledge_search_reason` 区分：
+  - 用户明确怀疑 FHN：作为 primary clinical hypothesis 加载已有 knowledge
+  - 用户未指定疾病：基于 hip pain + hip X-ray 生成候选假设并加载已有 knowledge
 - AlignmentPlanner 收紧了“早期/排除意图”判断：
   - “X 光能不能判断早期股骨头坏死”仍触发证据不足安全门
   - “帮我看看 X 光有没有问题”不再因为泛化的“有没有”而阻断 VisionAgent 采集候选征象
@@ -7652,15 +7652,15 @@ python -m unittest tests.test_http_entrypoint -v
 
 当前语义：
 
-- Orchestrator 负责 hypothesis generation / skill routing，不直接诊断。
-- Skill Builder 不是每次都调用；已有正式 skill 时优先加载。
-- VisionAgent 不是自由诊断，而是在已有 skill 和 execution strategy 下采集结构化证据。
-- DiagnosisAgent 仍只消费 evidence bundle + guideline skill 做受约束推理。
+- Orchestrator 负责 hypothesis generation / knowledge routing，不直接诊断。
+- Knowledge Builder 不是每次都调用；已有正式 knowledge 时优先加载。
+- VisionAgent 不是自由诊断，而是在已有 knowledge 和 execution strategy 下采集结构化证据。
+- DiagnosisAgent 仍只消费 evidence bundle + guideline knowledge 做受约束推理。
 
 验证：
 
 ```bash
-python -m unittest tests.test_contracts.ContractBoundaryTest.test_skill_routing_decision_contract_preserves_hypothesis_and_initial_evidence_status tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_persists_orchestrator_routing_scope_to_skill_memory tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_femoral_head_skill_from_hip_xray_clues tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_routes_fhn_as_hypothesis_not_default_positive_disease tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_marks_fhn_with_degenerative_clues_for_bounded_differential_review tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_builds_insufficient_alignment_for_early_fhn_xray_question -v
+python -m unittest tests.test_contracts.ContractBoundaryTest.test_knowledge_routing_decision_contract_preserves_hypothesis_and_initial_evidence_status tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_persists_orchestrator_routing_scope_to_knowledge_memory tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_auto_selects_femoral_head_knowledge_from_hip_xray_clues tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_routes_fhn_as_hypothesis_not_default_positive_disease tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_marks_fhn_with_degenerative_clues_for_bounded_differential_review tests.test_service_entrypoint.MedScopeServiceEntrypointTest.test_service_builds_insufficient_alignment_for_early_fhn_xray_question -v
 ```
 
 结果：目标 Orchestrator / Alignment 路由测试已通过。
@@ -7676,7 +7676,7 @@ python -m unittest tests.test_contracts.ContractBoundaryTest.test_skill_routing_
   - 当 `auto_eval_status=ok` 且 `real_medsam2_call_attempted=true` 时，统一视为 MedSAM2 runner 已可用。
   - 非 reference auto-eval 成功后保留 `metrics`、`failure_types`、`mask_path`、`overlay_path`。
   - 成功但指标不稳定的 non-reference 结果进入 `non_reference_metric_review` candidate item。
-  - candidate-only 边界不变：`formal_skill_updated=false`、`formal_guideline_updated=false`、`diagnosis_report_updated=false`。
+  - candidate-only 边界不变：`formal_knowledge_updated=false`、`formal_guideline_updated=false`、`diagnosis_report_updated=false`。
 - `tests/test_vision_evidence_eval_summary.py`
   - 新增真实成功 auto-eval 的 ready 状态测试。
   - 新增 successful non-reference metric failures 进入 candidate-only queue 的测试。
@@ -7708,7 +7708,7 @@ python -m unittest tests.test_contracts.ContractBoundaryTest.test_skill_routing_
 
 当前解释：
 
-- 这一步已经证明真实主线可跑通：`VLM 根据 skill 定位 box -> MedSAM2 分割 -> 输出 mask/overlay -> 计算数值指标 -> Evidence Gateway 写入 candidate review`。
+- 这一步已经证明真实主线可跑通：`VLM 根据 knowledge 定位 box -> MedSAM2 分割 -> 输出 mask/overlay -> 计算数值指标 -> Evidence Gateway 写入 candidate review`。
 - 这一步不能宣称临床级分割已解决；tumor core 波动、enhancing tumor 为 0 和 false positive component 多，说明视觉协议/模型仍需后续复核。
 - `candidate_count=11`，新增的 3 项是 non-reference metric review：`low_quality_mask`、`over_segmentation`、`under_segmentation`。
 
@@ -7758,7 +7758,7 @@ python -m unittest tests.test_vision_evidence_eval_summary.VisionEvidenceEvalSum
 不能宣称：
 
 - 通用医学图像分割已经达到临床级。
-- self-evolving 会自动修改正式 guideline skill。
+- self-evolving 会自动修改正式 guideline knowledge。
 - non-reference candidate metric review 可以作为正式诊断依据。
 
 验证：
@@ -7778,7 +7778,7 @@ python -m unittest tests.test_evidence_gateway_snapshot -v
 - `api/http_server.py`
   - 新增只读 demo 路由：`GET /v1/demo/evidence-gateway-snapshot`
   - 路由只读取 `output/fake/evidence_gateway_snapshot.json`
-  - 不重新计算、不改正式 skill、不改诊断报告。
+  - 不重新计算、不改正式 knowledge、不改诊断报告。
 - `web/index.html`
   - 样例按钮区新增 `Evidence Gateway 快照`。
 - `web/app.js`
@@ -7811,21 +7811,21 @@ python -m unittest tests.test_http_entrypoint tests.test_evidence_gateway_snapsh
 
 结果：新增路由测试、前端静态测试、JS 语法检查和相关回归测试已通过。
 
-### 2026-05-26 新病种 guideline skill 端到端验证
+### 2026-05-26 新病种 guideline knowledge 端到端验证
 
-本轮目标：状态矩阵建议下一步做“新病种 guideline skill 端到端验证”，用于证明 Skill Builder / Guideline Component 不绑定 FHN/BraTS。当前选择 IPF HRCT 作为新病种。
+本轮目标：状态矩阵建议下一步做“新病种 guideline knowledge 端到端验证”，用于证明 Knowledge Builder / Guideline Component 不绑定 FHN/BraTS。当前选择 IPF HRCT 作为新病种。
 
 新增/调整：
 
-- 新增 `scripts/new_disease_guideline_skill_validation.py`
-  - 复用 `run_ipf_guideline_skill_demo()` 生成 `idiopathic_pulmonary_fibrosis_hrct` guideline skill。
+- 新增 `scripts/new_disease_guideline_knowledge_validation.py`
+  - 复用 `run_ipf_guideline_knowledge_demo()` 生成 `idiopathic_pulmonary_fibrosis_hrct` guideline knowledge。
   - 复用 `run_ipf_visual_demo()` 构造 HRCT manifest dry-run，并生成 IPF visual evidence bundle skeleton。
-  - 生成统一 summary，明确 guideline skill、visual protocol、evidence bundle 和 safety boundary。
-- 新增 `tests/test_new_disease_guideline_skill_validation.py`
-  - 覆盖 guideline skill 生成、visual protocol valid、evidence bundle skeleton、diagnosis blocked。
+  - 生成统一 summary，明确 guideline knowledge、visual protocol、evidence bundle 和 safety boundary。
+- 新增 `tests/test_new_disease_guideline_knowledge_validation.py`
+  - 覆盖 guideline knowledge 生成、visual protocol valid、evidence bundle skeleton、diagnosis blocked。
 - 生成：
-  - `output/fake/new_disease_guideline_skill_validation/new_disease_guideline_skill_validation.json`
-  - `output/fake/new_disease_guideline_skill_validation/new_disease_guideline_skill_validation.md`
+  - `output/fake/new_disease_guideline_knowledge_validation/new_disease_guideline_knowledge_validation.json`
+  - `output/fake/new_disease_guideline_knowledge_validation/new_disease_guideline_knowledge_validation.md`
 - 更新：
   - `output/fake/dual_layer_architecture_validation_roadmap.md`
   - `output/fake/medscope_mvp_group_meeting_status.md`
@@ -7834,7 +7834,7 @@ python -m unittest tests.test_http_entrypoint tests.test_evidence_gateway_snapsh
 当前 IPF 验证结果：
 
 - `disease_key=idiopathic_pulmonary_fibrosis_hrct`
-- `skill_type=guideline_based`
+- `knowledge_type=guideline_based`
 - `visual_protocol_status=valid`
 - `required_image_views=["HRCT chest", "thin-section chest CT"]`
 - `segmentation_targets=["honeycombing_candidate", "reticulation_candidate", "traction_bronchiectasis_candidate", "fibrosis_candidate"]`
@@ -7846,7 +7846,7 @@ python -m unittest tests.test_http_entrypoint tests.test_evidence_gateway_snapsh
 
 可以宣称：
 
-- 新病种 guideline skill 可以生成。
+- 新病种 guideline knowledge 可以生成。
 - visual protocol 可以通过 validator。
 - visual protocol 可以驱动 evidence bundle skeleton。
 - 缺失视觉证据会被显式标记为 unassessed。
@@ -7855,19 +7855,19 @@ python -m unittest tests.test_http_entrypoint tests.test_evidence_gateway_snapsh
 
 - 不能从当前 dry-run bundle 诊断 IPF。
 - 不能把 lung mask 当作 fibrosis ground truth。
-- 不能宣称所有指南都能无审核自动生成正式 skill。
+- 不能宣称所有指南都能无审核自动生成正式 knowledge。
 
 验证：
 
 ```bash
-python -m unittest tests.test_new_disease_guideline_skill_validation -v
+python -m unittest tests.test_new_disease_guideline_knowledge_validation -v
 ```
 
 结果：新增 IPF 新病种端到端验证测试已通过。
 
 ### 2026-05-26 Phase B 视觉评测失败项接入 Candidate-only Queue
 
-本轮目标：上一阶段已经生成 `vision_evidence_eval_summary`，但视觉失败项和 no-mask 人工复核项还停留在 summary / next action 中。现在把它们接入底层 Agentic Runtime / Evidence Gateway 的 candidate-only 链路，用于说明 stop hooks / reflection hooks / self-evolving queue 是“候选制”，不会自动改正式医疗 skill。
+本轮目标：上一阶段已经生成 `vision_evidence_eval_summary`，但视觉失败项和 no-mask 人工复核项还停留在 summary / next action 中。现在把它们接入底层 Agentic Runtime / Evidence Gateway 的 candidate-only 链路，用于说明 stop hooks / reflection hooks / self-evolving queue 是“候选制”，不会自动改正式医疗 knowledge。
 
 新增/调整：
 
@@ -7886,15 +7886,15 @@ python -m unittest tests.test_new_disease_guideline_skill_validation -v
   - `formal_update_allowed=false`
 - runtime safety 明确：
   - `candidate_artifacts_only=true`
-  - `formal_skill_updated=false`
+  - `formal_knowledge_updated=false`
   - `formal_guideline_updated=false`
   - `diagnosis_report_updated=false`
 
 架构语义：
 
 - 这一步不是新增医疗 Agent，而是补齐底层 gateway 能力。
-- 底层 gateway 类似 Claude Code / Codex 的工作区机制：通过 skill 文件、共享 artifact、工具约束、stop/reflection hooks 和 candidate validation gate 管理主 Agent。
-- self-evolving 只沉淀候选失败模式、候选视觉协议复核和候选人工标签；正式 guideline skill 仍必须经过人工或数据集验证后才能升级。
+- 底层 gateway 类似 Claude Code / Codex 的工作区机制：通过 knowledge 文件、共享 artifact、工具约束、stop/reflection hooks 和 candidate validation gate 管理主 Agent。
+- self-evolving 只沉淀候选失败模式、候选视觉协议复核和候选人工标签；正式 guideline knowledge 仍必须经过人工或数据集验证后才能升级。
 
 验证：
 
@@ -7904,11 +7904,11 @@ python -m unittest tests.test_vision_evidence_eval_summary -v
 python -m scripts.vision_evidence_eval_summary --write-candidate-queue
 ```
 
-结果：候选队列单测、视觉评测 summary 测试和真实 Phase B artifact 生成均已通过。下一步是补充 reviewer note 回写机制，让人工复核结果仍先进入 candidate validation gate，而不是直接写正式 skill。
+结果：候选队列单测、视觉评测 summary 测试和真实 Phase B artifact 生成均已通过。下一步是补充 reviewer note 回写机制，让人工复核结果仍先进入 candidate validation gate，而不是直接写正式 knowledge。
 
 ### 2026-05-26 Phase B Reviewer Note 回写与 Validation Gate
 
-本轮目标：上一阶段已把视觉评测失败项写入 candidate-only queue，但还缺少人工 reviewer note 回写入口和对应 validation gate。现在补齐“人工复核 -> validation gate -> 仍不写正式 skill”的闭环。
+本轮目标：上一阶段已把视觉评测失败项写入 candidate-only queue，但还缺少人工 reviewer note 回写入口和对应 validation gate。现在补齐“人工复核 -> validation gate -> 仍不写正式 knowledge”的闭环。
 
 新增/调整：
 
@@ -7935,8 +7935,8 @@ python -m scripts.vision_evidence_eval_summary --write-candidate-queue
 安全边界：
 
 - reviewer note 只允许更新 candidate validation state。
-- 即使 reviewer note 填成 `accepted`、`rejected` 或 `needs_revision`，本阶段仍不直接写正式 skill。
-- 正式 guideline skill promotion 需要单独显式审批，不由 Phase B validation gate 自动执行。
+- 即使 reviewer note 填成 `accepted`、`rejected` 或 `needs_revision`，本阶段仍不直接写正式 knowledge。
+- 正式 guideline knowledge promotion 需要单独显式审批，不由 Phase B validation gate 自动执行。
 - 诊断报告不会因为 candidate review 被重写。
 
 验证：
@@ -8022,20 +8022,20 @@ python -m scripts.vision_evidence_eval_summary --write-candidate-queue --write-r
     - `Clinical Orchestrator`
     - `Vision Evidence Agent`
     - `Diagnosis Reasoning Agent`
-    - 条件触发的 `Skill Builder / Guideline Component`
+    - 条件触发的 `Knowledge Builder / Guideline Component`
     - 基础设施性质的 `Memory / Audit Layer`
   - 下层：`Agentic Runtime / Evidence Gateway`
-    - `Skill Gateway`
+    - `Knowledge Gateway`
     - `Shared Artifact Workspace`
     - `Contract / Policy Guards`
     - `Tool Router`
     - `Stop Hooks / Reflection Hooks`
     - `Self-evolving Queue`
     - `Candidate Validation Gate`
-- 明确 `Skill Builder` 不是每轮并列参与的诊断 Agent，而是在缺少合适 skill 或需要加载/生成 guideline skill 时触发。
+- 明确 `Knowledge Builder` 不是每轮并列参与的诊断 Agent，而是在缺少合适 knowledge 或需要加载/生成 guideline knowledge 时触发。
 - 明确 `MemoryManager` 不是业务诊断 Agent，而是 memory/audit/runtime 基础设施。
-- 加入 Claude Code / Codex 类比：底层 gateway 通过 skill、共享文件、工具权限和 hooks 管理复杂任务。
-- 明确医疗安全边界：self-evolving 只能生成候选 memory、候选规则或 candidate skill patch；验证前不能自动改正式 `guideline_based` skill。
+- 加入 Claude Code / Codex 类比：底层 gateway 通过 knowledge、共享文件、工具权限和 hooks 管理复杂任务。
+- 明确医疗安全边界：self-evolving 只能生成候选 memory、候选规则或 candidate knowledge patch；验证前不能自动改正式 `guideline_based` knowledge。
 
 已更新文档：
 
@@ -8048,7 +8048,7 @@ python -m scripts.vision_evidence_eval_summary --write-candidate-queue --write-r
 
 当前汇报一句话：
 
-> MedScope 不是为了分 Agent 而分 Agent，而是把临床诊断拆成一条受指南约束的证据流水线，并在底层引入类似 Claude Code / Codex 的 agentic runtime，通过 skill 分发、文件 artifact 共享、工具约束、stop hooks、memory audit 和候选规则验证门，让每次推理都可追踪、可复核、可回滚。
+> MedScope 不是为了分 Agent 而分 Agent，而是把临床诊断拆成一条受指南约束的证据流水线，并在底层引入类似 Claude Code / Codex 的 agentic runtime，通过 knowledge 分发、文件 artifact 共享、工具约束、stop hooks、memory audit 和候选规则验证门，让每次推理都可追踪、可复核、可回滚。
 
 ### 2026-05-26 双层架构一页式汇报入口
 
@@ -8116,7 +8116,7 @@ python -m scripts.vision_evidence_eval_summary --write-candidate-queue --write-r
   - 和普通 RAG / 多 Agent 的区别
   - 为什么诊断 Agent 不直接看原图
   - Vision Agent 分割不准怎么办
-  - Skill Builder 自动找指南是否可靠
+  - Knowledge Builder 自动找指南是否可靠
   - self-evolving 是否会乱改指南
   - Memory Manager 是否多余
   - 当前 MVP 完成了什么、不能夸大什么
@@ -8184,7 +8184,7 @@ python -m scripts.vision_evidence_eval_summary --write-candidate-queue --write-r
   - 验证总目标
   - 三条验证线总览
   - 视觉证据质量验证
-  - 指南 skill 质量验证
+  - 指南 knowledge 质量验证
   - Evidence-bounded reasoning 验证
   - Runtime Gateway 与 self-evolving 安全验证
   - Phase A-E 阶段化执行计划
@@ -8272,7 +8272,7 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 - `trace_consistency.all_stage_artifacts_available=true`
 - `trace_consistency.all_stage_schemas_present=true`
 - `stage_order=[runtime_manifest, stop_hook_gate, self_evolving_queue, candidate_validation_gate]`
-- `safety_invariants.formal_skill_updated=false`
+- `safety_invariants.formal_knowledge_updated=false`
 - `safety_invariants.formal_guideline_updated=false`
 - `safety_invariants.diagnosis_report_updated=false`
 - `safety_invariants.candidate_artifacts_only=true`
@@ -8294,7 +8294,7 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 
 ### 2026-05-26 Self-evolving Queue Phase 3 最小候选队列实现
 
-本轮目标：承接 `Runtime Manifest -> Stop Hook Gate`，把 stop hook 的只读反思结果沉淀为可审计的候选队列，但仍然禁止自动修改正式医疗 guideline skill、诊断报告或指南来源。
+本轮目标：承接 `Runtime Manifest -> Stop Hook Gate`，把 stop hook 的只读反思结果沉淀为可审计的候选队列，但仍然禁止自动修改正式医疗 guideline knowledge、诊断报告或指南来源。
 
 新增/调整：
 
@@ -8304,7 +8304,7 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
   - 把 runtime warning 转成候选项：
     - `candidate_memory`
     - `candidate_rule`
-    - `candidate_skill_patch`
+    - `candidate_knowledge_patch`
   - 每个候选项保留：
     - `source_warning_code`
     - `candidate_type`
@@ -8329,10 +8329,10 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
 当前边界：
 
 - 这是候选队列，不是正式规则升级系统。
-- 不自动改 `skills/`。
+- 不自动改 `knowledge/`。
 - 不自动改 guideline source。
 - 不自动改诊断报告。
-- 候选项后续必须经过人工、指南来源或数据集验证后，才允许升级为正式 skill patch。
+- 候选项后续必须经过人工、指南来源或数据集验证后，才允许升级为正式 knowledge patch。
 
 验证：
 
@@ -8349,7 +8349,7 @@ python -m unittest discover -v
 
 ### 2026-05-26 Candidate Validation Gate Phase 4 最小只读验证门
 
-本轮目标：在 `Self-evolving Queue` 和正式医疗 skill 之间加一道验证门，防止候选规则或 candidate skill patch 被误当成已经验证的临床知识。
+本轮目标：在 `Self-evolving Queue` 和正式医疗 knowledge 之间加一道验证门，防止候选规则或 candidate knowledge patch 被误当成已经验证的临床知识。
 
 新增/调整：
 
@@ -8392,10 +8392,10 @@ runtime_manifest
 当前边界：
 
 - validation gate 是只读验证门。
-- 不自动改 `skills/`。
+- 不自动改 `knowledge/`。
 - 不自动改 guideline source。
 - 不自动改诊断报告。
-- 未经人工、指南来源或数据集验证的候选项不会升级为正式 skill。
+- 未经人工、指南来源或数据集验证的候选项不会升级为正式 knowledge。
 
 验证：
 
@@ -8448,7 +8448,7 @@ Clinical Evidence Pipeline
   上层：临床编排、视觉证据、诊断推理
 
 Runtime Gateway Trace
-  下层：skill 分发、artifact、contract、stop hook、candidate queue、validation gate
+  下层：knowledge 分发、artifact、contract、stop hook、candidate queue、validation gate
 ```
 
 验证：
@@ -8519,7 +8519,7 @@ python -m unittest discover -v
 - `output/fake/standard_demo_walkthrough.md`
   - 新增建议开场 30 秒。
   - 新增“为什么不能合成一个大 Agent”的回答。
-  - 强调一个大 Agent 会混淆视觉定位、指南 skill、证据使用和追问记忆错误来源。
+  - 强调一个大 Agent 会混淆视觉定位、指南 knowledge、证据使用和追问记忆错误来源。
 
 当前组会讲法：
 
@@ -8532,25 +8532,25 @@ python -m unittest discover -v
 
 ### 2026-05-26 Agentic Runtime / Evidence Gateway 叙事补充
 
-本轮目标：用户指出还可以参考 Claude Code / Codex 这类新式 agent 系统，把底层 gateway、skill 系统、文件共享、stop hooks、自我反思和 self-evolving 讲出来。这样架构不只是“几个医疗 Agent”，而是“临床证据流水线 + 受约束的 agentic runtime”。
+本轮目标：用户指出还可以参考 Claude Code / Codex 这类新式 agent 系统，把底层 gateway、knowledge 系统、文件共享、stop hooks、自我反思和 self-evolving 讲出来。这样架构不只是“几个医疗 Agent”，而是“临床证据流水线 + 受约束的 agentic runtime”。
 
 新增/调整：
 
 - `docs/DUAL_PATH_AGENT_FRAMEWORK.md`
   - 新增 `Agentic Runtime / Evidence Gateway` 章节。
-  - 明确底层 gateway 管理 Skill Registry、Shared File Workspace、Contract & Policy Guards、Tool Router、Stop Hooks / Reflection Hooks、Memory & Audit Store。
-  - 明确 self-evolving 不能自动改写正式医疗指南，只能生成 candidate memory / candidate rule / candidate skill patch。
+  - 明确底层 gateway 管理 Knowledge Registry、Shared File Workspace、Contract & Policy Guards、Tool Router、Stop Hooks / Reflection Hooks、Memory & Audit Store。
+  - 明确 self-evolving 不能自动改写正式医疗指南，只能生成 candidate memory / candidate rule / candidate knowledge patch。
 - `docs/architecture/boundaries.md`
   - 增加底层 gateway 边界。
-  - 明确 Gateway 不产生医学结论，只负责权限、文件、skill、工具路由、hooks 和审计。
-  - Stop hooks / reflection hooks 不能直接修改正式 `guideline_based` skill。
+  - 明确 Gateway 不产生医学结论，只负责权限、文件、knowledge、工具路由、hooks 和审计。
+  - Stop hooks / reflection hooks 不能直接修改正式 `guideline_based` knowledge。
 - `docs/goal.md`
   - 在临床证据流水线之后补充底层 `Agentic Runtime / Evidence Gateway`。
-  - 解释 Skill Gateway、Shared File Workspace、Contract Guards、Tool Router、Stop Hooks、Self-evolving Queue。
+  - 解释 Knowledge Gateway、Shared File Workspace、Contract Guards、Tool Router、Stop Hooks、Self-evolving Queue。
 - `output/fake/medscope_demo_runbook.md`
   - 现场答辩加入 gateway / hooks 讲法。
-  - 区分当前已落地：`output/` 文件 artifact、`skills/`、evidence bundle、memory audit/replay、contracts/alignment/completeness/safety gate。
-  - 区分后续扩展：显式 stop hook 框架、candidate skill patch、常用诊疗规则记忆、候选规则验证和版本化升级。
+  - 区分当前已落地：`output/` 文件 artifact、`knowledge/`、evidence bundle、memory audit/replay、contracts/alignment/completeness/safety gate。
+  - 区分后续扩展：显式 stop hook 框架、candidate knowledge patch、常用诊疗规则记忆、候选规则验证和版本化升级。
 - `output/fake/standard_demo_walkthrough.md`
   - 开场和答辩部分加入 agentic runtime 讲法。
 
@@ -8561,11 +8561,11 @@ python -m unittest discover -v
   - Clinical Orchestrator
   - Vision Evidence Agent
   - Diagnosis Reasoning Agent
-  - conditional Skill Builder / Guideline Component
+  - conditional Knowledge Builder / Guideline Component
   - Memory / Audit Layer
 
 底层：Agentic Runtime / Evidence Gateway
-  - Skill Gateway
+  - Knowledge Gateway
   - Shared File Workspace
   - Contract Guards
   - Tool Router
@@ -8575,9 +8575,9 @@ python -m unittest discover -v
 
 安全边界：
 
-- 当前可以说系统具备部分 gateway 雏形：skill 文件、共享 artifact、contract、evidence bundle、memory audit/replay。
+- 当前可以说系统具备部分 gateway 雏形：knowledge 文件、共享 artifact、contract、evidence bundle、memory audit/replay。
 - 不应说系统已经具备完整自动 self-evolving 医疗规则能力。
-- 更准确的说法是：后续会让 hooks 把经验沉淀为候选规则，经过验证后再升级为正式 skill。
+- 更准确的说法是：后续会让 hooks 把经验沉淀为候选规则，经过验证后再升级为正式 knowledge。
 
 ### 2026-05-26 Runtime Gateway 最小落地路线图
 
@@ -8594,7 +8594,7 @@ python -m unittest discover -v
   - 每阶段补最小字段和验收口径。
 - `docs/architecture/boundaries.md`
   - 新增 `接 Runtime Gateway / Stop Hooks`。
-  - 明确第一版只做审计和建议，不自动执行、不改正式 skill。
+  - 明确第一版只做审计和建议，不自动执行、不改正式 knowledge。
 - `output/fake/medscope_demo_runbook.md`
   - 新增“Gateway 下一步怎么落地？”。
   - 组会口径：当前已有 gateway 雏形，下一步先加 runtime manifest 和 stop hook。
@@ -8604,39 +8604,39 @@ python -m unittest discover -v
 最小落地顺序：
 
 1. `runtime_manifest`
-   - 记录 case_id、skill、artifact、tool call、contract check、memory 写入和证据缺口。
+   - 记录 case_id、knowledge、artifact、tool call、contract check、memory 写入和证据缺口。
 2. `stop_hook_gate`
    - 检查 excluded fact、missing 证据、四类 memory、补充影像建议。
 3. `self_evolving_queue`
-   - 生成低证据候选规则或 candidate skill patch，等待验证，不直接修改正式指南。
+   - 生成低证据候选规则或 candidate knowledge patch，等待验证，不直接修改正式指南。
 
 当前边界：
 
 - 这是架构路线图和演示口径，不是已完成实现。
-- 后续实现时应优先加 manifest 和 hook 的只读审计，不先做自动改 skill。
+- 后续实现时应优先加 manifest 和 hook 的只读审计，不先做自动改 knowledge。
 
 ### 2026-05-26 Runtime Manifest Phase 1 最小实现
 
-本轮目标：把上一轮路线图里的 Phase 1 `runtime_manifest` 真正接入系统，保持只读审计，不做 stop hook 自动改报告或 skill。
+本轮目标：把上一轮路线图里的 Phase 1 `runtime_manifest` 真正接入系统，保持只读审计，不做 stop hook 自动改报告或 knowledge。
 
 新增/调整：
 
 - `MemoryManager.build_runtime_manifest(case_id)`
   - 从 case memory 生成 `runtime_manifest.v1`。
-  - 记录 `case_id`、`selected_skill`、`skill_version`、`skill_type`。
+  - 记录 `case_id`、`selected_knowledge`、`knowledge_version`、`knowledge_type`。
   - 记录 input artifacts：患者输入是否存在、image_path、modality、body_part。
   - 记录 generated artifacts：image_outputs、lesion_gallery_summary、case_memory_path、memory_audit_path。
-  - 记录 tool_calls：SkillBuilderTool、视觉工具、MemoryManager。
-  - 记录 contracts_checked：memory_v1、patient_case_input、skill_routing_decision、alignment_plan、visual_analysis_result、evidence_bundle、safety_gate。
-  - 记录 memory_written：patient/image/skill/reasoning 四类 memory。
+  - 记录 tool_calls：KnowledgeBuilderTool、视觉工具、MemoryManager。
+  - 记录 contracts_checked：memory_v1、patient_case_input、knowledge_routing_decision、alignment_plan、visual_analysis_result、evidence_bundle、safety_gate。
+  - 记录 memory_written：patient/image/knowledge/reasoning 四类 memory。
   - 记录 blocked_or_missing_evidence：analysis_status、missing_or_unassessed、quality_warnings、required_next_images、blocked_scopes。
-  - 记录 runtime_safety：`manifest_only=true`、`stop_hook_executed=false`、`formal_skill_updated=false`、`self_evolving_action=candidate_only_no_formal_skill_update`。
+  - 记录 runtime_safety：`manifest_only=true`、`stop_hook_executed=false`、`formal_knowledge_updated=false`、`self_evolving_action=candidate_only_no_formal_knowledge_update`。
   - 写入 `output/fake/runtime_manifest/<case_id>_runtime_manifest.json`。
 - `MedScopeService._attach_memory_trace(...)`
   - response 增加 `runtime_manifest` 和 `runtime_manifest_path`。
 - 前端 `web/app.js`
   - Evidence Pipeline Trace 增加 `Runtime Manifest` 区块。
-  - 展示 Evidence Gateway 的 skill、artifact、tool calls、contract guards、memory_written 和 runtime safety。
+  - 展示 Evidence Gateway 的 knowledge、artifact、tool calls、contract guards、memory_written 和 runtime safety。
 - 文档状态同步：
   - `docs/DUAL_PATH_AGENT_FRAMEWORK.md`
   - `docs/architecture/boundaries.md`
@@ -8660,11 +8660,11 @@ node --check web/app.js
 - Phase 1 Runtime Manifest 已落地。
 - Phase 2 Stop Hook Gate 当轮尚未实现；后续已完成最小只读 gate。
 - Phase 3 Self-evolving Queue 当轮尚未实现；后续已完成最小候选队列。
-- 当前不会自动修改正式 skill、指南、诊断报告。
+- 当前不会自动修改正式 knowledge、指南、诊断报告。
 
 ### 2026-05-26 Stop Hook Gate Phase 2 最小只读实现
 
-本轮目标：把 Phase 2 `stop_hook_gate` 做成只读审计 gate。它可以发现风险、输出 next actions 和候选状态，但不能修改诊断报告、正式 skill 或指南。
+本轮目标：把 Phase 2 `stop_hook_gate` 做成只读审计 gate。它可以发现风险、输出 next actions 和候选状态，但不能修改诊断报告、正式 knowledge 或指南。
 
 新增/调整：
 
@@ -8678,11 +8678,11 @@ node --check web/app.js
     - `memory_incomplete`
     - `excluded_visual_facts_present`
   - 记录 `next_actions`，例如补充关键影像、不要把 missing/unassessed 当阴性、QA 不得复用 excluded facts。
-  - 记录 `candidate_memory` 和 `candidate_skill_patch`，当前均为 `not_generated / read_only_gate`。
+  - 记录 `candidate_memory` 和 `candidate_knowledge_patch`，当前均为 `not_generated / read_only_gate`。
   - 记录 `runtime_safety`：
     - `stop_hook_executed=true`
     - `read_only=true`
-    - `formal_skill_updated=false`
+    - `formal_knowledge_updated=false`
     - `diagnosis_report_updated=false`
     - `self_evolving_queue_updated=false`
   - 写入 `output/fake/stop_hook_gate/<case_id>_stop_hook_gate.json`。
@@ -8690,7 +8690,7 @@ node --check web/app.js
   - response 增加 `stop_hook_gate` 和 `stop_hook_gate_path`。
 - 前端 `web/app.js`
   - Evidence Pipeline Trace 增加 `Stop Hook Gate` 区块。
-  - 展示 runtime warnings、next actions、candidate skill patch 和 runtime safety。
+  - 展示 runtime warnings、next actions、candidate knowledge patch 和 runtime safety。
 - 文档状态同步：
   - `docs/DUAL_PATH_AGENT_FRAMEWORK.md`
   - `docs/architecture/boundaries.md`
@@ -8712,7 +8712,7 @@ python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_fro
 - Phase 1 Runtime Manifest 已落地。
 - Phase 2 Stop Hook Gate 已落地为只读 gate。
 - Phase 3 Self-evolving Queue 当轮尚未实现；后续已完成最小候选队列。
-- 当前不会自动修改正式 skill、指南、诊断报告。
+- 当前不会自动修改正式 knowledge、指南、诊断报告。
 
 ### 2026-05-26 组会反馈后的架构口径二次收敛
 
@@ -8726,7 +8726,7 @@ python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_fro
   - Vision Evidence Agent
   - Diagnosis Reasoning Agent
 - 一个条件触发组件：
-  - Skill Builder / Guideline Component
+  - Knowledge Builder / Guideline Component
 - 一个基础设施层：
   - Memory / Audit Layer
 
@@ -8734,7 +8734,7 @@ python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_fro
 
 - `docs/goal.md`
   - 文件开头改成当前推荐架构，先讲临床证据流水线。
-  - 明确 Skill Builder 不是永远参与诊断的并列 Agent，而是在缺少合适 skill 或需要指南构建时触发。
+  - 明确 Knowledge Builder 不是永远参与诊断的并列 Agent，而是在缺少合适 knowledge 或需要指南构建时触发。
   - 明确 Memory / Audit 是基础设施层，不参与医学判断。
 - `docs/architecture/boundaries.md`
   - 增加当前对外推荐表述。
@@ -8765,19 +8765,19 @@ python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_fro
 - 前端原 `五 Agent 主线` 改为 `临床证据流水线`
 - 前端流水线说明新增：
   - 3 个核心 Agent
-  - 1 个条件 Skill 组件
+  - 1 个条件 Knowledge 组件
   - 1 个 Memory/Audit 基础设施层
   - 实现节点 trace 保留内部类名用于审计
 - 前端阶段命名调整：
   - `GaoDoctorAgent` 展示为 `临床编排 / 入口分诊`
-  - `SkillBuilderAgent` 展示为 `条件 Skill 构建 / 加载`
+  - `KnowledgeBuilderAgent` 展示为 `条件 Knowledge 构建 / 加载`
   - `VisionAgent` 展示为 `视觉证据提取`
   - `DiagnosisDoctorAgent` 展示为 `证据约束诊断推理`
   - `MemoryManager` 展示为 `Memory / Audit Layer`
 - `docs/DUAL_PATH_AGENT_FRAMEWORK.md`
   - 将“五个 Agent 的通用职责”改为“临床证据流水线职责边界”
   - 明确 `MemoryManager` 是基础设施层，不是诊断 Agent
-  - 明确 `SkillBuilderAgent` 是条件触发组件，有现成 skill 时只加载/校验
+  - 明确 `KnowledgeBuilderAgent` 是条件触发组件，有现成 knowledge 时只加载/校验
 - `output/fake/medscope_demo_runbook.md`
   - 从“五个正式 Agent + 虚拟主线”改为“临床证据流水线”
   - 移除旧 PPT 作为主叙事入口
@@ -8791,7 +8791,7 @@ python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_static_fro
 
 - 内部仍保留 `agents_traced` 和 `agent_io_summary` 的实现类名，便于代码审计和 replay
 - 对外不再把 `MemoryManager` 讲成和诊断医生并列的 Agent
-- 对外不再把 `SkillBuilderAgent` 讲成每次都主动参与推理的 Agent
+- 对外不再把 `KnowledgeBuilderAgent` 讲成每次都主动参与推理的 Agent
 - 核心创新点改为：以 `evidence_bundle` 为中心的 guideline-aware clinical evidence pipeline
 
 验证：
@@ -9011,7 +9011,7 @@ python -m api.http_server --host 127.0.0.1 --port 8026
   - `memory_scope_complete: true`
   - `missing_required_events: []`
   - `step_count: 7`
-- 刷新前，标准 demo QA 的旧 artifact 会诚实暴露 `missing_required_events: ["skill_loading"]`，但 `memory_scope_complete: true`，说明 replay scope 已补齐，事件完整性仍按真实 artifact 审计。
+- 刷新前，标准 demo QA 的旧 artifact 会诚实暴露 `missing_required_events: ["knowledge_loading"]`，但 `memory_scope_complete: true`，说明 replay scope 已补齐，事件完整性仍按真实 artifact 审计。
 
 补充收敛：已使用真实 DMX `gemini-3.5-flash` 路由和 MedSAM2 默认 runner 刷新固定标准演示目录：
 
@@ -9025,7 +9025,7 @@ python -m scripts.end_to_end_demo --suite --include-fhn-no-mask --output-dir out
   - `required_events_present: true`
   - `memory_scope_complete: true`
   - `missing_required_events: []`
-  - replay 顺序：`patient_intake -> skill_routing -> skill_loading -> visual_evidence -> diagnosis_report -> memory_audit`
+  - replay 顺序：`patient_intake -> knowledge_routing -> knowledge_loading -> visual_evidence -> diagnosis_report -> memory_audit`
 - `/v1/demo/standard/cases/fhn_no_mask_multifinding/qa`
   - `required_events_present: true`
   - `memory_scope_complete: true`
@@ -9050,7 +9050,7 @@ PPT 结构：
 2. 为什么要有虚拟主线
 3. 五个 Agent 职责地图
 4. 虚拟主线怎么跑
-5. Skill 如何自动选择
+5. Knowledge 如何自动选择
 6. VisionAgent 如何圈病灶
 7. 诊断医生为什么不看原图
 8. 四类 Memory 与审计
@@ -9061,7 +9061,7 @@ PPT 结构：
 
 - `python-pptx` 可成功读取 PPTX
 - 页数：10
-- 文件中包含关键术语：`GaoDoctorAgent`、`SkillBuilderAgent`、`VisionAgent`、`DiagnosisDoctorAgent`、`MemoryManager`、`Replay Consistency`、`Evidence Bundle`
+- 文件中包含关键术语：`GaoDoctorAgent`、`KnowledgeBuilderAgent`、`VisionAgent`、`DiagnosisDoctorAgent`、`MemoryManager`、`Replay Consistency`、`Evidence Bundle`
 - PPT 引用了当前 FHN no-mask 标准 demo 的原图和分割 overlay
 - ZIP 交付包包含 PPTX、讲稿、README、Manifest 共 4 个文件
 - 当前环境缺少 `soffice/libreoffice`，未自动导出 PDF 或逐页缩略图
@@ -9090,8 +9090,8 @@ PPT 结构：
 
 - Runbook 引用的 PPTX、讲稿、PPT zip、FHN response 均存在
 - Runbook 中记录的 `case_id=case_20260525_183524_417247`
-- 当前 FHN response 的 `selected_skill=femoral_head_necrosis`
-- 当前 FHN response 的 `selected_vision_mode=no_mask_skill`
+- 当前 FHN response 的 `selected_knowledge=femoral_head_necrosis`
+- 当前 FHN response 的 `selected_vision_mode=no_mask_knowledge`
 - 当前 FHN response 的 `replay_consistency.required_events_present=true`
 - 当前 FHN response 的 `replay_consistency.memory_scope_complete=true`
 - 当前 FHN response 的 `trace_consistency.required_agents_present=true`
@@ -9138,7 +9138,7 @@ DMX_API_KEY=... python -m scripts.end_to_end_demo --suite --include-fhn-no-mask 
 验证：
 
 ```bash
-python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_mvp_flow.MedScopeMvpFlowTest.test_gaodoctor_runs_fhn_no_mask_skill_pipeline_when_requested -v
+python -m unittest tests.test_no_mask_medsam2_segmentation_demo tests.test_no_mask_candidate_diagnosis_demo tests.test_mvp_flow.MedScopeMvpFlowTest.test_gaodoctor_runs_fhn_no_mask_knowledge_pipeline_when_requested -v
 python -m unittest tests.test_http_entrypoint -v
 python -m unittest tests.test_service_entrypoint tests.test_memory_manager -v
 node --check web/app.js
@@ -9203,7 +9203,7 @@ python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_demo_case_
 
 ### 2026-05-25 Memory Replay 补齐 Memory Scope
 
-本轮目标：`memory_replay.steps` 已经能展示五 Agent 和追问 QA 的顺序，但每一步缺少机器可读的 memory 归属。前端和审计工具只能从 agent/event 文案推断这一步对应四类 memory 中的哪一类，不利于解释 `patient_memory / image_memory / skill_memory / reasoning_memory` 的协作边界。
+本轮目标：`memory_replay.steps` 已经能展示五 Agent 和追问 QA 的顺序，但每一步缺少机器可读的 memory 归属。前端和审计工具只能从 agent/event 文案推断这一步对应四类 memory 中的哪一类，不利于解释 `patient_memory / image_memory / knowledge_memory / reasoning_memory` 的协作边界。
 
 新增/调整：
 
@@ -9216,10 +9216,10 @@ python -m unittest tests.test_http_entrypoint.HttpEntrypointTest.test_demo_case_
 当前语义：
 
 - `patient_intake -> patient_memory`
-- `skill_routing / skill_loading -> skill_memory`
+- `knowledge_routing / knowledge_loading -> knowledge_memory`
 - `vlm_prompt_generation / visual_evidence -> image_memory`
 - `diagnosis_report -> reasoning_memory`
-- `memory_audit -> patient_memory,image_memory,skill_memory,reasoning_memory`
+- `memory_audit -> patient_memory,image_memory,knowledge_memory,reasoning_memory`
 - `follow_up_qa -> patient_memory.qa_history`
 
 验证：
@@ -9307,18 +9307,18 @@ python -m unittest discover -v
 
 ### 2026-06-05 Current MVP Demo Runbook 补齐
 
-本轮目标：真实 FHN 数据和 mask 已明确后置后，需要补一个不依赖真实 FHN 标注数据的当前 MVP 演示 runbook，让组会或 fresh clone 使用者知道如何展示“上传/输入 -> 自动 skill routing -> 视觉证据 -> 诊断报告 -> evidence bundle -> memory audit -> follow-up QA”的主线。
+本轮目标：真实 FHN 数据和 mask 已明确后置后，需要补一个不依赖真实 FHN 标注数据的当前 MVP 演示 runbook，让组会或 fresh clone 使用者知道如何展示“上传/输入 -> 自动 knowledge routing -> 视觉证据 -> 诊断报告 -> evidence bundle -> memory audit -> follow-up QA”的主线。
 
 新增/调整：
 
 - 新增 `docs/CURRENT_MVP_DEMO_RUNBOOK_20260605.md`
-  - 固定当前可演示链路：patient input + image upload -> automatic skill routing -> visual evidence -> diagnosis report -> evidence bundle -> memory audit -> follow-up QA。
+  - 固定当前可演示链路：patient input + image upload -> automatic knowledge routing -> visual evidence -> diagnosis report -> evidence bundle -> memory audit -> follow-up QA。
   - 说明 `python -m scripts.prepare_public_demo_fixture` 生成公开安全合成输入，不是临床图像或 benchmark。
   - 说明 `python -m scripts.end_to_end_demo --suite` 用于展示当前 MVP 主线，而不是宣称视觉模型质量。
   - 说明 optional FHN no-mask demo 仍是 candidate evidence，不是 validated segmentation。
   - 明确 real FHN data and masks are deferred。
 - README / 中文 README 增加 current MVP demo runbook 入口。
-- 新增 `tests/test_current_mvp_demo_runbook.py`，确保 runbook 覆盖 upload、automatic skill routing、visual evidence、diagnosis report、evidence bundle、memory audit、follow-up QA 和 deferred data boundary。
+- 新增 `tests/test_current_mvp_demo_runbook.py`，确保 runbook 覆盖 upload、automatic knowledge routing、visual evidence、diagnosis report、evidence bundle、memory audit、follow-up QA 和 deferred data boundary。
 
 验证：
 
@@ -9707,29 +9707,29 @@ python -m unittest discover -v
 
 ### 2026-06-05 Benchmark 结果隔离 README 守卫补齐
 
-本轮目标：继续 current closure audit。scope 已要求 benchmark 结果不能进入临床诊断、正式 skill promotion 或 self-evolving guideline updates；代码层面已有 segmentation benchmark 行为测试守住 `diagnosis_allowed=false` 和 `formal_skill_update_allowed=false`，但 README 的 Current Review 面向使用者段落还没有明确写出这个隔离边界。
+本轮目标：继续 current closure audit。scope 已要求 benchmark 结果不能进入临床诊断、正式 knowledge promotion 或 self-evolving guideline updates；代码层面已有 segmentation benchmark 行为测试守住 `diagnosis_allowed=false` 和 `formal_knowledge_update_allowed=false`，但 README 的 Current Review 面向使用者段落还没有明确写出这个隔离边界。
 
 新增/调整：
 
 - `README.md`
-  - Important limitations 增加：`Benchmark results do not update clinical diagnosis or formal skills; they only report validation metrics and quality-gate status.`。
+  - Important limitations 增加：`Benchmark results do not update clinical diagnosis or formal knowledge; they only report validation metrics and quality-gate status.`。
 - `README.zh-CN.md`
-  - 项目 Review 风险段增加：`benchmark 结果不会更新临床诊断或正式 skill，只报告验证指标和质量门状态。`。
+  - 项目 Review 风险段增加：`benchmark 结果不会更新临床诊断或正式 knowledge，只报告验证指标和质量门状态。`。
 - `tests/test_current_mvp_demo_runbook.py`
   - 新增 README 英/中文守卫，确认 benchmark 结果隔离边界留在 Current Review 段。
 
 RED：
 
 ```bash
-python -m unittest tests.test_current_mvp_demo_runbook.CurrentMvpDemoRunbookTest.test_readmes_document_benchmark_results_do_not_update_diagnosis_or_skills -v
+python -m unittest tests.test_current_mvp_demo_runbook.CurrentMvpDemoRunbookTest.test_readmes_document_benchmark_results_do_not_update_diagnosis_or_knowledges -v
 ```
 
-结果：测试按预期失败，英文 README Current Review 段缺少 `Benchmark results do not update clinical diagnosis or formal skills`。
+结果：测试按预期失败，英文 README Current Review 段缺少 `Benchmark results do not update clinical diagnosis or formal knowledge`。
 
 GREEN / 补充验证：
 
 ```bash
-python -m unittest tests.test_current_mvp_demo_runbook.CurrentMvpDemoRunbookTest.test_readmes_document_benchmark_results_do_not_update_diagnosis_or_skills tests.test_current_mvp_demo_runbook tests.test_goal_closure_scope tests.test_segmentation_benchmark.SegmentationBenchmarkTest.test_metric_ready_case_applies_manifest_quality_gate_without_diagnosis_upgrade -v
+python -m unittest tests.test_current_mvp_demo_runbook.CurrentMvpDemoRunbookTest.test_readmes_document_benchmark_results_do_not_update_diagnosis_or_knowledges tests.test_current_mvp_demo_runbook tests.test_goal_closure_scope tests.test_segmentation_benchmark.SegmentationBenchmarkTest.test_metric_ready_case_applies_manifest_quality_gate_without_diagnosis_upgrade -v
 git diff --check
 python -m unittest discover -v
 ```
@@ -10085,7 +10085,7 @@ curl -s http://127.0.0.1:8022/static/app.js | rg "evidence_bundle_used_count|evi
 新增/调整：
 
 - 真实 VLM+MedSAM2 response / QA 构建 `memory_audit` 时传入 enriched `image_outputs`
-- `patient_memory`、`image_memory`、`skill_memory`、`reasoning_memory` 四类 detail 保持固定顺序输出
+- `patient_memory`、`image_memory`、`knowledge_memory`、`reasoning_memory` 四类 detail 保持固定顺序输出
 - `image_memory` 新增：
   - `original_preview_path`
   - `localization_overlay_path`
@@ -10099,7 +10099,7 @@ curl -s http://127.0.0.1:8022/static/app.js | rg "evidence_bundle_used_count|evi
 
 - `patient_memory` 记录病例输入与 intent
 - `image_memory` 记录原图/定位/分割/叠加图和视觉质量
-- `skill_memory` 记录选择的 skill、vision mode、指南型 skill 状态和证据不足要求
+- `knowledge_memory` 记录选择的 knowledge、vision mode、指南型 knowledge 状态和证据不足要求
 - `reasoning_memory` 记录诊断报告使用的模型、fallback 与诊断倾向
 
 验证：
@@ -10121,7 +10121,7 @@ node --check web/app.js
 - `Memory Trace` 新增 `五 Agent 主线` 区块
 - 新增 `renderAgentFlowSummary(audit)`，按固定五阶段展示：
   - `GaoDoctorAgent`：入口分诊
-  - `SkillBuilderAgent`：指南 / Skill
+  - `KnowledgeBuilderAgent`：指南 / Knowledge
   - `VisionAgent`：视觉分割
   - `DiagnosisDoctorAgent`：诊断推理
   - `MemoryManager`：记忆审计
@@ -10136,7 +10136,7 @@ node --check web/app.js
 
 - `Agent Trace` 仍保留原始 agent 列表
 - `Agent I/O` 仍保留结构化输入输出明细
-- `五 Agent 主线` 用于演示时快速说明“患者输入 -> skill 路由 -> 视觉分割 -> 诊断推理 -> memory audit”的协作链
+- `五 Agent 主线` 用于演示时快速说明“患者输入 -> knowledge 路由 -> 视觉分割 -> 诊断推理 -> memory audit”的协作链
 
 验证：
 
@@ -10169,7 +10169,7 @@ python -m unittest tests.test_http_entrypoint -v
 - 初始诊断仍是五 Agent 主线
 - 发生追问后，审计链显式变成：
   - `GaoDoctorAgent`
-  - `SkillBuilderAgent`
+  - `KnowledgeBuilderAgent`
   - `VisionAgent`
   - `DiagnosisDoctorAgent`
   - `MemoryManager`

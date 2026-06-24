@@ -42,11 +42,11 @@ def build_evidence_gateway_snapshot(
                 "Clinical Orchestrator",
                 "Vision Evidence Component",
                 "Diagnosis Reasoning Component",
-                "Conditional Guideline Skill Component",
+                "Conditional Guideline Knowledge Component",
                 "Memory / Audit Layer",
             ],
             "runtime_gateway": [
-                "Skill Gateway",
+                "Knowledge Gateway",
                 "Shared File Workspace",
                 "Tool Router",
                 "Contract Guards",
@@ -142,7 +142,7 @@ def _candidate_gate_summary(
         "promotion_status": promotion_decision.get("status"),
         "formal_update_allowed": bool(promotion_decision.get("formal_update_allowed")),
         "candidate_only": bool(runtime_safety.get("candidate_only")),
-        "formal_skill_updated": bool(runtime_safety.get("formal_skill_updated")),
+        "formal_knowledge_updated": bool(runtime_safety.get("formal_knowledge_updated")),
         "formal_guideline_updated": bool(runtime_safety.get("formal_guideline_updated")),
         "diagnosis_report_updated": bool(runtime_safety.get("diagnosis_report_updated")),
     }
@@ -164,7 +164,7 @@ def _claims(
         can_claim.append("失败模式和人工复核项已被结构化记录到 candidate queue")
     cannot_claim = [
         "不能宣称通用医学图像分割已经达到临床级",
-        "不能宣称 self-evolving 会自动修改正式 guideline skill",
+        "不能宣称 self-evolving 会自动修改正式 guideline knowledge",
         "不能把 non-reference candidate metric review 当作正式诊断依据",
     ]
     return {"can_claim": can_claim, "cannot_claim": cannot_claim}
@@ -203,7 +203,7 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         "用途：用一页说明当前系统不是五个并列 Agent，而是临床证据流水线 + Agentic Runtime / Evidence Gateway。",
         "",
         f"- `overall_status`: `{payload.get('overall_status')}`",
-        "- 架构口径：不是五个并列 Agent；上层解释医疗证据职责，下层解释 skill、文件、工具、hooks 和候选验证。",
+        "- 架构口径：不是五个并列 Agent；上层解释医疗证据职责，下层解释 knowledge、文件、工具、hooks 和候选验证。",
         "",
         "## Phase B Visual Evidence",
         "",

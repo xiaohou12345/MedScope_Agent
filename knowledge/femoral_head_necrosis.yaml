@@ -1,9 +1,9 @@
 {
   "disease_name": "股骨头坏死",
-  "skill_id": "femoral_head_necrosis_v0.1",
+  "knowledge_id": "femoral_head_necrosis_v0.1",
   "version": "0.1",
   "source_type": "medical_guideline",
-  "skill_type": "guideline_based",
+  "knowledge_type": "guideline_based",
   "evidence_level": "high",
   "source": "ARCO 分期相关公开医学知识整理",
   "source_documents": [
@@ -28,7 +28,7 @@
     "source_catalog_path": "data/guidelines/guideline_sources.json"
   },
   "guideline_extraction": {
-    "tool": "static_skill_catalog_sync",
+    "tool": "static_knowledge_catalog_sync",
     "citations": [
       {
         "source_id": "arco_onfh_review_2021",

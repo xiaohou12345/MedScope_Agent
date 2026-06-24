@@ -19,7 +19,7 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
             "python -m scripts.prepare_public_demo_fixture",
             "python -m scripts.check_runtime_environment",
             "upload",
-            "automatic skill routing",
+            "automatic knowledge routing",
             "visual evidence",
             "diagnosis report",
             "evidence bundle",
@@ -95,18 +95,18 @@ class CurrentMvpDemoRunbookTest(unittest.TestCase):
         )[0]
         self.assertIn("不证明病灶检测质量", zh_public_safe_section)
 
-    def test_readmes_document_benchmark_results_do_not_update_diagnosis_or_skills(self):
+    def test_readmes_document_benchmark_results_do_not_update_diagnosis_or_knowledges(self):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         current_review = readme.split("## Current Review", 1)[1].split("## Safety and Privacy", 1)[0]
         self.assertIn(
-            "Benchmark results do not update clinical diagnosis or formal skills",
+            "Benchmark results do not update clinical diagnosis or formal knowledge",
             current_review,
         )
 
         zh_readme = (REPO_ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
         zh_current_review = zh_readme.split("## 项目 Review", 1)[1].split("## 医疗安全和隐私", 1)[0]
         self.assertIn(
-            "benchmark 结果不会更新临床诊断或正式 skill",
+            "benchmark 结果不会更新临床诊断或正式 knowledge",
             zh_current_review,
         )
 

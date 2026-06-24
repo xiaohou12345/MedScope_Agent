@@ -168,28 +168,29 @@ class PatientIntent:
 
 
 @dataclass(frozen=True)
-class SkillRoutingDecision:
-    """Orchestrator/API decision about which existing skill and vision mode to use."""
+class KnowledgeRoutingDecision:
+    """Orchestrator/API decision about which existing knowledge and vision mode to use."""
 
-    selected_skill: str | None
+    selected_knowledge: str | None
     selected_vision_mode: str | None
     source: str
     reason: str
     confidence: float
     matched_clues: list[str] = field(default_factory=list)
     agent_scope: str = "orchestrator_api"
-    skill_selection_mode: str = "primary_only"
-    manual_secondary_skill_candidates: list[str] = field(default_factory=list)
+    knowledge_selection_mode: str = "primary_only"
+    evidence_protocol_mode: str = "finding_list_baseline"
+    manual_secondary_knowledge_candidates: list[str] = field(default_factory=list)
     primary_hypothesis: str | None = None
-    differential_skill_candidates: list[str] = field(default_factory=list)
+    differential_knowledge_candidates: list[str] = field(default_factory=list)
     differential_candidate_ranking: list[dict[str, Any]] = field(default_factory=list)
-    display_differential_skill_candidates: list[str] = field(default_factory=list)
-    secondary_skill_run_plan: dict[str, Any] = field(default_factory=dict)
+    display_differential_knowledge_candidates: list[str] = field(default_factory=list)
+    secondary_knowledge_run_plan: dict[str, Any] = field(default_factory=dict)
     clinical_hypotheses: list[dict[str, Any]] = field(default_factory=list)
-    skill_search_reason: str | None = None
+    knowledge_search_reason: str | None = None
     initial_evidence_status: str = "insufficient"
     routing_evidence_status: str | None = None
-    skill_builder_action: str | None = None
+    knowledge_builder_action: str | None = None
 
     ALLOWED_SOURCES: ClassVar[set[str]] = {"auto", "explicit", "default"}
     ALLOWED_EVIDENCE_STATUSES: ClassVar[set[str]] = {
@@ -198,15 +199,19 @@ class SkillRoutingDecision:
         "requires_evidence_acquisition",
         "requires_differential_review",
     }
-    ALLOWED_SKILL_BUILDER_ACTIONS: ClassVar[set[str]] = {
+    ALLOWED_KNOWLEDGE_BUILDER_ACTIONS: ClassVar[set[str]] = {
         "none",
-        "load_existing_skill",
-        "search_or_generate_skill",
+        "load_existing_knowledge",
+        "search_or_generate_knowledge",
     }
-    ALLOWED_SKILL_SELECTION_MODES: ClassVar[set[str]] = {
+    ALLOWED_KNOWLEDGE_SELECTION_MODES: ClassVar[set[str]] = {
         "primary_only",
         "manual_secondary",
         "agent_auto_secondary",
+    }
+    ALLOWED_EVIDENCE_PROTOCOL_MODES: ClassVar[set[str]] = {
+        "finding_list_baseline",
+        "quantitative_optional",
     }
 
     def __post_init__(self) -> None:
@@ -215,9 +220,13 @@ class SkillRoutingDecision:
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError("routing confidence must be between 0 and 1")
         if self.agent_scope != "orchestrator_api":
-            raise ValueError("skill routing decisions must stay in orchestrator_api scope")
-        if self.skill_selection_mode not in self.ALLOWED_SKILL_SELECTION_MODES:
-            raise ValueError(f"unsupported skill selection mode: {self.skill_selection_mode}")
+            raise ValueError("knowledge routing decisions must stay in orchestrator_api scope")
+        if self.knowledge_selection_mode not in self.ALLOWED_KNOWLEDGE_SELECTION_MODES:
+            raise ValueError(f"unsupported knowledge selection mode: {self.knowledge_selection_mode}")
+        if self.evidence_protocol_mode not in self.ALLOWED_EVIDENCE_PROTOCOL_MODES:
+            raise ValueError(
+                f"unsupported evidence protocol mode: {self.evidence_protocol_mode}"
+            )
         if self.initial_evidence_status not in self.ALLOWED_EVIDENCE_STATUSES:
             raise ValueError(
                 f"unsupported initial evidence status: {self.initial_evidence_status}"
@@ -225,48 +234,57 @@ class SkillRoutingDecision:
         effective_status = self.routing_evidence_status or self.initial_evidence_status
         if effective_status not in self.ALLOWED_EVIDENCE_STATUSES:
             raise ValueError(f"unsupported routing evidence status: {effective_status}")
-        effective_action = self.skill_builder_action or self._skill_builder_action()
-        if effective_action not in self.ALLOWED_SKILL_BUILDER_ACTIONS:
-            raise ValueError(f"unsupported skill builder action: {effective_action}")
+        effective_action = self.knowledge_builder_action or self._knowledge_builder_action()
+        if effective_action not in self.ALLOWED_KNOWLEDGE_BUILDER_ACTIONS:
+            raise ValueError(f"unsupported knowledge builder action: {effective_action}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "selected_skill": self.selected_skill,
+            "selected_knowledge": self.selected_knowledge,
             "selected_vision_mode": self.selected_vision_mode,
             "source": self.source,
             "reason": self.reason,
             "confidence": self.confidence,
             "matched_clues": list(self.matched_clues),
             "agent_scope": self.agent_scope,
-            "skill_builder_action": self.skill_builder_action or self._skill_builder_action(),
-            "skill_selection_mode": self.skill_selection_mode,
-            "manual_secondary_skill_candidates": list(self.manual_secondary_skill_candidates),
+            "knowledge_builder_action": self.knowledge_builder_action or self._knowledge_builder_action(),
+            "knowledge_selection_mode": self.knowledge_selection_mode,
+            "evidence_protocol_mode": self.evidence_protocol_mode,
+            "quantitative_protocol_requested": (
+                self.evidence_protocol_mode == "quantitative_optional"
+            ),
+            "quantitative_protocol_status": (
+                "requested_requires_validated_measurement_backend"
+                if self.evidence_protocol_mode == "quantitative_optional"
+                else "not_requested_default_finding_list_only"
+            ),
+            "manual_secondary_knowledge_candidates": list(self.manual_secondary_knowledge_candidates),
             "primary_hypothesis": self.primary_hypothesis,
-            "differential_skill_candidates": list(self.differential_skill_candidates),
+            "differential_knowledge_candidates": list(self.differential_knowledge_candidates),
             "differential_candidate_ranking": [
                 dict(item) for item in self.differential_candidate_ranking
             ],
-            "display_differential_skill_candidates": list(
-                self.display_differential_skill_candidates
+            "display_differential_knowledge_candidates": list(
+                self.display_differential_knowledge_candidates
             ),
-            "secondary_skill_run_plan": dict(self.secondary_skill_run_plan),
+            "secondary_knowledge_run_plan": dict(self.secondary_knowledge_run_plan),
             "clinical_hypotheses": [dict(item) for item in self.clinical_hypotheses],
-            "skill_search_reason": self.skill_search_reason,
+            "knowledge_search_reason": self.knowledge_search_reason,
             "initial_evidence_status": self.initial_evidence_status,
             "routing_evidence_status": self.routing_evidence_status or self.initial_evidence_status,
         }
 
-    def _skill_builder_action(self) -> str:
-        if self.selected_skill:
-            return "load_existing_skill"
+    def _knowledge_builder_action(self) -> str:
+        if self.selected_knowledge:
+            return "load_existing_knowledge"
         return "none"
 
 
 @dataclass(frozen=True)
 class AlignmentPlan:
-    """Coordinates patient intent, uploaded image context, and skill visual requirements."""
+    """Coordinates patient intent, uploaded image context, and knowledge visual requirements."""
 
-    selected_skill: str | None
+    selected_knowledge: str | None
     analysis_status: str
     clinical_focus: str
     image_context: dict[str, Any]
@@ -293,7 +311,7 @@ class AlignmentPlan:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "selected_skill": self.selected_skill,
+            "selected_knowledge": self.selected_knowledge,
             "analysis_status": self.analysis_status,
             "clinical_focus": self.clinical_focus,
             "image_context": dict(self.image_context),
@@ -314,7 +332,7 @@ class AlignmentPlan:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "AlignmentPlan":
         return cls(
-            selected_skill=payload.get("selected_skill"),
+            selected_knowledge=payload.get("selected_knowledge"),
             analysis_status=payload["analysis_status"],
             clinical_focus=payload.get("clinical_focus", ""),
             image_context=dict(payload.get("image_context") or {}),
@@ -333,7 +351,7 @@ class AlignmentPlan:
 
 @dataclass(frozen=True)
 class VisualTask:
-    """One skill-derived visual task that can be routed to a visual tool."""
+    """One knowledge-derived visual task that can be routed to a visual tool."""
 
     task_name: str
     target: str
@@ -862,12 +880,12 @@ class DiagnosisVisualInput:
 
 
 @dataclass(frozen=True)
-class SkillDescriptor:
-    """Small skill identity saved in memory and attached to reports."""
+class KnowledgeDescriptor:
+    """Small knowledge identity saved in memory and attached to reports."""
 
     disease: str
-    skill_id: str
-    skill_type: str
+    knowledge_id: str
+    knowledge_type: str
     evidence_level: str
     source: str
     warning: str | None = None
@@ -887,25 +905,25 @@ class SkillDescriptor:
     integrated_reasoning_protocol: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.skill_type == "data_mined_hypothesis":
+        if self.knowledge_type == "data_mined_hypothesis":
             if self.evidence_level != "low":
-                raise ValueError("Hypothesis skills must use low evidence_level")
+                raise ValueError("Hypothesis knowledge must use low evidence_level")
             if not self.warning:
-                raise ValueError("Hypothesis skills must carry a warning")
-        if self.skill_type == "guideline_based" and self.evidence_level == "low":
-            raise ValueError("Guideline skills cannot be labeled low evidence")
-        if self.skill_type == "guideline_based" and self.guideline_extraction:
+                raise ValueError("Hypothesis knowledge must carry a warning")
+        if self.knowledge_type == "guideline_based" and self.evidence_level == "low":
+            raise ValueError("Guideline knowledge cannot be labeled low evidence")
+        if self.knowledge_type == "guideline_based" and self.guideline_extraction:
             citations = self.guideline_extraction.get("citations") or []
             if not citations:
                 raise ValueError(
-                    "Guideline skills with guideline_extraction must carry citations"
+                    "Guideline knowledge with guideline_extraction must carry citations"
                 )
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
             "disease": self.disease,
-            "skill_id": self.skill_id,
-            "skill_type": self.skill_type,
+            "knowledge_id": self.knowledge_id,
+            "knowledge_type": self.knowledge_type,
             "evidence_level": self.evidence_level,
             "source": self.source,
             "path_type": self.path_type or self._default_path_type(),
@@ -943,31 +961,31 @@ class SkillDescriptor:
         return payload
 
     def _default_path_type(self) -> str:
-        if self.skill_type == "data_mined_hypothesis":
+        if self.knowledge_type == "data_mined_hypothesis":
             return "privileged_knowledge_discovery"
         return "guideline_aware"
 
     @classmethod
-    def from_skill(cls, skill: dict[str, Any]) -> "SkillDescriptor":
+    def from_knowledge(cls, knowledge: dict[str, Any]) -> "KnowledgeDescriptor":
         return cls(
-            disease=skill["disease_name"],
-            skill_id=skill["skill_id"],
-            skill_type=skill["skill_type"],
-            evidence_level=skill["evidence_level"],
-            source=skill["source"],
-            warning=skill.get("warning"),
-            path_type=skill.get("path_type"),
-            safety_gate=dict(skill.get("safety_gate", {})),
-            discovery_metadata=dict(skill.get("discovery_metadata", {})),
-            source_documents=[dict(document) for document in skill.get("source_documents", [])],
-            source_priority=[dict(source) for source in skill.get("source_priority", [])],
-            guideline_source=dict(skill.get("guideline_source", {})),
-            guideline_extraction=dict(skill.get("guideline_extraction", {})),
-            guideline_conflicts=[dict(conflict) for conflict in skill.get("guideline_conflicts", [])],
-            quality_control=dict(skill.get("quality_control", {})),
-            imaging_evidence_protocol=dict(skill.get("imaging_evidence_protocol", {})),
-            quantitative_evidence_protocol=dict(skill.get("quantitative_evidence_protocol", {})),
-            differential_diagnosis_protocol=dict(skill.get("differential_diagnosis_protocol", {})),
-            clinical_context_protocol=dict(skill.get("clinical_context_protocol", {})),
-            integrated_reasoning_protocol=dict(skill.get("integrated_reasoning_protocol", {})),
+            disease=knowledge["disease_name"],
+            knowledge_id=knowledge["knowledge_id"],
+            knowledge_type=knowledge["knowledge_type"],
+            evidence_level=knowledge["evidence_level"],
+            source=knowledge["source"],
+            warning=knowledge.get("warning"),
+            path_type=knowledge.get("path_type"),
+            safety_gate=dict(knowledge.get("safety_gate", {})),
+            discovery_metadata=dict(knowledge.get("discovery_metadata", {})),
+            source_documents=[dict(document) for document in knowledge.get("source_documents", [])],
+            source_priority=[dict(source) for source in knowledge.get("source_priority", [])],
+            guideline_source=dict(knowledge.get("guideline_source", {})),
+            guideline_extraction=dict(knowledge.get("guideline_extraction", {})),
+            guideline_conflicts=[dict(conflict) for conflict in knowledge.get("guideline_conflicts", [])],
+            quality_control=dict(knowledge.get("quality_control", {})),
+            imaging_evidence_protocol=dict(knowledge.get("imaging_evidence_protocol", {})),
+            quantitative_evidence_protocol=dict(knowledge.get("quantitative_evidence_protocol", {})),
+            differential_diagnosis_protocol=dict(knowledge.get("differential_diagnosis_protocol", {})),
+            clinical_context_protocol=dict(knowledge.get("clinical_context_protocol", {})),
+            integrated_reasoning_protocol=dict(knowledge.get("integrated_reasoning_protocol", {})),
         )

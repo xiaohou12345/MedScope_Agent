@@ -7,7 +7,7 @@ from typing import Any
 
 from agents.diagnosis_agent import DiagnosisDoctorAgent
 from tools.structured_visual_fact_builder import build_structured_visual_facts
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 
 
 DEFAULT_SEGMENTATION_SUMMARY = Path(
@@ -43,17 +43,17 @@ def run_no_mask_candidate_diagnosis_demo(
             },
         )
 
-    disease_skill = (
-        SkillBuilderTool().load_guideline_skill(disease_key)
+    disease_knowledge = (
+        KnowledgeBuilderTool().load_guideline_knowledge(disease_key)
         if disease_key
-        else build_pneumonia_candidate_skill()
+        else build_pneumonia_candidate_knowledge()
     )
     visual_result = build_candidate_visual_analysis_result(
         segmentation_summary,
         modality=modality,
         body_part=body_part,
         disease_target=str(
-            (disease_skill.get("visual_protocol") or {}).get("disease_target")
+            (disease_knowledge.get("visual_protocol") or {}).get("disease_target")
             or disease_key
             or "pneumonia_or_lung_opacity_candidate"
         ),
@@ -61,7 +61,7 @@ def run_no_mask_candidate_diagnosis_demo(
     effective_hypothesis_mode = (
         hypothesis_validation_mode
         if hypothesis_validation_mode is not None
-        else disease_skill.get("skill_type") == "data_mined_hypothesis"
+        else disease_knowledge.get("knowledge_type") == "data_mined_hypothesis"
     )
     report = DiagnosisDoctorAgent().generate_report(
         case_id=case_id or f"case_no_mask_{disease_key or 'pneumonia_candidate'}",
@@ -70,7 +70,7 @@ def run_no_mask_candidate_diagnosis_demo(
             "patient_message": patient_message,
         },
         visual_result=visual_result,
-        disease_skill=disease_skill,
+        disease_knowledge=disease_knowledge,
         hypothesis_validation_mode=effective_hypothesis_mode,
     )
 
@@ -84,7 +84,7 @@ def run_no_mask_candidate_diagnosis_demo(
             "report_path": str(report_path),
             "diagnosis_scope": "candidate_visual_evidence_only",
             "disease_key": disease_key or "pneumonia_candidate",
-            "warning": disease_skill.get("warning", "Guideline report generated from candidate visual evidence."),
+            "warning": disease_knowledge.get("warning", "Guideline report generated from candidate visual evidence."),
         },
     )
 
@@ -189,7 +189,7 @@ def build_candidate_visual_analysis_result(
                 },
                 "clinical_diagnosis": {
                     "status": "unassessed",
-                    "reason": "Vision Agent only provides candidate visual evidence; Diagnosis Agent must apply the selected disease skill and safety gates.",
+                    "reason": "Vision Agent only provides candidate visual evidence; Diagnosis Agent must apply the selected disease knowledge and safety gates.",
                 },
             },
             "findings": findings,
@@ -297,7 +297,7 @@ def _suspected_visual_findings_from_findings(
     lesion_area_ratio: float,
 ) -> list[str]:
     visual_findings = [
-        "Gemini 视觉模型先定位 skill 约束的候选异常区域，MedSAM2 根据 box prompt 生成候选 mask。",
+        "Gemini 视觉模型先定位 knowledge 约束的候选异常区域，MedSAM2 根据 box prompt 生成候选 mask。",
         f"候选 mask 面积为 {lesion_area_px} px，约占图像面积 {lesion_area_ratio:.4f}。",
     ]
     for finding in findings:
@@ -325,11 +325,11 @@ def _display_name_for_target(value: str) -> str:
     return display_names.get(value, value)
 
 
-def build_pneumonia_candidate_skill() -> dict[str, Any]:
+def build_pneumonia_candidate_knowledge() -> dict[str, Any]:
     return {
         "disease_name": "肺部浸润影候选提示",
-        "skill_id": "pneumonia_opacity_candidate_v0.1",
-        "skill_type": "data_mined_hypothesis",
+        "knowledge_id": "pneumonia_opacity_candidate_v0.1",
+        "knowledge_type": "data_mined_hypothesis",
         "evidence_level": "low",
         "source": "No-mask demo: Gemini visual localization plus MedSAM2 candidate segmentation",
         "warning": "该输出只验证视觉 Agent 到诊断 Agent 的证据传递，不能作为确定诊断依据。",
@@ -376,7 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hypothesis-validation-mode",
         action="store_true",
-        help="Force hypothesis validation mode for data-mined candidate skills.",
+        help="Force hypothesis validation mode for data-mined candidate knowledge.",
     )
     return parser
 

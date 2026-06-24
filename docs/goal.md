@@ -5,15 +5,15 @@
 ```
 患者 / 前端
    ↓
-Clinical Orchestrator：统一入口、意图识别、skill 路由、患者解释、追问 QA
+Clinical Orchestrator：统一入口、意图识别、knowledge 路由、患者解释、追问 QA
    ↓
-Skill Builder / Guideline Component：条件触发；有 skill 就加载，没有合适 skill 才检索指南并生成 guideline skill
+Knowledge Builder / Guideline Component：条件触发；有 knowledge 就加载，没有合适 knowledge 才检索指南并生成 guideline knowledge
    ↓
-Vision Evidence Agent：按 skill 的 visual_protocol 提取影像证据、分割病灶、输出 mask/overlay/数值
+Vision Evidence Agent：按 knowledge 的 visual_protocol 提取影像证据、分割病灶、输出 mask/overlay/数值
    ↓
 Diagnosis Reasoning Agent：只消费结构化 evidence bundle，不直接看原图，生成受指南约束的报告
    ↓
-Memory / Audit Layer：保存 patient/image/skill/reasoning 四类 memory，生成 replay 和 audit
+Memory / Audit Layer：保存 patient/image/knowledge/reasoning 四类 memory，生成 replay 和 audit
 ```
 
 所以对外汇报时建议说：
@@ -25,7 +25,7 @@ MedScope 是一个 guideline-aware clinical evidence pipeline。
 2. Vision Evidence Agent
 3. Diagnosis Reasoning Agent
 
-另外有 1 个条件触发的 Skill Builder / Guideline Component，
+另外有 1 个条件触发的 Knowledge Builder / Guideline Component，
 以及 1 个 Memory / Audit 基础设施层。
 ```
 
@@ -35,7 +35,7 @@ MedScope 是一个 guideline-aware clinical evidence pipeline。
 谁负责入口和任务编排？
 谁负责从图像中提取可审计证据？
 谁负责基于指南和证据做推理？
-谁只在没有合适 skill 时构建指南 skill？
+谁只在没有合适 knowledge 时构建指南 knowledge？
 谁负责保存证据链和回放审计？
 ```
 
@@ -43,29 +43,29 @@ MedScope 是一个 guideline-aware clinical evidence pipeline。
 
 ```
 主 Agent 不直接包办所有事情，
-而是通过 gateway 分发 skill、文件、工具和约束。
+而是通过 gateway 分发 knowledge、文件、工具和约束。
 每次调用结束后再通过 stop hooks / reflection hooks 做自检、写 memory、生成候选改进。
 ```
 
 这层底座负责：
 
 ```
-1. Skill Gateway：装载 guideline skill、hypothesis skill 和 visual_protocol。
+1. Knowledge Gateway：装载 guideline knowledge、hypothesis knowledge 和 visual_protocol。
 2. Shared File Workspace：共享上传图像、mask、overlay、comparison、evidence bundle 和 audit artifact。
 3. Contract Guards：约束每个 Agent 能读什么、能写什么、不能越权输出什么。
-4. Tool Router：按 skill 和图像模态选择 VLM、MedSAM2、测量工具或指南采集工具。
+4. Tool Router：按 knowledge 和图像模态选择 VLM、MedSAM2、测量工具或指南采集工具。
 5. Stop Hooks：每次调用后检查证据缺口、质量门控、memory 写入和下一步建议。
-6. Self-evolving Queue：沉淀候选诊疗规则或 skill patch，但不能直接覆盖正式指南。
+6. Self-evolving Queue：沉淀候选诊疗规则或 knowledge patch，但不能直接覆盖正式指南。
 ```
 
 这样对外可以讲成两层：
 
 ```
 上层：临床证据流水线，解决医疗职责边界。
-底层：Agentic Runtime / Evidence Gateway，解决 skill 分发、文件共享、hooks、自检和长期记忆。
+底层：Agentic Runtime / Evidence Gateway，解决 knowledge 分发、文件共享、hooks、自检和长期记忆。
 ```
 
-特别要注意：self-evolving 不是让系统自动篡改医疗指南，而是让系统把运行后的反思沉淀为候选规则，进入验证队列。只有通过真实数据、指南来源或人工审核后，才能从 `candidate_skill_patch` 升级为正式 skill。
+特别要注意：self-evolving 不是让系统自动篡改医疗指南，而是让系统把运行后的反思沉淀为候选规则，进入验证队列。只有通过真实数据、指南来源或人工审核后，才能从 `candidate_knowledge_patch` 升级为正式 knowledge。
 
 旧版可以理解成这套实现结构：
 
@@ -74,13 +74,13 @@ MedScope 是一个 guideline-aware clinical evidence pipeline。
    ↓
 Clinical Orchestrator / 高医生实现节点：对话入口、任务分发、结果解释、QA
    ↓
-Skill Builder / Guideline Component：条件加载或生成疾病 Skill
+Knowledge Builder / Guideline Component：条件加载或生成疾病 Knowledge
    ↓
 Vision Evidence Agent / 视觉实现节点：图像预处理、分割、病灶定位、影像特征提取
    ↓
 Diagnosis Reasoning Agent / 诊断实现节点：指南约束推理、报告生成
    ↓
-Memory / Audit Layer：患者信息、影像结果、指南 Skill、诊断过程、历史问答
+Memory / Audit Layer：患者信息、影像结果、指南 Knowledge、诊断过程、历史问答
 ```
 
 ## 1. 先明确职责边界，而不是追求 Agent 数量
@@ -94,7 +94,7 @@ Memory / Audit Layer：患者信息、影像结果、指南 Skill、诊断过程
 2. 收集患者基本信息
 3. 接收医疗图片
 4. 判断用户意图：诊断 / 问答 / 复查 / 解释报告
-5. 自动选择已有 skill，或在缺少 skill 时触发 Skill Builder / Guideline Component
+5. 自动选择已有 knowledge，或在缺少 knowledge 时触发 Knowledge Builder / Guideline Component
 6. 调用视觉证据提取和诊断推理
 7. 把最终报告用患者能听懂的话输出
 8. 后续继续做 QA
@@ -126,21 +126,21 @@ Memory / Audit Layer：患者信息、影像结果、指南 Skill、诊断过程
 
 ------
 
-### Skill Builder / Guideline Component：条件触发的指南 skill 构建器
+### Knowledge Builder / Guideline Component：条件触发的指南 knowledge 构建器
 
 这个组件不必被讲成一个永远参与诊断的并列 Agent。它的触发条件很明确：
 
 它负责：
 
 ```
-1. 当前仓库已有合适 skill：直接加载，不重新生成。
-2. 当前仓库没有合适 skill：检索真实指南来源。
-3. 找到正式指南：生成 guideline_based disease_skill。
+1. 当前仓库已有合适 knowledge：直接加载，不重新生成。
+2. 当前仓库没有合适 knowledge：检索真实指南来源。
+3. 找到正式指南：生成 guideline_based disease_knowledge。
 4. 没有正式指南：只能生成 data_mined_hypothesis，并显式标低证据等级。
-5. 生成的 skill 必须包含 visual_protocol，告诉视觉证据提取环节要观察什么。
+5. 生成的 knowledge 必须包含 visual_protocol，告诉视觉证据提取环节要观察什么。
 ```
 
-这个组件的价值是把“医学指南”变成机器可执行的 skill，而不是直接诊断。
+这个组件的价值是把“医学指南”变成机器可执行的 knowledge，而不是直接诊断。
 
 ------
 
@@ -194,7 +194,7 @@ Memory / Audit Layer：患者信息、影像结果、指南 Skill、诊断过程
 它负责：
 
 ```
-1. 读取已选 disease_skill。
+1. 读取已选 disease_knowledge。
 2. 读取患者症状和风险因素。
 3. 读取 Vision Evidence Agent 返回的结构化 evidence bundle。
 4. 检查 evidence completeness：哪些证据支持，哪些缺失，哪些不适用。
@@ -223,7 +223,7 @@ Memory / Audit Layer：患者信息、影像结果、指南 Skill、诊断过程
 }
 ```
 
-然后 Diagnosis Reasoning Agent 再根据 disease skill 判断：
+然后 Diagnosis Reasoning Agent 再根据 disease knowledge 判断：
 
 ```
 如果未见塌陷 + X 光纹理异常 + 症状符合 + MRI 金标准提示早期改变，
@@ -239,12 +239,12 @@ Memory / Audit Layer：患者信息、影像结果、指南 Skill、诊断过程
 ```
 Step 1：患者上传图片，向高医生提问
 Step 2：Clinical Orchestrator 记录患者信息，创建 case_id
-Step 3：Clinical Orchestrator 根据患者描述和图像元信息自动选择 skill
-Step 4：如果仓库已有合适 skill，直接加载
-Step 5：如果没有合适 skill，触发 Skill Builder / Guideline Component 检索真实指南并生成 skill
-Step 6：如果 skill 判断当前图像模态不足，直接输出“证据不足 + 建议补充影像”
-Step 7：如果图像模态可分析，把 skill.visual_protocol 交给 Vision Evidence Agent
-Step 8：Vision Evidence Agent 根据 skill 要求定位、分割和量化病灶
+Step 3：Clinical Orchestrator 根据患者描述和图像元信息自动选择 knowledge
+Step 4：如果仓库已有合适 knowledge，直接加载
+Step 5：如果没有合适 knowledge，触发 Knowledge Builder / Guideline Component 检索真实指南并生成 knowledge
+Step 6：如果 knowledge 判断当前图像模态不足，直接输出“证据不足 + 建议补充影像”
+Step 7：如果图像模态可分析，把 knowledge.visual_protocol 交给 Vision Evidence Agent
+Step 8：Vision Evidence Agent 根据 knowledge 要求定位、分割和量化病灶
 Step 9：Vision Evidence Agent 返回结构化影像证据、mask、overlay、quality gate
 Step 10：Diagnosis Reasoning Agent 结合指南、影像证据和症状生成报告
 Step 11：报告返回 Clinical Orchestrator
@@ -259,9 +259,9 @@ Step 13：Memory / Audit Layer 保存四类 memory、evidence bundle、replay �
  ↓
 Clinical Orchestrator
  ↓
-Skill Builder / Guideline Component
+Knowledge Builder / Guideline Component
  ├── 指南检索工具
- ├── disease_skill 生成器
+ ├── disease_knowledge 生成器
  └── data_mined_hypothesis 生成器
  ↓
 Vision Evidence Agent
@@ -285,9 +285,9 @@ Memory / Audit Layer
 
 ------
 
-## 3. disease_skill 文件应该怎么设计？
+## 3. disease_knowledge 文件应该怎么设计？
 
-你说的“指南 Skill 文件”是非常关键的。
+你说的“指南 Knowledge 文件”是非常关键的。
 
 它不应该是一大段自然语言，而应该是**结构化的诊断规则文件**。比如股骨头坏死可以这样设计：
 
@@ -419,21 +419,21 @@ evidence_summary_mode
 这个只能叫：
 
 ```
-hypothesis_skill
-候选假设 Skill
+hypothesis_knowledge
+候选假设 Knowledge
 ```
 
 不能叫：
 
 ```
-guideline_skill
-医学指南 Skill
+guideline_knowledge
+医学指南 Knowledge
 ```
 
 你可以这样区分：
 
 ```
-skill_type: "guideline_based"
+knowledge_type: "guideline_based"
 evidence_level: "high"
 source: "official guideline"
 ```
@@ -441,7 +441,7 @@ source: "official guideline"
 和：
 
 ```
-skill_type: "data_mined_hypothesis"
+knowledge_type: "data_mined_hypothesis"
 evidence_level: "low"
 source: "internal dataset statistical summary"
 warning: "该规则来自数据总结，不等同于正式医学指南，只能作为辅助提示"
@@ -456,8 +456,8 @@ warning: "该规则来自数据总结，不等同于正式医学指南，只能�
 所以正确设计是：
 
 ```
-有指南 → guideline_skill
-无指南 → hypothesis_skill
+有指南 → guideline_knowledge
+无指南 → hypothesis_knowledge
 ```
 
 这两个必须分开。
@@ -522,15 +522,15 @@ Memory 不要一上来做得太玄乎。你可以先分成 4 类。
 
 ------
 
-### 第三类：Skill Memory，疾病 Skill 记忆
+### 第三类：Knowledge Memory，疾病 Knowledge 记忆
 
-保存已经生成过的疾病 skill：
+保存已经生成过的疾病 knowledge：
 
 ```
 {
   "disease": "股骨头坏死",
-  "skill_id": "femoral_head_necrosis_v0.1",
-  "skill_type": "guideline_based",
+  "knowledge_id": "femoral_head_necrosis_v0.1",
+  "knowledge_type": "guideline_based",
   "source": "ARCO 分期相关指南",
   "version": "0.1",
   "created_at": "2026-05-23"
@@ -549,7 +549,7 @@ Memory 不要一上来做得太玄乎。你可以先分成 4 类。
 {
   "case_id": "case_20240517_001",
   "reasoning_memory": {
-    "used_skill": "femoral_head_necrosis_v0.1",
+    "used_knowledge": "femoral_head_necrosis_v0.1",
     "key_evidence": [
       "X 光未见明显塌陷",
       "股骨头区域纹理异常评分较高",
@@ -575,7 +575,7 @@ Memory 不要一上来做得太玄乎。你可以先分成 4 类。
 ```
 短期 Memory：存在当前会话 state 里
 长期 Memory：存在 JSON / SQLite / PostgreSQL
-指南 Skill：存在本地 yaml / markdown 文件
+指南 Knowledge：存在本地 yaml / markdown 文件
 病例影像结果：存在 case_id 对应的 JSON 文件
 ```
 
@@ -591,16 +591,16 @@ medical_agent_system/
 │   └── report_agent.py
 ├── tools/
 │   ├── guideline_search_tool.py
-│   ├── skill_builder_tool.py
+│   ├── knowledge_builder_tool.py
 │   ├── segmentation_tool.py
 │   ├── feature_extraction_tool.py
 │   └── report_template_tool.py
 ├── memory/
 │   ├── patient_memory.py
 │   ├── image_memory.py
-│   ├── skill_memory.py
+│   ├── knowledge_memory.py
 │   └── reasoning_memory.py
-├── skills/
+├── knowledge/
 │   ├── femoral_head_necrosis.yaml
 │   └── rare_disease_x.yaml
 ├── data/
@@ -629,7 +629,7 @@ medical_agent_system/
 
 ```
 1. 高医生接收图片和症状
-2. 诊断医生读取股骨头坏死 skill 文件
+2. 诊断医生读取股骨头坏死 knowledge 文件
 3. 视觉 Agent 先不接真实模型，返回模拟 JSON
 4. 诊断医生根据模拟 JSON 生成报告
 5. 高医生把报告解释给患者
@@ -668,29 +668,29 @@ medical_agent_system/
 1. Clinical Orchestrator
 2. Vision Evidence Agent
 3. Diagnosis Reasoning Agent
-4. Skill Builder / Guideline Component
+4. Knowledge Builder / Guideline Component
 5. Memory / Audit Layer
 ```
 
-其中只有前三个是核心 Agent；Skill Builder 是条件触发的指南 skill 构建组件，Memory / Audit 是基础设施层。
+其中只有前三个是核心 Agent；Knowledge Builder 是条件触发的指南 knowledge 构建组件，Memory / Audit 是基础设施层。
 
 更清晰的职责表述是：
 
 ```
 Clinical Orchestrator
-负责：对话、收集信息、自动选择 skill、分发任务、展示报告、回答患者问题
+负责：对话、收集信息、自动选择 knowledge、分发任务、展示报告、回答患者问题
 
 Vision Evidence Agent
 负责：分割、定位、特征提取、输出影像证据 JSON
 
 Diagnosis Reasoning Agent
-负责：医学推理、读取 guideline skill、消费结构化视觉证据、生成受约束报告
+负责：医学推理、读取 guideline knowledge、消费结构化视觉证据、生成受约束报告
 
-Skill Builder / Guideline Component
-负责：在缺少合适 skill 时，把真实指南转成结构化 disease_skill
+Knowledge Builder / Guideline Component
+负责：在缺少合适 knowledge 时，把真实指南转成结构化 disease_knowledge
 
 Memory / Audit Layer
-负责：保存患者信息、影像结果、skill、推理记录、evidence bundle 和 replay
+负责：保存患者信息、影像结果、knowledge、推理记录、evidence bundle 和 replay
 ```
 
 我更推荐这个版本，因为它不强调 Agent 数量，而强调医疗安全边界。**能作为条件组件或基础设施层解释的，就不要硬讲成并列业务 Agent。**
@@ -701,8 +701,8 @@ Memory / Audit Layer
 
 你可以这样说：
 
-> 我计划设计一个面向罕见病影像辅助诊断的 guideline-aware clinical evidence pipeline。系统不是按 Agent 数量堆叠，而是按医疗安全边界拆成三个核心 Agent、一个条件 Skill Builder / Guideline Component 和一个 Memory / Audit 基础设施层。Clinical Orchestrator 负责患者入口、意图识别、自动 skill 路由和追问解释；Vision Evidence Agent 根据 disease skill 中的 visual protocol 对上传医学图像进行病灶定位、分割、特征提取和质量门控，并返回结构化影像证据；Diagnosis Reasoning Agent 不直接看原图，只消费 guideline skill、患者上下文和 evidence bundle，生成受证据充分性约束的诊断报告。
+> 我计划设计一个面向罕见病影像辅助诊断的 guideline-aware clinical evidence pipeline。系统不是按 Agent 数量堆叠，而是按医疗安全边界拆成三个核心 Agent、一个条件 Knowledge Builder / Guideline Component 和一个 Memory / Audit 基础设施层。Clinical Orchestrator 负责患者入口、意图识别、自动 knowledge 路由和追问解释；Vision Evidence Agent 根据 disease knowledge 中的 visual protocol 对上传医学图像进行病灶定位、分割、特征提取和质量门控，并返回结构化影像证据；Diagnosis Reasoning Agent 不直接看原图，只消费 guideline knowledge、患者上下文和 evidence bundle，生成受证据充分性约束的诊断报告。
 >
-> 对于有正式指南的疾病，Skill Builder / Guideline Component 将真实指南转化为 guideline-based skill；对于缺乏指南的罕见病，系统不会直接生成“医学指南”，而是进入 evidence summary / data-mined hypothesis mode，从已有病例数据中总结候选影像规律，形成 hypothesis skill，并明确标注其证据等级较低，仅作为辅助分析依据。Memory / Audit Layer 用于保存 patient_memory、image_memory、skill_memory、reasoning_memory、evidence bundle 和 replay，从而保证多轮问答中的连续性、可解释性和可审计性。
+> 对于有正式指南的疾病，Knowledge Builder / Guideline Component 将真实指南转化为 guideline-based knowledge；对于缺乏指南的罕见病，系统不会直接生成“医学指南”，而是进入 evidence summary / data-mined hypothesis mode，从已有病例数据中总结候选影像规律，形成 hypothesis knowledge，并明确标注其证据等级较低，仅作为辅助分析依据。Memory / Audit Layer 用于保存 patient_memory、image_memory、knowledge_memory、reasoning_memory、evidence bundle 和 replay，从而保证多轮问答中的连续性、可解释性和可审计性。
 
 ------

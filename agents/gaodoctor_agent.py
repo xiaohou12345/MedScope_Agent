@@ -7,7 +7,7 @@ from typing import Any
 
 from agents.diagnosis_agent import DiagnosisDoctorAgent
 from agents.vision_agent import VisionAgent
-from contracts.medical_contracts import AlignmentPlan, PatientCaseInput, PatientIntent, SkillDescriptor
+from contracts.medical_contracts import AlignmentPlan, PatientCaseInput, PatientIntent, KnowledgeDescriptor
 from llm.prompt_runner import PromptRunner
 from memory.memory_manager import MemoryManager
 from tools.medsam2_segmentation_tool import MedSAM2CommandRunner, MedSAM2SegmentationTool
@@ -168,12 +168,12 @@ class GaoDoctorAgent:
                 disease_key=disease_key,
                 vision_mode=vision_mode,
             )
-        disease_skill = self.diagnosis_agent.load_disease_skill(selected_disease_key)
+        disease_knowledge = self.diagnosis_agent.load_disease_knowledge(selected_disease_key)
         if self._should_stop_for_alignment(alignment_plan):
             return self._handle_insufficient_alignment_case(
                 case_id=case_id,
                 case_input=case_input,
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
                 selected_disease_key=selected_disease_key,
                 selected_vision_mode=selected_vision_mode,
                 routing_decision=routing_decision,
@@ -185,7 +185,7 @@ class GaoDoctorAgent:
             image_path=case_input.image_path,
             patient_message=case_input.patient_message,
             disease_key=selected_disease_key,
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
             vision_mode=vision_mode,
             mask_path=mask_path,
             segmentation_prompt=segmentation_prompt,
@@ -195,7 +195,7 @@ class GaoDoctorAgent:
             case_id=case_id,
             patient_info=case_input.patient_info,
             visual_result=visual_result,
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
             hypothesis_validation_mode=hypothesis_validation_mode,
             alignment_plan=alignment_plan,
             routing_decision=routing_decision,
@@ -214,7 +214,7 @@ class GaoDoctorAgent:
         visual_evidence = visual_result["visual_evidence"]
         visual_evidence_bundle = self._build_visual_evidence_bundle(
             visual_result,
-            disease_skill,
+            disease_knowledge,
             image_series=case_input.patient_info.get("image_series", []),
             primary_image_path=case_input.image_path,
         )
@@ -233,31 +233,31 @@ class GaoDoctorAgent:
             "segmentation_quality": visual_evidence.get("segmentation_quality", "not_available"),
             "visual_evidence_bundle": visual_evidence_bundle,
         }
-        used_skill = report["used_skill"]
+        used_knowledge = report["used_knowledge"]
         guideline_evidence = report.get("guideline_evidence", {})
-        skill_memory = {
-            **used_skill,
-            "selected_skill": used_skill.get("skill_id", selected_disease_key),
+        knowledge_memory = {
+            **used_knowledge,
+            "selected_knowledge": used_knowledge.get("knowledge_id", selected_disease_key),
             "selected_vision_mode": selected_vision_mode,
             "routing_decision": routing_decision,
             "alignment_plan": alignment_plan or {},
-            "used_skill": used_skill.get("skill_id", selected_disease_key),
-            "skill_type": used_skill.get("skill_type"),
+            "used_knowledge": used_knowledge.get("knowledge_id", selected_disease_key),
+            "knowledge_type": used_knowledge.get("knowledge_type"),
             "guideline_evidence": guideline_evidence,
-            "source_priority": guideline_evidence.get("source_priority", used_skill.get("source_priority", [])),
+            "source_priority": guideline_evidence.get("source_priority", used_knowledge.get("source_priority", [])),
             "guideline_conflicts": guideline_evidence.get(
                 "conflicts",
-                used_skill.get("guideline_conflicts", []),
+                used_knowledge.get("guideline_conflicts", []),
             ),
             "quality_control": guideline_evidence.get(
                 "quality_control",
-                used_skill.get("quality_control", {}),
+                used_knowledge.get("quality_control", {}),
             ),
         }
         reasoning_memory = {
             "case_id": case_id,
             "report": report,
-            "used_skill": used_skill["skill_id"],
+            "used_knowledge": used_knowledge["knowledge_id"],
             "key_evidence": report["影像依据"],
             "diagnostic_result": report["diagnostic_tendency"],
             "diagnostic_tendency": report["diagnostic_tendency"],
@@ -279,7 +279,7 @@ class GaoDoctorAgent:
             case_id=case_id,
             patient_memory=patient_memory,
             image_memory=image_memory,
-            skill_memory=skill_memory,
+            knowledge_memory=knowledge_memory,
             reasoning_memory=reasoning_memory,
         )
 
@@ -304,7 +304,7 @@ class GaoDoctorAgent:
         self,
         case_id: str,
         case_input: PatientCaseInput,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         selected_disease_key: str,
         selected_vision_mode: str | None,
         routing_decision: dict[str, Any],
@@ -312,7 +312,7 @@ class GaoDoctorAgent:
         intent_type: str,
     ) -> dict[str, Any]:
         checked_plan = AlignmentPlan.from_dict(alignment_plan).to_dict()
-        used_skill = SkillDescriptor.from_skill(disease_skill).to_dict()
+        used_knowledge = KnowledgeDescriptor.from_knowledge(disease_knowledge).to_dict()
         completeness = self._alignment_completeness(checked_plan)
         image_context = checked_plan.get("image_context", {})
         visual_evidence = {
@@ -320,7 +320,7 @@ class GaoDoctorAgent:
             "measurements": {},
             "completeness": completeness,
             "suspected_visual_findings": [],
-            "disease_target": checked_plan.get("selected_skill"),
+            "disease_target": checked_plan.get("selected_knowledge"),
         }
         image_outputs = {
             "original_image_path": case_input.image_path,
@@ -332,9 +332,9 @@ class GaoDoctorAgent:
             alignment_plan=checked_plan,
             visual_evidence=visual_evidence,
             image_outputs=image_outputs,
-            used_skill=used_skill,
+            used_knowledge=used_knowledge,
         )
-        self.diagnosis_agent._attach_guideline_evidence(report, used_skill)
+        self.diagnosis_agent._attach_guideline_evidence(report, used_knowledge)
 
         patient_memory = {
             "case_id": case_id,
@@ -361,29 +361,29 @@ class GaoDoctorAgent:
             "alignment_plan": checked_plan,
         }
         guideline_evidence = report.get("guideline_evidence", {})
-        skill_memory = {
-            **used_skill,
-            "selected_skill": used_skill.get("skill_id", selected_disease_key),
+        knowledge_memory = {
+            **used_knowledge,
+            "selected_knowledge": used_knowledge.get("knowledge_id", selected_disease_key),
             "selected_vision_mode": selected_vision_mode,
             "routing_decision": routing_decision,
             "alignment_plan": checked_plan,
-            "used_skill": used_skill.get("skill_id", selected_disease_key),
-            "skill_type": used_skill.get("skill_type"),
+            "used_knowledge": used_knowledge.get("knowledge_id", selected_disease_key),
+            "knowledge_type": used_knowledge.get("knowledge_type"),
             "guideline_evidence": guideline_evidence,
-            "source_priority": guideline_evidence.get("source_priority", used_skill.get("source_priority", [])),
+            "source_priority": guideline_evidence.get("source_priority", used_knowledge.get("source_priority", [])),
             "guideline_conflicts": guideline_evidence.get(
                 "conflicts",
-                used_skill.get("guideline_conflicts", []),
+                used_knowledge.get("guideline_conflicts", []),
             ),
             "quality_control": guideline_evidence.get(
                 "quality_control",
-                used_skill.get("quality_control", {}),
+                used_knowledge.get("quality_control", {}),
             ),
         }
         reasoning_memory = {
             "case_id": case_id,
             "report": report,
-            "used_skill": used_skill["skill_id"],
+            "used_knowledge": used_knowledge["knowledge_id"],
             "key_evidence": report["影像依据"],
             "diagnostic_result": report["diagnostic_tendency"],
             "diagnostic_tendency": report["diagnostic_tendency"],
@@ -399,7 +399,7 @@ class GaoDoctorAgent:
             case_id=case_id,
             patient_memory=patient_memory,
             image_memory=image_memory,
-            skill_memory=skill_memory,
+            knowledge_memory=knowledge_memory,
             reasoning_memory=reasoning_memory,
         )
         return {
@@ -438,7 +438,7 @@ class GaoDoctorAgent:
         alignment_plan: dict[str, Any],
         visual_evidence: dict[str, Any],
         image_outputs: dict[str, Any],
-        used_skill: dict[str, Any],
+        used_knowledge: dict[str, Any],
     ) -> dict[str, Any]:
         image_context = alignment_plan.get("image_context", {})
         suspected = alignment_plan.get("suspected_conditions") or []
@@ -452,7 +452,7 @@ class GaoDoctorAgent:
             for item in next_images
         ] or ["建议补充指南要求的关键影像后再进行判断"]
         reasons = alignment_plan.get("insufficiency_reasons") or [
-            "当前上传图像不满足该 skill 的关键影像证据要求"
+            "当前上传图像不满足该 knowledge 的关键影像证据要求"
         ]
         report = {
             "case_id": case_id,
@@ -470,7 +470,7 @@ class GaoDoctorAgent:
                 "该结果不是最终诊断，需线下专科医生结合体征、完整影像和必要检查复核。",
                 "如症状持续、加重或出现功能受限，应及时线下就医。",
             ],
-            "used_skill": used_skill,
+            "used_knowledge": used_knowledge,
             "alignment_plan": alignment_plan,
             "visual_input_contract": {
                 "image_path": image_context.get("image_path"),
@@ -514,7 +514,7 @@ class GaoDoctorAgent:
         image_path: str,
         patient_message: str,
         disease_key: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         vision_mode: str | None,
         mask_path: str | None,
         segmentation_prompt: dict[str, Any] | None,
@@ -526,33 +526,33 @@ class GaoDoctorAgent:
                 image_path=image_path,
                 patient_message=patient_message,
                 disease_key=disease_key,
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
                 image_series=image_series or [],
             )
-        if disease_key == "femoral_head_necrosis" and vision_mode == "no_mask_skill":
+        if disease_key == "femoral_head_necrosis" and vision_mode == "no_mask_knowledge":
             normalized_series = self._normalize_input_image_series(
                 image_series=image_series or [],
                 primary_image_path=image_path,
             )
             if len(normalized_series) > 1:
-                return self._run_multi_view_no_mask_skill_visual_pipeline(
+                return self._run_multi_view_no_mask_knowledge_visual_pipeline(
                     case_id=case_id,
                     image_series=normalized_series,
                     patient_message=patient_message,
                     disease_key=disease_key,
-                    disease_skill=disease_skill,
+                    disease_knowledge=disease_knowledge,
                 )
-            return self._run_no_mask_skill_visual_pipeline(
+            return self._run_no_mask_knowledge_visual_pipeline(
                 case_id=case_id,
                 image_path=image_path,
                 patient_message=patient_message,
                 disease_key=disease_key,
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
             )
         if disease_key != "diffuse_glioma_brats":
             return self.vision_agent.analyze_image(
                 image_path=image_path,
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
             )
 
         mode = vision_mode or "ground_truth"
@@ -565,7 +565,7 @@ class GaoDoctorAgent:
                 image_path=image_path,
                 mask_path=mask_path,
                 overlay_path=str(output_dir / f"{case_id}_overlay.png"),
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
             )
         if mode == "medsam2":
             model_mask_path = mask_path or str(output_dir / f"{case_id}_medsam2_mask.nii.gz")
@@ -586,7 +586,7 @@ class GaoDoctorAgent:
                 segmentation_prompt=segmentation_prompt or {},
                 output_mask_path=str(model_mask_path),
                 overlay_path=str(overlay_path),
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
             )
         raise ValueError(f"unsupported vision_mode for diffuse_glioma_brats: {mode}")
 
@@ -597,7 +597,7 @@ class GaoDoctorAgent:
         image_path: str,
         patient_message: str,
         disease_key: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         image_series: list[dict[str, Any]],
     ) -> dict[str, Any]:
         normalized_series = self._normalize_input_image_series(
@@ -608,7 +608,7 @@ class GaoDoctorAgent:
         raw_payload, warning = self._call_real_vlm_validation_runner(
             patient_message=patient_message,
             disease_key=disease_key,
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
             image_series=normalized_series,
         )
         primary = normalized_series[0] if normalized_series else {
@@ -622,7 +622,7 @@ class GaoDoctorAgent:
                 image_id=str(primary["image_id"]),
                 view_hint=str(primary.get("view_hint") or "unknown"),
                 source_image_path=str(primary.get("image_path") or image_path),
-                imaging_evidence_protocol=disease_skill.get("imaging_evidence_protocol"),
+                imaging_evidence_protocol=disease_knowledge.get("imaging_evidence_protocol"),
             )
             if isinstance(raw_payload, dict)
             else []
@@ -737,7 +737,7 @@ class GaoDoctorAgent:
         *,
         patient_message: str,
         disease_key: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         image_series: list[dict[str, str]],
     ) -> tuple[dict[str, Any] | None, str | None]:
         if self.prompt_runner is None:
@@ -747,7 +747,7 @@ class GaoDoctorAgent:
             "disease_key": disease_key,
             "image_paths": [item["image_path"] for item in image_series],
             "image_series": image_series,
-            "imaging_evidence_protocol": disease_skill.get("imaging_evidence_protocol", {}),
+            "imaging_evidence_protocol": disease_knowledge.get("imaging_evidence_protocol", {}),
             "instruction": (
                 "Return candidate visual findings only as JSON. Do not diagnose. "
                 "Do not claim segmentation or measurements."
@@ -849,34 +849,34 @@ class GaoDoctorAgent:
             "limitations": list(item.get("limitations") or []),
         }
 
-    def _run_no_mask_skill_visual_pipeline(
+    def _run_no_mask_knowledge_visual_pipeline(
         self,
         *,
         case_id: str,
         image_path: str,
         patient_message: str,
         disease_key: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         image_id: str | None = None,
     ) -> dict[str, Any]:
         runner = self.no_mask_visual_pipeline_runner
         if runner is None:
-            from scripts.no_mask_skill_visual_pipeline_demo import (
-                run_no_mask_skill_visual_pipeline_demo,
+            from scripts.no_mask_knowledge_visual_pipeline_demo import (
+                run_no_mask_knowledge_visual_pipeline_demo,
             )
             from scripts.no_mask_vision_prompt_demo import _load_dotenv_local
 
             _load_dotenv_local()
-            runner = run_no_mask_skill_visual_pipeline_demo
+            runner = run_no_mask_knowledge_visual_pipeline_demo
         output_dir = Path("output/fake/gaodoctor_fhn_no_mask") / case_id
         if image_id:
             output_dir = output_dir / image_id
         summary = runner(
             image_path=image_path,
             output_dir=output_dir,
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
             disease_key=disease_key,
-            patient_message=patient_message or "请根据股骨头坏死 skill 自动定位候选影像征象。",
+            patient_message=patient_message or "请根据股骨头坏死 knowledge 自动定位候选影像征象。",
         )
         if summary.get("status") != "ok":
             raise RuntimeError(
@@ -887,23 +887,23 @@ class GaoDoctorAgent:
             raise RuntimeError("FHN no-mask visual pipeline did not return visual_analysis_result")
         return visual_result
 
-    def _run_multi_view_no_mask_skill_visual_pipeline(
+    def _run_multi_view_no_mask_knowledge_visual_pipeline(
         self,
         *,
         case_id: str,
         image_series: list[dict[str, Any]],
         patient_message: str,
         disease_key: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
     ) -> dict[str, Any]:
         per_image_results = []
         for item in image_series:
-            visual_result = self._run_no_mask_skill_visual_pipeline(
+            visual_result = self._run_no_mask_knowledge_visual_pipeline(
                 case_id=case_id,
                 image_path=str(item["image_path"]),
                 patient_message=patient_message,
                 disease_key=disease_key,
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
                 image_id=str(item["image_id"]),
             )
             per_image_results.append(
@@ -1039,7 +1039,7 @@ class GaoDoctorAgent:
     def _build_visual_evidence_bundle(
         self,
         visual_result: dict[str, Any],
-        disease_skill: dict[str, Any] | None = None,
+        disease_knowledge: dict[str, Any] | None = None,
         image_series: list[dict[str, Any]] | None = None,
         primary_image_path: str | None = None,
     ) -> dict[str, Any]:
@@ -1064,7 +1064,7 @@ class GaoDoctorAgent:
         evidence_items = self._build_evidence_items(
             evidence=evidence,
             visual_result=visual_result,
-            disease_skill=disease_skill or {},
+            disease_knowledge=disease_knowledge or {},
         )
         has_missing_protocol_completeness = any(
             isinstance(status, dict) and status.get("status") in {"missing", "unassessed", "low_quality"}
@@ -1214,7 +1214,7 @@ class GaoDoctorAgent:
         *,
         evidence: dict[str, Any],
         visual_result: dict[str, Any],
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
     ) -> list[dict[str, Any]]:
         explicit_items = [
             dict(item)
@@ -1224,8 +1224,8 @@ class GaoDoctorAgent:
         if explicit_items:
             return [self._normalize_evidence_item(item) for item in explicit_items]
 
-        protocol_by_target = self._evidence_protocol_by_target(disease_skill)
-        quantitative_protocol_by_target = self._quantitative_protocol_by_target(disease_skill)
+        protocol_by_target = self._evidence_protocol_by_target(disease_knowledge)
+        quantitative_protocol_by_target = self._quantitative_protocol_by_target(disease_knowledge)
         items = [
             self._evidence_item_from_finding(
                 finding,
@@ -1262,8 +1262,8 @@ class GaoDoctorAgent:
             )
         return [self._normalize_evidence_item(item) for item in items]
 
-    def _evidence_protocol_by_target(self, disease_skill: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        imaging_protocol = disease_skill.get("imaging_evidence_protocol") or {}
+    def _evidence_protocol_by_target(self, disease_knowledge: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        imaging_protocol = disease_knowledge.get("imaging_evidence_protocol") or {}
         targets = imaging_protocol.get("finding_targets") or []
         return {
             str(item.get("target")): dict(item)
@@ -1271,8 +1271,8 @@ class GaoDoctorAgent:
             if isinstance(item, dict) and item.get("target")
         }
 
-    def _quantitative_protocol_by_target(self, disease_skill: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        quantitative_protocol = disease_skill.get("quantitative_evidence_protocol") or {}
+    def _quantitative_protocol_by_target(self, disease_knowledge: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        quantitative_protocol = disease_knowledge.get("quantitative_evidence_protocol") or {}
         by_target: dict[str, dict[str, Any]] = {}
         for item in quantitative_protocol.get("image_feature_quantification") or []:
             if not isinstance(item, dict) or not item.get("target"):
@@ -1657,7 +1657,7 @@ class GaoDoctorAgent:
         evidence_bundle: dict[str, Any],
     ) -> None:
         blocked_items = (
-            evidence_bundle.get("skill_evidence", {})
+            evidence_bundle.get("knowledge_evidence", {})
             .get("alignment_plan", {})
             .get("diagnosis_scope", {})
             .get("blocked", [])
@@ -1933,8 +1933,8 @@ class GaoDoctorAgent:
                 return integrated_answer
         reasoning = evidence_bundle.get("reasoning_evidence", {})
         image = evidence_bundle.get("image_evidence", {})
-        skill = evidence_bundle.get("skill_evidence", {})
-        disease = self._display_disease_name(skill)
+        knowledge = evidence_bundle.get("knowledge_evidence", {})
+        disease = self._display_disease_name(knowledge)
         key_evidence = self._first_nonempty_items(reasoning.get("key_evidence", []), limit=1)
         uncertainty = self._first_nonempty_items(reasoning.get("uncertainty", []), limit=1)
         modality = str(image.get("modality") or "当前影像").upper()
@@ -1971,8 +1971,8 @@ class GaoDoctorAgent:
         integrated: dict[str, Any],
     ) -> str:
         image = evidence_bundle.get("image_evidence", {})
-        skill = evidence_bundle.get("skill_evidence", {})
-        disease = self._display_disease_name(skill)
+        knowledge = evidence_bundle.get("knowledge_evidence", {})
+        disease = self._display_disease_name(knowledge)
         modality = str(image.get("modality") or "当前影像").upper()
         image_label = "X 光" if modality in {"XRAY", "X-RAY", "X光"} else str(image.get("modality") or "当前影像")
         can_confirm = integrated.get("can_confirm_target_disease") is True
@@ -2021,8 +2021,8 @@ class GaoDoctorAgent:
             "early_osteonecrosis": "早期股骨头坏死",
         }.get(target, target)
 
-    def _display_disease_name(self, skill: dict[str, Any]) -> str:
-        value = str(skill.get("selected_skill") or skill.get("used_skill") or "")
+    def _display_disease_name(self, knowledge: dict[str, Any]) -> str:
+        value = str(knowledge.get("selected_knowledge") or knowledge.get("used_knowledge") or "")
         mapping = {
             "femoral_head_necrosis": "股骨头坏死",
             "diffuse_glioma_brats": "胶质瘤",
@@ -2035,8 +2035,8 @@ class GaoDoctorAgent:
         self,
         evidence_bundle: dict[str, Any],
     ) -> str:
-        skill = evidence_bundle.get("skill_evidence", {})
-        disease = str(skill.get("selected_skill") or skill.get("used_skill") or "")
+        knowledge = evidence_bundle.get("knowledge_evidence", {})
+        disease = str(knowledge.get("selected_knowledge") or knowledge.get("used_knowledge") or "")
         if "femoral_head_necrosis" in disease or "股骨头" in disease:
             return (
                 "不能仅凭这张 X 光判断寿命。股骨头坏死通常不是直接决定生存期的疾病，"
@@ -2142,10 +2142,10 @@ class GaoDoctorAgent:
             confidence = 1.0
         else:
             source = "default"
-            reason = "No disease-specific routing field was provided; using default skill."
+            reason = "No disease-specific routing field was provided; using default knowledge."
             confidence = 0.2
         return {
-            "selected_skill": selected_disease_key,
+            "selected_knowledge": selected_disease_key,
             "selected_vision_mode": selected_vision_mode,
             "source": source,
             "reason": reason,

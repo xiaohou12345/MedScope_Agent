@@ -8,7 +8,7 @@ from scripts.collect_guideline_source import main as collect_guideline_source_ma
 from tools.guideline_section_mapper_tool import GuidelineSectionMapperTool
 from tools.guideline_source_collector_tool import GuidelineSourceCollectorTool
 from tools.guideline_search_tool import GuidelineSearchTool
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 
 
 class GuidelineSourceCollectorTest(unittest.TestCase):
@@ -222,14 +222,14 @@ class GuidelineSourceCollectorTest(unittest.TestCase):
                 disease_key="semantic_guideline",
                 disease_name="语义映射指南病种",
             )
-            skill = SkillBuilderTool(
+            knowledge = KnowledgeBuilderTool(
                 guideline_search_tool=GuidelineSearchTool(source_catalog_path=catalog_path)
-            ).build_guideline_skill_from_search(search_result)
+            ).build_guideline_knowledge_from_search(search_result)
 
-        self.assertIn("headache", skill["clinical_features"]["common_symptoms"])
-        self.assertIn("MRI FLAIR", skill["required_image_views"])
+        self.assertIn("headache", knowledge["clinical_features"]["common_symptoms"])
+        self.assertIn("MRI FLAIR", knowledge["required_image_views"])
 
-    def test_collected_html_guideline_can_enter_skill_builder_pipeline(self):
+    def test_collected_html_guideline_can_enter_knowledge_builder_pipeline(self):
         with TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             html_path = tmp / "pipeline_guideline.html"
@@ -281,15 +281,15 @@ class GuidelineSourceCollectorTest(unittest.TestCase):
                 disease_key="pipeline_guideline",
                 disease_name="Pipeline 指南病种",
             )
-            skill = SkillBuilderTool(
+            knowledge = KnowledgeBuilderTool(
                 guideline_search_tool=GuidelineSearchTool(source_catalog_path=catalog_path)
-            ).build_guideline_skill_from_search(search_result)
+            ).build_guideline_knowledge_from_search(search_result)
 
-        self.assertEqual(skill["clinical_features"]["common_symptoms"], ["髋关节疼痛"])
-        self.assertEqual(skill["vision_agent_tasks"]["segmentation_targets"], ["lesion_region"])
-        self.assertEqual(skill["quality_control"]["citation_status"], "verified")
+        self.assertEqual(knowledge["clinical_features"]["common_symptoms"], ["髋关节疼痛"])
+        self.assertEqual(knowledge["vision_agent_tasks"]["segmentation_targets"], ["lesion_region"])
+        self.assertEqual(knowledge["quality_control"]["citation_status"], "verified")
         self.assertEqual(
-            skill["guideline_extraction"]["citations"][0]["source_kind"],
+            knowledge["guideline_extraction"]["citations"][0]["source_kind"],
             "clinical_guideline",
         )
 

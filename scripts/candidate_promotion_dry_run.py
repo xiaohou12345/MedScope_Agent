@@ -1,7 +1,7 @@
 """Build a candidate promotion dry-run artifact.
 
 The dry run turns reviewed candidate items into proposal-only records. It must not
-update formal skills, guideline sources, or diagnosis reports.
+update formal knowledge, guideline sources, or diagnosis reports.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ def build_candidate_promotion_dry_run(
         "runtime_safety": {
             "dry_run_only": True,
             "candidate_artifacts_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "formal_update_allowed": False,
@@ -136,7 +136,7 @@ def _proposed_artifact_for_type(candidate_type: str) -> str:
         return "candidate_review_label"
     if candidate_type == "quality_gate_rule":
         return "candidate_quality_gate_rule"
-    return "candidate_skill_patch"
+    return "candidate_knowledge_patch"
 
 
 def _render_markdown(payload: dict[str, Any]) -> str:
@@ -151,7 +151,7 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         f"- `reason`: `{decision.get('reason')}`",
         "- `formal_update_allowed=false`",
         f"- `proposal_count`: `{payload.get('proposal_count')}`",
-        f"- `formal_skill_updated={str(safety.get('formal_skill_updated')).lower()}`",
+        f"- `formal_knowledge_updated={str(safety.get('formal_knowledge_updated')).lower()}`",
         f"- `formal_guideline_updated={str(safety.get('formal_guideline_updated')).lower()}`",
         f"- `diagnosis_report_updated={str(safety.get('diagnosis_report_updated')).lower()}`",
         "",

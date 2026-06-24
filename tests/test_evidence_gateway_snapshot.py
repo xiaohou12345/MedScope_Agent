@@ -67,7 +67,7 @@ class EvidenceGatewaySnapshotTest(unittest.TestCase):
                         ],
                         "runtime_safety": {
                             "candidate_only": True,
-                            "formal_skill_updated": False,
+                            "formal_knowledge_updated": False,
                             "formal_guideline_updated": False,
                             "diagnosis_report_updated": False,
                         },

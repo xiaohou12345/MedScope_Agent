@@ -6,17 +6,268 @@ from pathlib import Path
 from typing import Any
 
 from agents.gaodoctor_agent import GaoDoctorAgent
-from contracts.medical_contracts import SkillRoutingDecision
+from agents.vision_agent import VisionAgent
+from contracts.medical_contracts import KnowledgeRoutingDecision
 from llm.model_client import OpenAICompatibleModelClient
 from llm.prompt_runner import PromptRunner
 from memory.memory_manager import MemoryManager
 from tools.alignment_planner import AlignmentPlanner
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.guideline_knowledge_templates import apply_guideline_knowledge_template
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 from tools.visual_protocol_validator import VisualProtocolValidator
+from tools.vlm_candidate_parser import parse_vlm_candidates
 from tools.medsam2_segmentation_tool import (
     MissingMedSAM2BackendError,
     inspect_medsam2_configuration,
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def normalize_guideline_knowledge_draft(
+    *,
+    knowledge: dict[str, Any],
+    disease_key: str,
+    source_documents: list[dict[str, Any]] | None = None,
+    source_catalog_path: str = "data/guidelines/guideline_sources.json",
+    promoted_from: str | None = None,
+    promoted_by: str = "",
+    promoted_at: str = "",
+) -> dict[str, Any]:
+    normalized = json.loads(json.dumps(knowledge, ensure_ascii=False))
+    normalized["knowledge_type"] = "guideline_based"
+    if normalized.get("evidence_level") in (None, "", "low", "none", "proposal_only", "unreviewed"):
+        normalized["evidence_level"] = "high"
+    normalized["source_type"] = (
+        normalized.get("source_type")
+        if normalized.get("source_type") not in (None, "", "internal_dataset_summary", "none")
+        else "medical_guideline"
+    )
+    sources = list(source_documents or normalized.get("source_documents") or [])
+    if not sources:
+        raise ValueError("guideline knowledge draft requires source_documents")
+    normalized["source_documents"] = sources
+    normalized["source_priority"] = _guideline_source_priority(sources)
+    normalized["guideline_source"] = {
+        "source_catalog_path": source_catalog_path,
+    }
+    if _is_dataset_placeholder_source(normalized.get("source")):
+        normalized["source"] = _guideline_source_summary(sources)
+    if _is_dataset_placeholder_warning(normalized.get("warning")):
+        normalized["warning"] = (
+            "该 Knowledge 由 KnowledgeBuilder 基于可追溯医疗指南/规则来源生成，"
+            "仍需医生审核后才能作为正式诊断规则使用。"
+        )
+    if normalized.get("path_type") in (None, "", "privileged_knowledge_discovery"):
+        normalized["path_type"] = "guideline_aware_evidence_pipeline"
+    normalized = apply_guideline_knowledge_template(normalized, disease_key=disease_key)
+    extraction = dict(normalized.get("guideline_extraction") or {})
+    extraction.setdefault("tool", "knowledgebuilder_guideline_source_sync")
+    extraction["citations"] = list(extraction.get("citations") or sources)
+    normalized["guideline_extraction"] = extraction
+    if not normalized.get("guideline_documents"):
+        normalized["guideline_documents"] = _guideline_documents_from_sources(
+            disease_key=disease_key,
+            knowledge=normalized,
+            sources=sources,
+        )
+
+    citations = [citation for citation in extraction["citations"] if isinstance(citation, dict)]
+    missing_url_count = len(citations) - len([citation for citation in citations if citation.get("url")])
+    validation = VisualProtocolValidator().validate_knowledge(normalized)
+    quality = dict(normalized.get("quality_control") or {})
+    quality.update(
+        {
+            "citation_status": "verified" if missing_url_count == 0 else "needs_review",
+            "citation_count": len(citations),
+            "missing_url_count": missing_url_count,
+            "source_priority_status": "available" if normalized["source_priority"] else "missing",
+            "visual_protocol_status": validation["status"],
+            "visual_protocol_errors": list(validation["errors"]),
+            "visual_protocol_warnings": list(validation["warnings"]),
+            "guideline_document_status": (
+                "available" if normalized.get("guideline_documents") else "missing"
+            ),
+            "formal_knowledge_status": "needs_review",
+            "review_status": "human_review_required",
+            "medical_source_status": "present_unreviewed",
+            "can_enter_formal_guideline_knowledge": False,
+        }
+    )
+    if promoted_from:
+        quality["promoted_from"] = promoted_from
+    if promoted_at:
+        quality["promoted_at"] = promoted_at
+    if promoted_by:
+        quality["promoted_by"] = promoted_by
+    normalized["quality_control"] = quality
+    return normalized
+
+
+def _is_dataset_placeholder_source(source: Any) -> bool:
+    text = str(source or "").strip().lower()
+    if not text:
+        return True
+    return text in {
+        "internal dataset statistical summary",
+        "internal_dataset_summary",
+        "current_case_knowledgebuilder_proposal",
+        "none",
+    }
+
+
+def _is_dataset_placeholder_warning(warning: Any) -> bool:
+    text = str(warning or "").strip().lower()
+    if not text:
+        return False
+    return "数据总结" in text or "dataset" in text
+
+
+def _guideline_source_summary(sources: list[dict[str, Any]]) -> str:
+    return "; ".join(
+        str(document.get("title") or document.get("source_id") or "guideline source")
+        for document in sources
+        if isinstance(document, dict)
+    )
+
+
+def _guideline_documents_from_sources(
+    *,
+    disease_key: str,
+    knowledge: dict[str, Any],
+    sources: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    disease_name = str(knowledge.get("disease_name") or disease_key)
+    citations = [
+        {
+            key: source[key]
+            for key in (
+                "source_id",
+                "title",
+                "publisher",
+                "url",
+                "source_kind",
+                "publication_year",
+                "region",
+                "evidence_note",
+            )
+            if source.get(key)
+        }
+        for source in sources
+        if isinstance(source, dict)
+    ]
+    return [
+        {
+            "title": f"{disease_name} guideline synthesis",
+            "source_id": f"{disease_key}_guideline_synthesis",
+            "sections": [
+                {
+                    "heading": "source_documents",
+                    "text": "; ".join(
+                        str(source.get("title") or source.get("source_id") or "guideline source")
+                        for source in sources
+                    ),
+                    "citations": citations,
+                },
+                {
+                    "heading": "required_image_views",
+                    "text": _default_guideline_section_text(
+                        disease_key=disease_key,
+                        heading="required_image_views",
+                    ),
+                    "citations": citations,
+                },
+                {
+                    "heading": "visual_targets",
+                    "text": _default_guideline_section_text(
+                        disease_key=disease_key,
+                        heading="visual_targets",
+                    ),
+                    "citations": citations,
+                },
+                {
+                    "heading": "diagnostic_boundary",
+                    "text": (
+                        "This proposal can define evidence to review, but diagnosis_allowed=false "
+                        "until doctor review validates the knowledge and evidence protocol."
+                    ),
+                    "citations": citations,
+                },
+            ],
+        }
+    ]
+
+
+def _default_guideline_section_text(*, disease_key: str, heading: str) -> str:
+    sections = {
+        "osteoarthritis_or_degenerative_hip_disease": {
+            "required_image_views": (
+                "骨盆/髋关节 X 光正位；必要时侧位或蛙式位；当 X 光不能解释症状或需要评估软组织/骨髓改变时补充 MRI。"
+            ),
+            "visual_targets": (
+                "anatomy: 髋关节间隙; 股骨头; 髋臼边缘; 软骨下骨\n"
+                "lesion_features: 关节间隙狭窄; 骨赘; 软骨下硬化; 退变性股骨头形态不规则"
+            ),
+        },
+        "post_traumatic_change": {
+            "required_image_views": (
+                "髋关节 X 光正位；外伤或疼痛持续时根据指南补充侧位、CT 或 MRI。"
+            ),
+            "visual_targets": (
+                "anatomy: 股骨头; 股骨颈; 髋臼; 近端股骨\n"
+                "lesion_features: 骨折线; 陈旧骨折畸形; 外伤后轮廓异常; 内固定或术后改变"
+            ),
+        },
+        "developmental_dysplasia_related_degeneration": {
+            "required_image_views": (
+                "骨盆/髋关节 X 光正位；必要时侧位或其他体位评估髋臼覆盖和继发退变。"
+            ),
+            "visual_targets": (
+                "anatomy: 髋臼覆盖; 股骨头位置; 关节间隙; 髋臼外上缘\n"
+                "lesion_features: 髋臼发育浅; 股骨头外移; 半脱位; 继发退变"
+            ),
+        },
+    }
+    return sections.get(disease_key, {}).get(
+        heading,
+        "Use guideline sources to define disease-specific image views and visual targets before diagnosis.",
+    )
+
+
+def _guideline_source_priority(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def coerce_int(value: Any) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    indexed_sources = list(enumerate(sources))
+    priority_summary: list[dict[str, Any]] = []
+    for _, source in sorted(
+        indexed_sources,
+        key=lambda item: (
+            -coerce_int(item[1].get("source_priority")),
+            -coerce_int(item[1].get("publication_year")),
+            item[0],
+        ),
+    ):
+        priority_summary.append(
+            {
+                key: source[key]
+                for key in (
+                    "source_id",
+                    "title",
+                    "publisher",
+                    "url",
+                    "source_kind",
+                    "publication_year",
+                    "region",
+                    "source_priority",
+                )
+                if source.get(key)
+            }
+        )
+    return priority_summary
 
 
 class MedScopeReadinessError(RuntimeError):
@@ -53,26 +304,39 @@ class MedScopeService:
     SUPPORTED_VISION_MODES = {
         "ground_truth",
         "medsam2",
-        "no_mask_skill",
+        "no_mask_knowledge",
         "real_vlm_validation",
     }
-    SUPPORTED_SKILL_SELECTION_MODES = {
+    SUPPORTED_KNOWLEDGE_SELECTION_MODES = {
         "primary_only",
         "manual_secondary",
         "agent_auto_secondary",
+    }
+    SUPPORTED_EVIDENCE_PROTOCOL_MODES = {
+        "finding_list_baseline",
+        "quantitative_optional",
     }
 
     def __init__(
         self,
         gaodoctor_agent: Any | None = None,
-        skill_tool: SkillBuilderTool | None = None,
+        knowledge_tool: KnowledgeBuilderTool | None = None,
         alignment_planner: AlignmentPlanner | None = None,
+        secondary_knowledge_proposal_dir: Path | str | None = None,
+        secondary_visual_evidence_runner: Any | None = None,
     ) -> None:
         self.gaodoctor_agent = gaodoctor_agent or GaoDoctorAgent(
             prompt_runner=PromptRunner(model_client=OpenAICompatibleModelClient())
         )
-        self.skill_tool = skill_tool or SkillBuilderTool()
+        self.knowledge_tool = knowledge_tool or KnowledgeBuilderTool()
         self.alignment_planner = alignment_planner or AlignmentPlanner()
+        self.secondary_knowledge_proposal_dir = Path(
+            secondary_knowledge_proposal_dir
+            or PROJECT_ROOT / "output" / "fake" / "secondary_knowledge_proposals"
+        )
+        self.secondary_visual_evidence_runner = (
+            secondary_visual_evidence_runner or self._run_secondary_visual_evidence
+        )
 
     def handle_request(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = self._normalize_image_payload(payload)
@@ -80,13 +344,13 @@ class MedScopeService:
         if not patient_message:
             raise ValueError("patient_message is required")
         routing_decision = self._build_routing_decision(payload)
-        if routing_decision.get("skill_builder_action") == "search_or_generate_skill":
-            return self._build_skill_proposal_response(
+        if routing_decision.get("knowledge_builder_action") == "search_or_generate_knowledge":
+            return self._build_knowledge_proposal_response(
                 payload=payload,
                 routing_decision=routing_decision,
             )
         alignment_plan = self._build_alignment_plan(payload, routing_decision)
-        disease_key = routing_decision["selected_skill"]
+        disease_key = routing_decision["selected_knowledge"]
         vision_mode = routing_decision["selected_vision_mode"]
         try:
             result = self.gaodoctor_agent.handle_message(
@@ -114,66 +378,77 @@ class MedScopeService:
                     "配置完成后可先运行 MedSAM2 smoke/readiness 测试，再重新提交病例。",
                 ],
             ) from exc
-        routing_decision = self._attach_secondary_skill_run_plan(
+        result.setdefault("image_path", payload.get("image_path") or "")
+        result.setdefault("patient_message", patient_message)
+        result.setdefault("patient_info", payload.get("patient_info") or {})
+        routing_decision = self._attach_secondary_knowledge_run_plan(
             payload=payload,
             routing_decision=routing_decision,
             primary_result=result,
         )
         result["routing_decision"] = routing_decision
+        self._attach_secondary_knowledge_analysis(result, routing_decision)
+        self._attach_evidence_protocol_mode_summary(result, routing_decision)
         result["alignment_plan"] = alignment_plan
         result.setdefault("analysis_status", alignment_plan["analysis_status"])
         if alignment_plan.get("suspected_conditions"):
             result.setdefault("suspected_conditions", alignment_plan["suspected_conditions"])
         if alignment_plan.get("required_next_images"):
             result.setdefault("required_next_images", alignment_plan["required_next_images"])
-        return self._attach_case_outputs(result)
+        result = self._attach_case_outputs(result)
+        self._attach_diagnostic_confidence(result)
+        return result
 
-    def _build_skill_proposal_response(
+    def _build_knowledge_proposal_response(
         self,
         *,
         payload: dict[str, Any],
         routing_decision: dict[str, Any],
     ) -> dict[str, Any]:
-        disease_key = str(routing_decision.get("selected_skill") or "")
-        proposal_skill = self.skill_tool.prepare_skill(
+        disease_key = str(routing_decision.get("selected_knowledge") or "")
+        proposal_knowledge = self.knowledge_tool.prepare_knowledge(
             disease_key=disease_key,
             disease_name=self._disease_name_for(disease_key),
             observations=self._proposal_observations(payload),
             persist=False,
         )
+        proposal_knowledge = self._ensure_guideline_proposal_knowledge(
+            disease_key=disease_key,
+            proposal_knowledge=proposal_knowledge,
+        )
         return {
-            "intent": "skill_proposal",
-            "analysis_status": "skill_proposal_required",
+            "intent": "knowledge_proposal",
+            "analysis_status": "knowledge_proposal_required",
             "reply_to_patient": (
-                "当前本地没有可直接用于诊断的正式 skill。系统已生成候选 skill 草案，"
+                "当前本地没有可直接用于诊断的正式 knowledge。系统已生成候选 knowledge 草案，"
                 "需要经过指南来源和人工审核后，才能进入受约束诊断流程。"
             ),
             "routing_decision": routing_decision,
-            "skill_builder_proposal": {
-                "skill_id": proposal_skill.get("skill_id"),
-                "selected_skill": disease_key,
-                "disease_name": proposal_skill.get("disease_name") or self._disease_name_for(disease_key),
-                "skill_type": proposal_skill.get("skill_type"),
-                "source_type": proposal_skill.get("source_type"),
-                "evidence_level": proposal_skill.get("evidence_level"),
+            "knowledge_builder_proposal": {
+                "knowledge_id": proposal_knowledge.get("knowledge_id"),
+                "selected_knowledge": disease_key,
+                "disease_name": proposal_knowledge.get("disease_name") or self._disease_name_for(disease_key),
+                "knowledge_type": proposal_knowledge.get("knowledge_type"),
+                "source_type": proposal_knowledge.get("source_type"),
+                "evidence_level": proposal_knowledge.get("evidence_level"),
                 "formal_update_allowed": False,
                 "diagnosis_allowed": False,
                 "review_required": True,
-                "proposal_skill": proposal_skill,
+                "proposal_knowledge": proposal_knowledge,
             },
             "missing_evidence": [
                 {
-                    "field": "formal_guideline_skill",
+                    "field": "formal_guideline_knowledge",
                     "status": "missing",
-                    "reason": "No local reviewed skill was available for the selected clinical hypothesis.",
+                    "reason": "No local reviewed knowledge was available for the selected clinical hypothesis.",
                 }
             ],
             "modality_limitations": [
-                "未加载正式 guideline skill 前，不运行视觉取证和诊断推理。",
+                "未加载正式 guideline knowledge 前，不运行视觉取证和诊断推理。",
             ],
             "recommendation": [
-                "先由 Skill Builder/Guideline Agent 搜索权威指南来源。",
-                "将候选 skill 作为 proposal-only artifact 审核，不直接写入正式 skill 库。",
+                "先由 Knowledge Builder/Guideline Agent 搜索权威指南来源。",
+                "将候选 knowledge 作为 proposal-only artifact 审核，不直接写入正式 knowledge 库。",
                 "审核通过后再运行 VisionAgent 和 DiagnosisAgent。",
             ],
         }
@@ -412,20 +687,21 @@ class MedScopeService:
         explicit_vision_mode = payload.get("vision_mode")
         if explicit_vision_mode:
             self._validate_vision_mode(str(explicit_vision_mode))
-        skill_selection_mode = self._skill_selection_mode(payload)
+        knowledge_selection_mode = self._knowledge_selection_mode(payload)
+        evidence_protocol_mode = self._evidence_protocol_mode(payload)
         matched_clues = self._match_supported_clues(payload)
         disease_key = explicit_disease_key or self._infer_disease_key(payload)
         vision_mode = explicit_vision_mode or self._infer_vision_mode(
             disease_key=disease_key,
             payload=payload,
         )
-        focused_primary_only = self._focused_primary_skill_only(
+        focused_primary_only = self._focused_primary_knowledge_only(
             payload=payload,
             explicit_disease_key=bool(explicit_disease_key),
         )
-        manual_secondary_candidates = self._manual_secondary_skill_candidates(
+        manual_secondary_candidates = self._manual_secondary_knowledge_candidates(
             payload=payload,
-            primary_skill=disease_key,
+            primary_knowledge=disease_key,
         )
         if explicit_disease_key or explicit_vision_mode:
             source = "explicit"
@@ -439,12 +715,12 @@ class MedScopeService:
             source = "default"
             confidence = 0.2
             reason = "No supported disease-specific routing clues matched; using the default workflow."
-        differential_candidates = self._differential_skill_candidates(
+        differential_candidates = self._differential_knowledge_candidates(
             disease_key=disease_key,
             payload=payload,
             focused_primary_only=focused_primary_only,
         )
-        differential_ranking = self._rank_differential_skill_candidates(
+        differential_ranking = self._rank_differential_knowledge_candidates(
             disease_key=disease_key,
             payload=payload,
             differential_candidates=differential_candidates,
@@ -453,15 +729,15 @@ class MedScopeService:
             item["disease_key"]
             for item in differential_ranking
             if item.get("display_group") == "strong_differential"
-        ][:2]
-        skill_builder_action, skill_builder_action_reason = self._skill_builder_action_for(
+        ][:3]
+        knowledge_builder_action, knowledge_builder_action_reason = self._knowledge_builder_action_for(
             disease_key
         )
-        skill_search_reason = self._skill_search_reason(
+        knowledge_search_reason = self._knowledge_search_reason(
             disease_key=disease_key,
             payload=payload,
-            skill_builder_action=skill_builder_action,
-            skill_builder_action_reason=skill_builder_action_reason,
+            knowledge_builder_action=knowledge_builder_action,
+            knowledge_builder_action_reason=knowledge_builder_action_reason,
         )
         initial_evidence_status = self._initial_evidence_status(
             disease_key=disease_key,
@@ -475,50 +751,60 @@ class MedScopeService:
             differential_ranking=differential_ranking,
             initial_evidence_status=initial_evidence_status,
         )
-        return SkillRoutingDecision(
-            selected_skill=disease_key,
+        return KnowledgeRoutingDecision(
+            selected_knowledge=disease_key,
             selected_vision_mode=vision_mode,
             source=source,
             reason=reason,
             confidence=confidence,
             matched_clues=matched_clues,
-            skill_selection_mode=skill_selection_mode,
-            manual_secondary_skill_candidates=manual_secondary_candidates,
+            knowledge_selection_mode=knowledge_selection_mode,
+            evidence_protocol_mode=evidence_protocol_mode,
+            manual_secondary_knowledge_candidates=manual_secondary_candidates,
             primary_hypothesis=disease_key,
-            differential_skill_candidates=differential_candidates,
+            differential_knowledge_candidates=differential_candidates,
             differential_candidate_ranking=differential_ranking,
-            display_differential_skill_candidates=display_differential_candidates,
-            secondary_skill_run_plan=self._initial_secondary_skill_run_plan(
-                skill_selection_mode=skill_selection_mode,
+            display_differential_knowledge_candidates=display_differential_candidates,
+            secondary_knowledge_run_plan=self._initial_secondary_knowledge_run_plan(
+                knowledge_selection_mode=knowledge_selection_mode,
                 focused_primary_only=focused_primary_only,
                 manual_secondary_candidates=manual_secondary_candidates,
                 has_differential_candidates=bool(differential_candidates),
             ),
             clinical_hypotheses=clinical_hypotheses,
-            skill_search_reason=skill_search_reason,
+            knowledge_search_reason=knowledge_search_reason,
             initial_evidence_status=initial_evidence_status,
             routing_evidence_status=initial_evidence_status,
-            skill_builder_action=skill_builder_action,
+            knowledge_builder_action=knowledge_builder_action,
         ).to_dict()
 
-    def _skill_selection_mode(self, payload: dict[str, Any]) -> str:
-        mode = str(payload.get("skill_selection_mode") or "primary_only").strip()
-        if mode not in self.SUPPORTED_SKILL_SELECTION_MODES:
-            supported = ", ".join(sorted(self.SUPPORTED_SKILL_SELECTION_MODES))
+    def _knowledge_selection_mode(self, payload: dict[str, Any]) -> str:
+        mode = str(payload.get("knowledge_selection_mode") or "primary_only").strip()
+        if mode not in self.SUPPORTED_KNOWLEDGE_SELECTION_MODES:
+            supported = ", ".join(sorted(self.SUPPORTED_KNOWLEDGE_SELECTION_MODES))
             raise ValueError(
-                f"unsupported skill_selection_mode: {mode}. Supported modes: {supported}"
+                f"unsupported knowledge_selection_mode: {mode}. Supported modes: {supported}"
             )
         return mode
 
-    def _manual_secondary_skill_candidates(
+    def _evidence_protocol_mode(self, payload: dict[str, Any]) -> str:
+        mode = str(payload.get("evidence_protocol_mode") or "finding_list_baseline").strip()
+        if mode not in self.SUPPORTED_EVIDENCE_PROTOCOL_MODES:
+            supported = ", ".join(sorted(self.SUPPORTED_EVIDENCE_PROTOCOL_MODES))
+            raise ValueError(
+                f"unsupported evidence_protocol_mode: {mode}. Supported modes: {supported}"
+            )
+        return mode
+
+    def _manual_secondary_knowledge_candidates(
         self,
         *,
         payload: dict[str, Any],
-        primary_skill: str | None,
+        primary_knowledge: str | None,
     ) -> list[str]:
-        raw = payload.get("manual_secondary_skill_candidates")
+        raw = payload.get("manual_secondary_knowledge_candidates")
         if raw is None:
-            raw = payload.get("secondary_skill_candidates")
+            raw = payload.get("secondary_knowledge_candidates")
         if not raw:
             return []
         if isinstance(raw, str):
@@ -529,51 +815,51 @@ class MedScopeService:
             values = []
         candidates: list[str] = []
         for value in values:
-            if not value or value == primary_skill or value in candidates:
+            if not value or value == primary_knowledge or value in candidates:
                 continue
             candidates.append(value)
-        return candidates[:2]
+        return candidates[:3]
 
-    def _initial_secondary_skill_run_plan(
+    def _initial_secondary_knowledge_run_plan(
         self,
         *,
-        skill_selection_mode: str,
+        knowledge_selection_mode: str,
         focused_primary_only: bool,
         manual_secondary_candidates: list[str],
         has_differential_candidates: bool,
     ) -> dict[str, Any]:
-        if skill_selection_mode == "primary_only":
+        if knowledge_selection_mode == "primary_only":
             return {
                 "status": "not_applicable" if focused_primary_only else "not_triggered",
                 "triggered": False,
                 "reason": (
-                    "explicit primary skill focus; secondary differential run was not requested"
+                    "explicit primary knowledge focus; secondary differential run was not requested"
                     if focused_primary_only
                     else "primary-only mode keeps secondary candidates display-only"
                 ),
-                "skill_selection_mode": skill_selection_mode,
+                "knowledge_selection_mode": knowledge_selection_mode,
                 "candidates": [],
             }
-        if skill_selection_mode == "manual_secondary":
+        if knowledge_selection_mode == "manual_secondary":
             return {
                 "status": "awaiting_manual_secondary_evidence"
                 if manual_secondary_candidates
                 else "not_triggered",
                 "triggered": False,
                 "reason": (
-                    "manual secondary mode selected; waiting for primary result before preparing selected backup skills"
+                    "manual secondary mode selected; waiting for primary result before preparing selected backup knowledge"
                     if manual_secondary_candidates
-                    else "manual secondary mode selected but no backup skill was provided"
+                    else "manual secondary mode selected but no backup knowledge was provided"
                 ),
-                "skill_selection_mode": skill_selection_mode,
+                "knowledge_selection_mode": knowledge_selection_mode,
                 "candidates": [],
             }
         if focused_primary_only:
             return {
                 "status": "not_applicable",
                 "triggered": False,
-                "reason": "explicit primary skill focus; agent-auto secondary run was not requested",
-                "skill_selection_mode": skill_selection_mode,
+                "reason": "explicit primary knowledge focus; agent-auto secondary run was not requested",
+                "knowledge_selection_mode": knowledge_selection_mode,
                 "candidates": [],
             }
         if not has_differential_candidates:
@@ -581,18 +867,18 @@ class MedScopeService:
                 "status": "not_applicable",
                 "triggered": False,
                 "reason": "no differential candidates were generated by routing",
-                "skill_selection_mode": skill_selection_mode,
+                "knowledge_selection_mode": knowledge_selection_mode,
                 "candidates": [],
             }
         return {
             "status": "awaiting_primary_evidence",
             "triggered": False,
-            "reason": "secondary run is evaluated after the primary skill evidence bundle is available",
-            "skill_selection_mode": skill_selection_mode,
+            "reason": "secondary run is evaluated after the primary knowledge evidence bundle is available",
+            "knowledge_selection_mode": knowledge_selection_mode,
             "candidates": [],
         }
 
-    def _attach_secondary_skill_run_plan(
+    def _attach_secondary_knowledge_run_plan(
         self,
         *,
         payload: dict[str, Any],
@@ -600,81 +886,688 @@ class MedScopeService:
         primary_result: dict[str, Any],
     ) -> dict[str, Any]:
         updated = dict(routing_decision)
-        skill_selection_mode = str(updated.get("skill_selection_mode") or "primary_only")
-        initial_plan = dict(updated.get("secondary_skill_run_plan") or {})
+        knowledge_selection_mode = str(updated.get("knowledge_selection_mode") or "primary_only")
+        initial_plan = dict(updated.get("secondary_knowledge_run_plan") or {})
         if initial_plan.get("status") == "not_applicable":
-            updated["secondary_skill_run_plan"] = initial_plan
+            updated["secondary_knowledge_run_plan"] = initial_plan
             return updated
-        if skill_selection_mode == "primary_only":
-            updated["secondary_skill_run_plan"] = {
+        if knowledge_selection_mode == "primary_only":
+            updated["secondary_knowledge_run_plan"] = {
                 "status": initial_plan.get("status") or "not_triggered",
                 "triggered": False,
                 "reason": initial_plan.get("reason") or "primary-only mode keeps secondary candidates display-only",
-                "skill_selection_mode": skill_selection_mode,
+                "knowledge_selection_mode": knowledge_selection_mode,
                 "candidates": [],
             }
             return updated
-        if skill_selection_mode == "manual_secondary":
-            candidates = list(updated.get("manual_secondary_skill_candidates") or [])
+        if knowledge_selection_mode == "manual_secondary":
+            candidates = list(updated.get("manual_secondary_knowledge_candidates") or [])
         else:
-            candidates = list(updated.get("display_differential_skill_candidates") or [])
-        if not candidates and skill_selection_mode != "manual_secondary":
+            candidates = list(updated.get("display_differential_knowledge_candidates") or [])
+        if not candidates and knowledge_selection_mode != "manual_secondary":
             candidates = [
                 item.get("disease_key")
                 for item in updated.get("differential_candidate_ranking", [])
                 if item.get("display_group") == "strong_differential"
             ]
-        candidates = [str(candidate) for candidate in candidates if candidate][:2]
+        candidates = [str(candidate) for candidate in candidates if candidate][:3]
         if not candidates:
-            updated["secondary_skill_run_plan"] = {
+            updated["secondary_knowledge_run_plan"] = {
                 "status": "not_applicable",
                 "triggered": False,
                 "reason": "no high-priority differential candidate is eligible for secondary run",
-                "skill_selection_mode": skill_selection_mode,
+                "knowledge_selection_mode": knowledge_selection_mode,
                 "candidates": [],
             }
             return updated
         if (
-            skill_selection_mode == "agent_auto_secondary"
+            knowledge_selection_mode == "agent_auto_secondary"
             and not self._primary_result_has_insufficient_evidence(primary_result)
         ):
-            updated["secondary_skill_run_plan"] = {
+            updated["secondary_knowledge_run_plan"] = {
                 "status": "not_triggered",
                 "triggered": False,
-                "reason": "primary skill did not report insufficient evidence",
-                "skill_selection_mode": skill_selection_mode,
+                "reason": "primary knowledge did not report insufficient evidence",
+                "knowledge_selection_mode": knowledge_selection_mode,
                 "candidates": [],
             }
             return updated
 
         candidate_plans = [
-            self._secondary_skill_candidate_plan(
+            self._secondary_knowledge_candidate_plan(
                 candidate_key=candidate,
-                primary_skill=str(updated.get("selected_skill") or ""),
+                primary_knowledge=str(updated.get("selected_knowledge") or ""),
                 payload=payload,
+                knowledge_selection_mode=knowledge_selection_mode,
             )
             for candidate in candidates
         ]
-        updated["secondary_skill_run_plan"] = {
+        updated["secondary_knowledge_run_plan"] = {
             "status": "manual_secondary_hypothesis_validation_ready"
-            if skill_selection_mode == "manual_secondary"
+            if knowledge_selection_mode == "manual_secondary"
             else "secondary_hypothesis_validation_ready",
             "triggered": True,
-            "primary_skill": updated.get("selected_skill"),
-            "trigger_reason": "manual_secondary_skill_selected"
-            if skill_selection_mode == "manual_secondary"
+            "primary_knowledge": updated.get("selected_knowledge"),
+            "trigger_reason": "manual_secondary_knowledge_selected"
+            if knowledge_selection_mode == "manual_secondary"
             else "primary_evidence_insufficient",
-            "skill_selection_mode": skill_selection_mode,
+            "knowledge_selection_mode": knowledge_selection_mode,
             "reason": (
-                "Manual secondary skill was selected; backup skills can be used as bounded hypothesis validation."
-                if skill_selection_mode == "manual_secondary"
-                else "Primary skill evidence is insufficient; high-priority differential candidates "
+                "Manual secondary knowledge was selected; backup knowledge can be used as bounded hypothesis validation."
+                if knowledge_selection_mode == "manual_secondary"
+                else "Primary knowledge evidence is insufficient; high-priority differential candidates "
                 "can be used as bounded secondary hypothesis validation."
             ),
-            "max_secondary_runs": 2,
+            "max_secondary_runs": 3,
             "candidates": candidate_plans,
         }
         return updated
+
+    def _attach_secondary_knowledge_analysis(
+        self,
+        result: dict[str, Any],
+        routing_decision: dict[str, Any],
+    ) -> None:
+        plan = routing_decision.get("secondary_knowledge_run_plan") or {}
+        candidates = plan.get("candidates") if isinstance(plan, dict) else []
+        if not isinstance(candidates, list) or not candidates:
+            return
+        analysis_items = [
+            self._secondary_knowledge_analysis_item(candidate, primary_result=result)
+            for candidate in candidates
+            if isinstance(candidate, dict)
+        ]
+        if not analysis_items:
+            return
+        result["secondary_knowledge_analysis"] = analysis_items
+        report = result.setdefault("report", {})
+        if isinstance(report, dict):
+            report["备用 Knowledge 复查结果"] = analysis_items
+
+    def _attach_evidence_protocol_mode_summary(
+        self,
+        result: dict[str, Any],
+        routing_decision: dict[str, Any],
+    ) -> None:
+        mode = str(routing_decision.get("evidence_protocol_mode") or "finding_list_baseline")
+        quantitative_requested = mode == "quantitative_optional"
+        summary = {
+            "mode": mode,
+            "mode_label": (
+                "可选量化指标协议"
+                if quantitative_requested
+                else "默认病灶征象 finding-list baseline"
+            ),
+            "quantitative_protocol_requested": quantitative_requested,
+            "quantitative_protocol_default_enabled": False,
+            "doctor_facing_summary": (
+                "本次已主动加入可选量化指标协议；系统会把塌陷程度、坏死面积比例、"
+                "骨小梁紊乱等作为待测量证据需求，但只有在 ROI/轮廓/测量质量门可靠时才可使用。"
+                if quantitative_requested
+                else "本次默认只使用病灶征象 finding-list baseline：优先检查硬化带、囊性变、"
+                "软骨下骨折/新月征等可由现有 mask 标注支持的病灶征象。"
+            ),
+            "safety_boundary": (
+                "可选量化暂不默认启用；当前没有经过质量门验证的量化输出时，不能把量化协议当作诊断证据。"
+                if quantitative_requested
+                else "当前不请求量化指标；不会因为新版 knowledge 存在量化协议就默认要求视觉系统输出塌陷角度、"
+                "骨小梁紊乱程度或坏死面积比例。"
+            ),
+        }
+        result["evidence_protocol_mode_summary"] = summary
+        report = result.setdefault("report", {})
+        if isinstance(report, dict):
+            report["证据提取范围"] = summary
+
+    def _secondary_knowledge_analysis_item(
+        self,
+        candidate: dict[str, Any],
+        *,
+        primary_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        diagnosis_allowed = bool(candidate.get("diagnosis_allowed"))
+        unreviewed = candidate.get("review_status") == "unreviewed"
+        analysis_mode = (
+            "hypothesis_validation_only"
+            if unreviewed or not diagnosis_allowed
+            else "evidence_bounded_secondary_diagnosis"
+        )
+        knowledge_builder_status = (
+            "formal_knowledge_loaded"
+            if candidate.get("knowledge_builder_action") == "load_existing_knowledge"
+            else "proposal_prepared"
+        )
+        workflow_stage = (
+            "formal_secondary_knowledge_ready"
+            if knowledge_builder_status == "formal_knowledge_loaded"
+            else "unreviewed_knowledge_hypothesis_validation_completed"
+        )
+        secondary_visual = self._run_secondary_candidate_visual_pass(
+            candidate=candidate,
+            primary_result=primary_result,
+        )
+        differential_review = self._secondary_differential_review(
+            candidate=candidate,
+            primary_result=primary_result,
+            secondary_visual=secondary_visual,
+        )
+        return {
+            "disease_key": candidate.get("disease_key"),
+            "disease_name": candidate.get("disease_name"),
+            "analysis_mode": analysis_mode,
+            "workflow_stage": workflow_stage,
+            "candidate_status": candidate.get("candidate_status"),
+            "knowledge_builder_status": knowledge_builder_status,
+            "knowledge_builder_progress": candidate.get("knowledge_builder_progress") or [],
+            "selected_by_user": bool(candidate.get("selected_by_user")),
+            "review_status": candidate.get("review_status"),
+            "proposal_knowledge_id": candidate.get("proposal_knowledge_id"),
+            "knowledge_builder_proposal_detail": candidate.get("knowledge_builder_proposal_detail")
+            or {},
+            "guideline_evidence_summary": candidate.get("guideline_evidence_summary") or {},
+            "secondary_visual_status": secondary_visual.get("status"),
+            "secondary_visual_protocol_status": secondary_visual.get("visual_protocol_status"),
+            "secondary_visual_evidence_bundle": secondary_visual.get("visual_evidence_bundle") or {},
+            "secondary_visual_outputs": secondary_visual.get("image_outputs") or {},
+            "differential_review": differential_review,
+            "evidence_boundary": (
+                "未审核 Knowledge 仅用于 hypothesis validation，不能作为正式确诊依据。"
+                if analysis_mode == "hypothesis_validation_only"
+                else "正式 Knowledge 可进入受证据约束的二级诊断复核。"
+            ),
+            "finding": (
+                "KnowledgeBuilder 已基于可追溯指南/规则来源生成未审核备用 Knowledge，并对当前病例证据完成 "
+                "hypothesis validation 级复查；当前结果用于提示需要补充哪些证据，不能覆盖主分析结论。"
+            ),
+            "diagnosis_allowed": diagnosis_allowed,
+            "formal_knowledge_updated": bool(candidate.get("formal_knowledge_updated")),
+        }
+
+    def _run_secondary_candidate_visual_pass(
+        self,
+        *,
+        candidate: dict[str, Any],
+        primary_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        disease_key = str(candidate.get("disease_key") or "")
+        try:
+            disease_knowledge = self._secondary_runtime_knowledge(candidate)
+            payload = self._secondary_visual_payload(primary_result)
+            visual_result = self.secondary_visual_evidence_runner(
+                image_path=payload["image_path"],
+                patient_message=payload["patient_message"],
+                patient_info=payload["patient_info"],
+                disease_key=disease_key,
+                disease_knowledge=disease_knowledge,
+                vision_mode=(primary_result.get("routing_decision") or {}).get("selected_vision_mode"),
+            )
+            return self._normalize_secondary_visual_result(
+                disease_key=disease_key,
+                visual_result=visual_result,
+            )
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "visual_protocol_status": "secondary_visual_failed",
+                "error": str(exc),
+                "visual_evidence_bundle": {},
+                "image_outputs": {},
+            }
+
+    def _secondary_runtime_knowledge(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(candidate.get("proposal_knowledge"), dict):
+            return candidate["proposal_knowledge"]
+        disease_key = str(candidate.get("disease_key") or "")
+        if candidate.get("knowledge_builder_status") == "formal_knowledge_loaded":
+            return self.knowledge_tool.load_guideline_knowledge(disease_key)
+        detail = candidate.get("knowledge_builder_proposal_detail") or {}
+        artifact_path = detail.get("proposal_artifact_path")
+        if artifact_path and Path(str(artifact_path)).exists():
+            artifact = json.loads(Path(str(artifact_path)).read_text(encoding="utf-8"))
+            proposal_knowledge = artifact.get("proposal_knowledge")
+            if isinstance(proposal_knowledge, dict):
+                return proposal_knowledge
+        raise FileNotFoundError(f"secondary runtime knowledge unavailable: {disease_key}")
+
+    def _run_secondary_visual_evidence(
+        self,
+        *,
+        image_path: str,
+        patient_message: str,
+        patient_info: dict[str, Any],
+        disease_key: str,
+        disease_knowledge: dict[str, Any],
+        vision_mode: str | None,
+    ) -> dict[str, Any]:
+        if not image_path:
+            raise ValueError("secondary visual evidence requires image_path")
+        if vision_mode == "real_vlm_validation" and getattr(self.gaodoctor_agent, "prompt_runner", None):
+            return self._run_secondary_vlm_visual_evidence(
+                image_path=image_path,
+                patient_message=patient_message,
+                patient_info=patient_info,
+                disease_key=disease_key,
+                disease_knowledge=disease_knowledge,
+            )
+        visual_agent = VisionAgent()
+        if disease_knowledge.get("visual_protocol") or disease_knowledge.get("imaging_evidence_protocol"):
+            visual_result = visual_agent.analyze_with_visual_protocol(
+                image_path=image_path,
+                disease_knowledge=disease_knowledge,
+            )
+        else:
+            visual_result = visual_agent.analyze_image(
+                image_path=image_path,
+                disease_knowledge=disease_knowledge,
+            )
+        return {
+            "status": "ok",
+            **visual_result,
+        }
+
+    def _run_secondary_vlm_visual_evidence(
+        self,
+        *,
+        image_path: str,
+        patient_message: str,
+        patient_info: dict[str, Any],
+        disease_key: str,
+        disease_knowledge: dict[str, Any],
+    ) -> dict[str, Any]:
+        prompt_runner = getattr(self.gaodoctor_agent, "prompt_runner", None)
+        if prompt_runner is None:
+            raise RuntimeError("secondary VLM visual evidence requires prompt_runner")
+        image_series = self._secondary_image_series(
+            image_path=image_path,
+            patient_info=patient_info,
+        )
+        user_payload = {
+            "patient_message": patient_message,
+            "disease_key": disease_key,
+            "disease_name": disease_knowledge.get("disease_name") or self._disease_name_for(disease_key),
+            "image_paths": [item["image_path"] for item in image_series],
+            "image_series": image_series,
+            "visual_protocol": disease_knowledge.get("visual_protocol") or {},
+            "imaging_evidence_protocol": disease_knowledge.get("imaging_evidence_protocol") or {},
+            "instruction": (
+                "Use only this candidate knowledge's visual protocol. Return JSON with a findings list. "
+                "Do not diagnose. Do not invent findings not visible in the image."
+            ),
+        }
+        response = prompt_runner.run(
+            task="secondary_visual_evidence_extraction",
+            system_prompt=(
+                "You are a visual evidence extractor for a secondary differential knowledge. "
+                "Look for the requested protocol findings only. Return compact JSON."
+            ),
+            user_payload=user_payload,
+        )
+        raw_payload = self._parse_secondary_vlm_response(response)
+        primary = image_series[0]
+        evidence_items = parse_vlm_candidates(
+            raw_payload,
+            image_id=str(primary["image_id"]),
+            view_hint=str(primary.get("view_hint") or "unknown"),
+            source_image_path=str(primary.get("image_path") or image_path),
+            imaging_evidence_protocol=disease_knowledge.get("imaging_evidence_protocol"),
+        )
+        bundle = self._secondary_bundle_from_vlm_items(
+            disease_key=disease_key,
+            evidence_items=evidence_items,
+        )
+        return {
+            "status": "ok",
+            "visual_evidence_bundle": bundle,
+            "image_outputs": {
+                "original_image_path": image_path,
+                "mask_path": "not_generated",
+                "overlay_path": "not_generated",
+            },
+        }
+
+    def _secondary_image_series(
+        self,
+        *,
+        image_path: str,
+        patient_info: dict[str, Any],
+    ) -> list[dict[str, str]]:
+        series = patient_info.get("image_series") if isinstance(patient_info, dict) else None
+        normalized = [
+            {
+                "image_id": str(item.get("image_id") or f"image_{index + 1:03d}"),
+                "image_path": str(item.get("image_path") or ""),
+                "view_hint": str(item.get("view_hint") or "unknown"),
+            }
+            for index, item in enumerate(series or [])
+            if isinstance(item, dict) and item.get("image_path")
+        ]
+        if normalized:
+            return normalized
+        return [{"image_id": "image_001", "image_path": image_path, "view_hint": "unknown"}]
+
+    def _parse_secondary_vlm_response(self, response: Any) -> dict[str, Any]:
+        if isinstance(response, dict):
+            return response
+        text = str(response).strip()
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        for block in text.split("```"):
+            block = block.strip()
+            if block.lower().startswith("json"):
+                block = block[4:].strip()
+            if not block:
+                continue
+            try:
+                parsed = json.loads(block)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
+        raise ValueError("secondary VLM response was not a JSON object")
+
+    def _secondary_bundle_from_vlm_items(
+        self,
+        *,
+        disease_key: str,
+        evidence_items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        findings = []
+        present = []
+        for item in evidence_items:
+            if not isinstance(item, dict):
+                continue
+            target = str(item.get("target") or "")
+            if not target:
+                continue
+            if item.get("diagnosis_usable"):
+                present.append(target)
+            observation = item.get("visual_observation") or {}
+            findings.append(
+                {
+                    "finding_id": item.get("finding_id") or target,
+                    "target": target,
+                    "display_name": self._finding_name_for(target),
+                    "image_id": item.get("image_id"),
+                    "view_hint": item.get("view_hint"),
+                    "source_image_path": item.get("source_image_path"),
+                    "status": observation.get("status", "candidate_present"),
+                    "description": observation.get("rationale") or observation.get("reason"),
+                    "measurements": item.get("measurements") or {},
+                    "quality": item.get("quality") or {},
+                    "diagnosis_usable": bool(item.get("diagnosis_usable")),
+                    "diagnosis_usable_level": item.get("diagnosis_usable_level"),
+                    "limitations": list(item.get("limitations") or []),
+                }
+            )
+        return {
+            "schema_version": "secondary_visual_evidence_bundle.v1",
+            "disease_target": disease_key,
+            "present_findings": list(dict.fromkeys(present)),
+            "findings": findings,
+            "evidence_items": evidence_items,
+            "numeric_evidence": {
+                "finding_count": len(findings),
+                "candidate_support_count": len(set(present)),
+            },
+        }
+
+    def _secondary_visual_payload(self, primary_result: dict[str, Any]) -> dict[str, Any]:
+        routing = primary_result.get("routing_decision") or {}
+        patient_info = dict(primary_result.get("patient_info") or {})
+        image_path = (
+            primary_result.get("image_path")
+            or (primary_result.get("image_outputs") or {}).get("original_image_path")
+            or routing.get("image_path")
+            or ""
+        )
+        if not image_path:
+            visual_bundle = primary_result.get("visual_evidence_bundle") or {}
+            for item in visual_bundle.get("findings") or []:
+                if isinstance(item, dict) and item.get("source_image_path"):
+                    image_path = str(item["source_image_path"])
+                    break
+        return {
+            "image_path": image_path,
+            "patient_message": str(primary_result.get("patient_message") or ""),
+            "patient_info": patient_info,
+        }
+
+    def _normalize_secondary_visual_result(
+        self,
+        *,
+        disease_key: str,
+        visual_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not isinstance(visual_result, dict):
+            raise ValueError("secondary visual runner did not return a dict")
+        bundle = visual_result.get("visual_evidence_bundle")
+        if not isinstance(bundle, dict):
+            bundle = self._visual_result_to_secondary_bundle(
+                disease_key=disease_key,
+                visual_result=visual_result,
+            )
+        if "disease_target" not in bundle:
+            bundle = {**bundle, "disease_target": disease_key}
+        return {
+            "status": str(visual_result.get("status") or "ok"),
+            "visual_protocol_status": "executed_with_candidate_knowledge",
+            "visual_evidence_bundle": bundle,
+            "image_outputs": visual_result.get("image_outputs") or {},
+        }
+
+    def _visual_result_to_secondary_bundle(
+        self,
+        *,
+        disease_key: str,
+        visual_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        evidence = visual_result.get("visual_evidence") or {}
+        findings = evidence.get("findings") if isinstance(evidence, dict) else []
+        evidence_items = evidence.get("evidence_items") if isinstance(evidence, dict) else []
+        present = []
+        for item in findings or []:
+            if isinstance(item, dict) and item.get("target"):
+                present.append(str(item["target"]))
+        return {
+            "schema_version": "secondary_visual_evidence_bundle.v1",
+            "disease_target": disease_key,
+            "present_findings": list(dict.fromkeys(present)),
+            "findings": findings if isinstance(findings, list) else [],
+            "evidence_items": evidence_items if isinstance(evidence_items, list) else [],
+            "numeric_evidence": {
+                "finding_count": len(findings) if isinstance(findings, list) else 0,
+            },
+        }
+
+    def _secondary_differential_review(
+        self,
+        *,
+        candidate: dict[str, Any],
+        primary_result: dict[str, Any],
+        secondary_visual: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        disease_key = str(candidate.get("disease_key") or "")
+        disease_name = str(candidate.get("disease_name") or self._disease_name_for(disease_key))
+        expected = self._secondary_expected_evidence(disease_key)
+        secondary_observations = self._secondary_visual_observation_summary(
+            secondary_visual or {}
+        )
+        observations = secondary_observations or self._primary_observation_summary(primary_result)
+        observation_source_text = (
+            "按备用 Knowledge 自己的视觉协议复查"
+            if secondary_observations
+            else "沿用主分析 evidence bundle 复查"
+        )
+        observation_text = "；".join(observations) if observations else "当前没有形成足够稳定的备用疾病专属影像证据。"
+        weak_support = self._secondary_weak_supporting_evidence(
+            disease_key=disease_key,
+            observations=observations,
+        )
+        missing = expected[:3]
+        confidence = self._secondary_confidence(
+            disease_key=disease_key,
+            disease_name=disease_name,
+            weak_support=weak_support,
+            missing=missing,
+        )
+        report_sentence = (
+            f"针对{disease_name}：{observation_source_text}，当前可见/已抽取信息为 {observation_text}。"
+            f"{'其中 ' + '、'.join(weak_support) + ' 可作为弱提示；' if weak_support else ''}"
+            f"当前证据支持度为{confidence['confidence_label']}；"
+            f"仍缺少 { '、'.join(missing) } 等针对性证据，因此只能作为备用复查方向，不能替代医生诊断。"
+        )
+        return {
+            "review_title": f"{disease_name} 备用复查判断",
+            "current_observation_summary": observation_text,
+            "expected_evidence_to_check": expected,
+            "weak_supporting_evidence": weak_support,
+            "missing_required_evidence": missing,
+            "report_sentence": report_sentence,
+            "diagnosis_allowed": bool(candidate.get("diagnosis_allowed")),
+            "diagnostic_confidence": confidence,
+        }
+
+    def _secondary_visual_observation_summary(self, secondary_visual: dict[str, Any]) -> list[str]:
+        if secondary_visual.get("status") != "ok":
+            return []
+        bundle = secondary_visual.get("visual_evidence_bundle") or {}
+        observations: list[str] = []
+        for item in bundle.get("findings") or []:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("display_name") or self._finding_name_for(str(item.get("target") or ""))
+            status = item.get("status") or item.get("description") or item.get("evidence_text")
+            if name:
+                observations.append(f"{name}{f'：{status}' if status else ''}")
+        for item in bundle.get("structured_visual_facts") or []:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("display_name") or self._finding_name_for(str(item.get("target") or ""))
+            status = item.get("status") or item.get("summary_text")
+            if name:
+                observations.append(f"{name}{f'：{status}' if status else ''}")
+        for target in bundle.get("present_findings") or []:
+            observations.append(self._finding_name_for(str(target)))
+        return list(dict.fromkeys(item for item in observations if item))[:6]
+
+    def _secondary_confidence(
+        self,
+        *,
+        disease_key: str,
+        disease_name: str,
+        weak_support: list[str],
+        missing: list[str],
+    ) -> dict[str, Any]:
+        if len(weak_support) >= 3:
+            level = "high"
+            score = 0.78
+            label = "高度支持"
+        elif len(weak_support) >= 2:
+            level = "moderate"
+            score = 0.58
+            label = "中等支持"
+        elif weak_support:
+            level = "low"
+            score = 0.38
+            label = "低度支持"
+        else:
+            level = "insufficient"
+            score = 0.18
+            label = "证据不足"
+        basis = weak_support or ["当前证据包未提取到该备用疾病的特异性征象"]
+        caveat = (
+            f"{disease_name} 需要复查 "
+            f"{'、'.join(missing[:2]) if missing else '针对性影像和临床证据'}；"
+            "当前结论只用于备用复查排序。"
+        )
+        return {
+            "disease_key": disease_key,
+            "disease_name": disease_name,
+            "confidence_level": level,
+            "confidence_score": score,
+            "confidence_label": label,
+            "basis": basis,
+            "caveat": caveat,
+        }
+
+    def _secondary_expected_evidence(self, disease_key: str) -> list[str]:
+        profiles = {
+            "osteoarthritis_or_degenerative_hip_disease": [
+                "关节间隙是否变窄",
+                "髋臼或股骨头边缘是否有骨赘",
+                "软骨下硬化是否以关节退变模式分布",
+                "股骨头形态是否出现退变性不规则",
+            ],
+            "post_traumatic_change": [
+                "是否存在明确骨折线或陈旧骨折畸形",
+                "股骨头/股骨颈轮廓是否与外伤后改变一致",
+                "是否有外伤史或术后/固定相关改变",
+            ],
+            "developmental_dysplasia_related_degeneration": [
+                "髋臼覆盖是否不足",
+                "髋臼是否浅或外上缘发育不良",
+                "股骨头外移或半脱位征象",
+                "继发性关节退变表现",
+            ],
+        }
+        return profiles.get(
+            disease_key,
+            [
+                "该候选疾病的特异性影像征象",
+                "与主分析疾病不同的鉴别证据",
+                "是否需要补充体位或临床病史",
+            ],
+        )
+
+    def _primary_observation_summary(self, result: dict[str, Any]) -> list[str]:
+        observations: list[str] = []
+        for item in result.get("structured_visual_facts") or []:
+            if isinstance(item, dict):
+                name = item.get("display_name") or item.get("target") or item.get("finding_id")
+                status = item.get("status")
+                if name:
+                    observations.append(f"{name}{f'：{status}' if status else ''}")
+        visual_bundle = result.get("visual_evidence_bundle") or {}
+        for item in visual_bundle.get("structured_visual_facts") or []:
+            if isinstance(item, dict):
+                name = item.get("display_name") or item.get("target") or item.get("finding_id")
+                status = item.get("status")
+                if name:
+                    observations.append(f"{name}{f'：{status}' if status else ''}")
+        report = result.get("report") or {}
+        imaging = report.get("imaging_evidence_summary") or {}
+        for target in imaging.get("supported_targets") or []:
+            observations.append(str(target))
+        for target in imaging.get("nonspecific_or_unusable_targets") or []:
+            observations.append(f"{target}：非特异或不可单独诊断")
+        return list(dict.fromkeys(item for item in observations if item))[:5]
+
+    def _secondary_weak_supporting_evidence(
+        self,
+        *,
+        disease_key: str,
+        observations: list[str],
+    ) -> list[str]:
+        text = " ".join(observations)
+        weak: list[str] = []
+        if disease_key == "osteoarthritis_or_degenerative_hip_disease":
+            if any(marker in text for marker in ["硬化", "density", "密度"]):
+                weak.append("硬化/密度改变")
+            if any(marker in text for marker in ["关节间隙", "joint_space"]):
+                weak.append("关节间隙变窄")
+            if any(marker in text for marker in ["骨赘", "osteophyte"]):
+                weak.append("骨赘")
+        if disease_key == "post_traumatic_change":
+            if any(marker in text for marker in ["骨折", "fracture", "外伤"]):
+                weak.append("骨折或外伤相关线索")
+        if disease_key == "developmental_dysplasia_related_degeneration":
+            if any(marker in text for marker in ["髋臼", "覆盖", "发育不良", "半脱位"]):
+                weak.append("髋臼覆盖/发育异常线索")
+        return weak[:3]
 
     def _primary_result_has_insufficient_evidence(self, result: dict[str, Any]) -> bool:
         report = result.get("report") or {}
@@ -694,45 +1587,298 @@ class MedScopeService:
         report_text = json.dumps(report, ensure_ascii=False)
         return any(marker in report_text for marker in ["证据不足", "不能确认", "不能仅凭"])
 
-    def _secondary_skill_candidate_plan(
+    def _secondary_knowledge_candidate_plan(
         self,
         *,
         candidate_key: str,
-        primary_skill: str,
+        primary_knowledge: str,
         payload: dict[str, Any],
+        knowledge_selection_mode: str,
     ) -> dict[str, Any]:
-        skill_builder_action, skill_builder_reason = self._skill_builder_action_for(candidate_key)
+        knowledge_builder_action, knowledge_builder_reason = self._knowledge_builder_action_for(candidate_key)
+        selected_by_user = knowledge_selection_mode == "manual_secondary"
         base = {
             "disease_key": candidate_key,
             "disease_name": self._disease_name_for(candidate_key),
-            "primary_skill": primary_skill,
-            "skill_builder_action": skill_builder_action,
-            "skill_builder_reason": skill_builder_reason,
+            "primary_knowledge": primary_knowledge,
+            "knowledge_builder_action": knowledge_builder_action,
+            "knowledge_builder_reason": knowledge_builder_reason,
             "analysis_allowed": True,
+            "selected_by_user": selected_by_user,
+            "candidate_status": (
+                "selected_for_secondary_review"
+                if knowledge_builder_action == "load_existing_knowledge"
+                else "selected_for_knowledgebuilder"
+            ),
         }
-        if skill_builder_action == "load_existing_skill":
+        if knowledge_builder_action == "load_existing_knowledge":
+            proposal_detail = self._formal_secondary_knowledge_detail(candidate_key)
             return {
                 **base,
-                "action": "run_formal_secondary_skill",
-                "review_status": "formal_guideline_skill",
+                "action": "run_formal_secondary_knowledge",
+                "knowledge_builder_status": "formal_knowledge_loaded",
+                "knowledge_builder_proposal_detail": proposal_detail,
+                "knowledge_builder_progress": [
+                    {
+                        "step": "select_candidate",
+                        "label": "已选择备用疾病",
+                        "status": "done",
+                    },
+                    {
+                        "step": "load_existing_knowledge",
+                        "label": "已加载正式 Knowledge",
+                        "status": "done",
+                    },
+                    {
+                        "step": "hypothesis_validation",
+                        "label": "进入备用复查",
+                        "status": "ready",
+                    },
+                ],
+                "review_status": "formal_guideline_knowledge",
                 "use_scope": "evidence_bounded_secondary_diagnosis",
                 "diagnosis_allowed": True,
             }
-        proposal_skill = self.skill_tool.prepare_skill(
+        proposal_knowledge = self.knowledge_tool.prepare_knowledge(
             disease_key=candidate_key,
             disease_name=self._disease_name_for(candidate_key),
             observations=self._proposal_observations(payload),
             persist=False,
         )
+        proposal_knowledge = self._ensure_guideline_proposal_knowledge(
+            disease_key=candidate_key,
+            proposal_knowledge=proposal_knowledge,
+        )
+        progress = [
+            {
+                "step": "select_candidate",
+                "label": "已选择备用疾病",
+                "status": "done",
+            },
+            {
+                "step": "prepare_knowledge_proposal",
+                "label": "KnowledgeBuilder proposal 已生成并进入审核库",
+                "status": "done",
+            },
+            {
+                "step": "hypothesis_validation",
+                "label": "已完成备用 Knowledge 假设复查",
+                "status": "done",
+            },
+        ]
+        proposal_detail = self._proposal_secondary_knowledge_detail(
+            disease_key=candidate_key,
+            proposal_knowledge=proposal_knowledge,
+        )
+        guideline_evidence_summary = self._proposal_guideline_evidence_summary(proposal_knowledge)
+        proposal_artifact_path = self._write_secondary_knowledge_proposal_artifact(
+            candidate_key=candidate_key,
+            primary_knowledge=primary_knowledge,
+            proposal_knowledge=proposal_knowledge,
+            proposal_detail=proposal_detail,
+            progress=progress,
+        )
+        proposal_detail["proposal_artifact_path"] = str(proposal_artifact_path)
+        proposal_detail["review_queue_status"] = "entered_knowledge_review_queue"
         return {
             **base,
-            "action": "run_unreviewed_skill_hypothesis_validation",
+            "action": "run_unreviewed_knowledge_hypothesis_validation",
+            "knowledge_builder_status": "proposal_prepared",
+            "knowledge_builder_proposal_detail": proposal_detail,
+            "knowledge_builder_progress": progress,
+            "review_queue_status": "entered_knowledge_review_queue",
             "review_status": "unreviewed",
             "use_scope": "hypothesis_validation_only",
             "diagnosis_allowed": False,
-            "proposal_skill_id": proposal_skill.get("skill_id"),
-            "proposal_skill_type": proposal_skill.get("skill_type"),
-            "formal_skill_updated": False,
+            "proposal_knowledge_id": proposal_knowledge.get("knowledge_id"),
+            "proposal_knowledge_type": proposal_knowledge.get("knowledge_type"),
+            "proposal_knowledge": proposal_knowledge,
+            "guideline_evidence_summary": guideline_evidence_summary,
+            "formal_knowledge_updated": False,
+        }
+
+    def _write_secondary_knowledge_proposal_artifact(
+        self,
+        *,
+        candidate_key: str,
+        primary_knowledge: str,
+        proposal_knowledge: dict[str, Any],
+        proposal_detail: dict[str, Any],
+        progress: list[dict[str, Any]],
+    ) -> Path:
+        safe_key = re.sub(r"[^A-Za-z0-9_-]+", "_", candidate_key).strip("_")
+        if not safe_key:
+            safe_key = "secondary_candidate"
+        self.secondary_knowledge_proposal_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = self.secondary_knowledge_proposal_dir / f"{safe_key}.json"
+        artifact = {
+            "schema_version": "secondary_knowledge_proposal.v1",
+            "candidate_key": candidate_key,
+            "disease_name": self._disease_name_for(candidate_key),
+            "primary_knowledge": primary_knowledge,
+            "proposal_status": "proposal_only",
+            "candidate_status": "selected_for_knowledgebuilder",
+            "knowledge_builder_status": "proposal_prepared",
+            "review_queue_status": "entered_knowledge_review_queue",
+            "diagnosis_allowed": False,
+            "formal_knowledge_updated": False,
+            "knowledge_builder_progress": progress,
+            "knowledge_builder_proposal_detail": {
+                **proposal_detail,
+                "proposal_artifact_path": str(artifact_path),
+                "review_queue_status": "entered_knowledge_review_queue",
+            },
+            "proposal_knowledge": proposal_knowledge,
+            "safety_boundary": (
+                "Proposal-only secondary knowledge. It may be used for bounded hypothesis validation "
+                "but cannot modify formal guideline knowledge or make a positive diagnosis."
+            ),
+        }
+        artifact_path.write_text(
+            json.dumps(artifact, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return artifact_path
+
+    def _proposal_secondary_knowledge_detail(
+        self,
+        *,
+        disease_key: str,
+        proposal_knowledge: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "knowledge_id": proposal_knowledge.get("knowledge_id"),
+            "knowledge_type": proposal_knowledge.get("knowledge_type"),
+            "evidence_level": proposal_knowledge.get("evidence_level"),
+            "source_type": proposal_knowledge.get("source_type"),
+            "formal_knowledge_updated": False,
+            "expected_evidence_to_check": self._secondary_expected_evidence(disease_key),
+            **self._proposal_guideline_evidence_summary(proposal_knowledge),
+            "doctor_facing_summary": (
+                "KnowledgeBuilder 已生成 proposal-only 备用 Knowledge 草案；该草案只用于本次病例假设复查，"
+                "不会写入正式 knowledge 库，也不会作为确诊规则。"
+            ),
+        }
+
+    def _proposal_guideline_evidence_summary(self, proposal_knowledge: dict[str, Any]) -> dict[str, Any]:
+        source_documents = [
+            document for document in proposal_knowledge.get("source_documents") or []
+            if isinstance(document, dict)
+        ]
+        guideline_documents = [
+            document for document in proposal_knowledge.get("guideline_documents") or []
+            if isinstance(document, dict)
+        ]
+        guideline_sections = []
+        for document in guideline_documents:
+            for section in document.get("sections") or []:
+                if isinstance(section, dict) and section.get("heading"):
+                    guideline_sections.append(str(section["heading"]))
+        quality = proposal_knowledge.get("quality_control") or {}
+        return {
+            "source_count": len(source_documents),
+            "source_titles": [
+                str(document.get("title") or document.get("source_id") or "未命名来源")
+                for document in source_documents
+            ],
+            "guideline_document_count": len(guideline_documents),
+            "guideline_sections": list(dict.fromkeys(guideline_sections)),
+            "citation_status": quality.get("citation_status"),
+            "medical_source_status": quality.get("medical_source_status"),
+        }
+
+    def _ensure_guideline_proposal_knowledge(
+        self,
+        *,
+        disease_key: str,
+        proposal_knowledge: dict[str, Any],
+    ) -> dict[str, Any]:
+        knowledge = json.loads(json.dumps(proposal_knowledge, ensure_ascii=False))
+        source_documents = list(knowledge.get("source_documents") or self._default_guideline_sources_for(disease_key))
+        if not source_documents:
+            quality = dict(knowledge.get("quality_control") or {})
+            quality.update(
+                {
+                    "formal_knowledge_status": "proposal_only",
+                    "medical_source_status": "missing",
+                    "citation_status": "missing",
+                    "citation_count": 0,
+                    "missing_url_count": 0,
+                    "can_enter_formal_guideline_knowledge": False,
+                }
+            )
+            knowledge["quality_control"] = quality
+            return knowledge
+        return normalize_guideline_knowledge_draft(
+            knowledge=knowledge,
+            disease_key=disease_key,
+            source_documents=source_documents,
+        )
+
+    def _default_guideline_sources_for(self, disease_key: str) -> list[dict[str, Any]]:
+        sources_by_key: dict[str, list[dict[str, Any]]] = {
+            "osteoarthritis_or_degenerative_hip_disease": [
+                {
+                    "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                    "publisher": "American College of Radiology",
+                    "source_id": "acr_chronic_hip_pain",
+                    "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                    "source_kind": "imaging_appropriateness_guideline",
+                    "publication_year": 2022,
+                    "region": "US",
+                    "source_priority": 10,
+                    "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations.",
+                },
+                {
+                    "title": "NICE Osteoarthritis in over 16s: diagnosis and management",
+                    "publisher": "NICE",
+                    "source_id": "nice_osteoarthritis_ng226",
+                    "url": "https://www.nice.org.uk/guidance/ng226",
+                    "source_kind": "clinical_guideline",
+                    "publication_year": 2022,
+                    "region": "UK",
+                    "source_priority": 9,
+                    "evidence_note": "Clinical osteoarthritis diagnosis and management guideline used as a review source.",
+                },
+            ],
+            "post_traumatic_change": [
+                {
+                    "title": "ACR Appropriateness Criteria Acute Hip Pain",
+                    "publisher": "American College of Radiology",
+                    "source_id": "acr_acute_hip_pain",
+                    "url": "https://acsearch.acr.org/docs/3082587/Narrative/",
+                    "source_kind": "imaging_appropriateness_guideline",
+                    "publication_year": 2024,
+                    "region": "US",
+                    "source_priority": 10,
+                    "evidence_note": "Imaging pathway for traumatic or acute hip pain.",
+                }
+            ],
+            "developmental_dysplasia_related_degeneration": [
+                {
+                    "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                    "publisher": "American College of Radiology",
+                    "source_id": "acr_chronic_hip_pain",
+                    "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                    "source_kind": "imaging_appropriateness_guideline",
+                    "publication_year": 2022,
+                    "region": "US",
+                    "source_priority": 10,
+                    "evidence_note": "Chronic hip pain imaging source used for dysplasia-related degenerative review.",
+                }
+            ],
+        }
+        return list(sources_by_key.get(disease_key, []))
+
+    def _formal_secondary_knowledge_detail(self, disease_key: str) -> dict[str, Any]:
+        return {
+            "knowledge_id": disease_key,
+            "knowledge_type": "formal_guideline_knowledge",
+            "evidence_level": "guideline",
+            "source_type": "local_knowledge_library",
+            "formal_knowledge_updated": False,
+            "expected_evidence_to_check": self._secondary_expected_evidence(disease_key),
+            "doctor_facing_summary": "已加载本地正式 Knowledge，可进入受证据边界约束的备用复查。",
         }
 
     def _validate_vision_mode(self, vision_mode: str) -> None:
@@ -742,24 +1888,24 @@ class MedScopeService:
                 f"unsupported vision_mode: {vision_mode}. Supported modes: {supported}"
             )
 
-    def _skill_builder_action_for(self, disease_key: str | None) -> tuple[str, str]:
+    def _knowledge_builder_action_for(self, disease_key: str | None) -> tuple[str, str]:
         if not disease_key:
             return "none", "No primary hypothesis selected."
         try:
-            skill = self.skill_tool.load_guideline_skill(str(disease_key))
+            knowledge = self.knowledge_tool.load_guideline_knowledge(str(disease_key))
         except FileNotFoundError:
-            return "search_or_generate_skill", "local skill was not found"
-        protocol_ready, protocol_reason = self._skill_protocol_readiness(skill)
+            return "search_or_generate_knowledge", "local knowledge was not found"
+        protocol_ready, protocol_reason = self._knowledge_protocol_readiness(knowledge)
         if not protocol_ready:
-            return "search_or_generate_skill", protocol_reason
-        return "load_existing_skill", "local skill has required protocol"
+            return "search_or_generate_knowledge", protocol_reason
+        return "load_existing_knowledge", "local knowledge has required protocol"
 
-    def _skill_protocol_readiness(self, skill: dict[str, Any]) -> tuple[bool, str]:
-        if not isinstance(skill, dict):
-            return False, "local skill is not a valid object"
+    def _knowledge_protocol_readiness(self, knowledge: dict[str, Any]) -> tuple[bool, str]:
+        if not isinstance(knowledge, dict):
+            return False, "local knowledge is not a valid object"
         validator = VisualProtocolValidator()
-        has_full_evidence_protocol = bool(skill.get("imaging_evidence_protocol")) or any(
-            bool(skill.get(field))
+        has_full_evidence_protocol = bool(knowledge.get("imaging_evidence_protocol")) or any(
+            bool(knowledge.get(field))
             for field in (
                 "differential_diagnosis_protocol",
                 "clinical_context_protocol",
@@ -767,25 +1913,25 @@ class MedScopeService:
             )
         )
         if has_full_evidence_protocol:
-            evidence_validation = validator.validate_evidence_protocol(skill)
+            evidence_validation = validator.validate_evidence_protocol(knowledge)
             if not evidence_validation.get("valid"):
                 errors = "; ".join(str(error) for error in evidence_validation.get("errors", []))
-                return False, f"local skill has invalid evidence_protocol: {errors}"
-            return True, "local skill has valid evidence_protocol"
-        if skill.get("quantitative_evidence_protocol"):
+                return False, f"local knowledge has invalid evidence_protocol: {errors}"
+            return True, "local knowledge has valid evidence_protocol"
+        if knowledge.get("quantitative_evidence_protocol"):
             quantitative_validation = validator.validate_quantitative_evidence_protocol(
-                skill.get("quantitative_evidence_protocol")
+                knowledge.get("quantitative_evidence_protocol")
             )
             if not quantitative_validation.get("valid"):
                 errors = "; ".join(str(error) for error in quantitative_validation.get("errors", []))
-                return False, f"local skill has invalid quantitative_evidence_protocol: {errors}"
-        if skill.get("visual_protocol"):
-            validation = validator.validate_skill(skill)
+                return False, f"local knowledge has invalid quantitative_evidence_protocol: {errors}"
+        if knowledge.get("visual_protocol"):
+            validation = validator.validate_knowledge(knowledge)
             if not validation.get("valid"):
                 errors = "; ".join(str(error) for error in validation.get("errors", []))
-                return False, f"local skill has invalid visual_protocol: {errors}"
-            return True, "local skill has valid visual_protocol"
-        return False, "local skill is missing required protocol"
+                return False, f"local knowledge has invalid visual_protocol: {errors}"
+            return True, "local knowledge has valid visual_protocol"
+        return False, "local knowledge is missing required protocol"
 
     def _disease_name_for(self, disease_key: str) -> str:
         names = {
@@ -816,7 +1962,7 @@ class MedScopeService:
             observations.append(f"uploaded_image: {image_path}")
         return observations
 
-    def _differential_skill_candidates(
+    def _differential_knowledge_candidates(
         self,
         *,
         disease_key: str | None,
@@ -839,7 +1985,7 @@ class MedScopeService:
             candidates.append("tumor_like_lesion")
         return candidates
 
-    def _focused_primary_skill_only(
+    def _focused_primary_knowledge_only(
         self,
         *,
         payload: dict[str, Any],
@@ -866,7 +2012,7 @@ class MedScopeService:
         )
         has_focus_language = any(
             marker in text
-            for marker in ["怀疑", "是不是", "是否", "用", "根据", "skill", "诊断", "分析"]
+            for marker in ["怀疑", "是不是", "是否", "用", "根据", "knowledge", "诊断", "分析"]
         )
         return has_fhn_focus and has_focus_language
 
@@ -883,7 +2029,7 @@ class MedScopeService:
             ]
         )
 
-    def _rank_differential_skill_candidates(
+    def _rank_differential_knowledge_candidates(
         self,
         *,
         disease_key: str | None,
@@ -1029,40 +2175,40 @@ class MedScopeService:
                     "reason": (
                         rank.get("rank_reason")
                         or "Alternative explanation retained by the orchestrator; requires bounded "
-                        "evidence review and does not replace the primary skill."
+                        "evidence review and does not replace the primary knowledge."
                     ),
                 }
             )
         return hypotheses
 
-    def _skill_search_reason(
+    def _knowledge_search_reason(
         self,
         *,
         disease_key: str | None,
         payload: dict[str, Any],
-        skill_builder_action: str | None = None,
-        skill_builder_action_reason: str | None = None,
+        knowledge_builder_action: str | None = None,
+        knowledge_builder_action_reason: str | None = None,
     ) -> str:
         if not disease_key:
-            return "No primary disease skill matched; Skill Builder may search guideline sources if requested."
-        if skill_builder_action == "search_or_generate_skill":
+            return "No primary disease knowledge matched; Knowledge Builder may search guideline sources if requested."
+        if knowledge_builder_action == "search_or_generate_knowledge":
             return (
-                f"Selected {disease_key} as a primary clinical hypothesis, but {skill_builder_action_reason or 'the local skill is not ready'}; "
-                "Skill Builder should search guideline sources and create a proposal skill before evidence-bounded diagnosis."
+                f"Selected {disease_key} as a primary clinical hypothesis, but {knowledge_builder_action_reason or 'the local knowledge is not ready'}; "
+                "Knowledge Builder should search guideline sources and create a proposal knowledge before evidence-bounded diagnosis."
             )
         if disease_key == "femoral_head_necrosis":
             text = self._routing_text(payload)
             side = "left hip pain" if any(marker in text for marker in ["左髋", "left hip"]) else "hip pain"
             if any(marker in text for marker in ["怀疑", "股骨头坏死", "fhn", "onfh", "avn"]):
                 return (
-                    "User raised femoral head necrosis as a concern; selected the existing FHN skill as a primary clinical hypothesis, "
+                    "User raised femoral head necrosis as a concern; selected the existing FHN knowledge as a primary clinical hypothesis, "
                     "while keeping bounded differential candidates for evidence acquisition."
                 )
             return (
                 f"{side} with hip X-ray; user did not provide a confirmed diagnosis; "
                 "FHN and degenerative, traumatic, and dysplasia-related causes should be considered before evidence-bounded diagnosis."
             )
-        return "Selected primary disease skill as a clinical hypothesis; existing skill is loaded before any Skill Builder proposal."
+        return "Selected primary disease knowledge as a clinical hypothesis; existing knowledge is loaded before any Knowledge Builder proposal."
 
     def _initial_evidence_status(
         self,
@@ -1190,7 +2336,7 @@ class MedScopeService:
                 return "ground_truth"
             return "medsam2"
         if disease_key == "femoral_head_necrosis" and payload.get("image_path"):
-            return "no_mask_skill"
+            return "no_mask_knowledge"
         return None
 
     def _build_alignment_plan(
@@ -1198,18 +2344,169 @@ class MedScopeService:
         payload: dict[str, Any],
         routing_decision: dict[str, Any],
     ) -> dict[str, Any]:
-        disease_key = routing_decision.get("selected_skill")
-        disease_skill: dict[str, Any] = {}
+        disease_key = routing_decision.get("selected_knowledge")
+        disease_knowledge: dict[str, Any] = {}
         try:
             if disease_key:
-                disease_skill = self.skill_tool.load_guideline_skill(str(disease_key))
+                disease_knowledge = self.knowledge_tool.load_guideline_knowledge(str(disease_key))
         except FileNotFoundError:
-            disease_skill = {}
+            disease_knowledge = {}
         return self.alignment_planner.build_plan(
             payload=payload,
             routing_decision=routing_decision,
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
         )
+
+    def _attach_diagnostic_confidence(self, result: dict[str, Any]) -> None:
+        primary = self._primary_diagnostic_confidence(result)
+        secondary = self._secondary_diagnostic_confidence_items(result)
+        items = [item for item in [primary, *secondary] if item]
+        if not items:
+            return
+        result["diagnostic_confidence"] = items
+        report = result.setdefault("report", {})
+        if isinstance(report, dict):
+            report["诊断置信度"] = [
+                {
+                    **item,
+                    "display_sentence": self._diagnostic_confidence_sentence(item),
+                }
+                for item in items
+            ]
+
+    def _primary_diagnostic_confidence(self, result: dict[str, Any]) -> dict[str, Any] | None:
+        report = result.get("report") or {}
+        integrated = report.get("integrated_reasoning_summary") or {}
+        assessment = report.get("target_disease_assessment") or {}
+        routing = result.get("routing_decision") or {}
+        disease_key = str(
+            integrated.get("target_disease")
+            or assessment.get("target_disease")
+            or routing.get("primary_hypothesis")
+            or routing.get("selected_knowledge")
+            or ""
+        )
+        if not disease_key:
+            return None
+        disease_name = self._disease_name_for(disease_key)
+        basis = self._primary_confidence_basis(result)
+        level, score, label = self._primary_confidence_level(
+            disease_key=disease_key,
+            basis=basis,
+            result=result,
+        )
+        if level == "insufficient" and not basis:
+            basis = ["当前证据包没有提取到可支持该疾病的稳定影像征象"]
+        return {
+            "disease_key": disease_key,
+            "disease_name": disease_name,
+            "role": "primary",
+            "confidence_level": level,
+            "confidence_score": score,
+            "confidence_label": label,
+            "label": f"影像证据{label}：{disease_name}",
+            "basis": basis[:5],
+            "caveat": self._primary_confidence_caveat(disease_key=disease_key, level=level),
+        }
+
+    def _primary_confidence_basis(self, result: dict[str, Any]) -> list[str]:
+        report = result.get("report") or {}
+        imaging = report.get("imaging_evidence_summary") or {}
+        basis: list[str] = []
+        for target in imaging.get("supported_targets") or []:
+            basis.append(self._finding_name_for(str(target)))
+        visual_bundle = result.get("visual_evidence_bundle") or {}
+        for target in visual_bundle.get("present_findings") or []:
+            basis.append(self._finding_name_for(str(target)))
+        for item in result.get("structured_visual_facts") or []:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("display_name") or self._finding_name_for(str(item.get("target") or ""))
+            if name:
+                basis.append(str(name))
+        for item in visual_bundle.get("structured_visual_facts") or []:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("display_name") or self._finding_name_for(str(item.get("target") or ""))
+            if name:
+                basis.append(str(name))
+        for item in visual_bundle.get("findings") or []:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("display_name") or self._finding_name_for(str(item.get("target") or ""))
+            if name:
+                basis.append(str(name))
+        return list(dict.fromkeys(item for item in basis if item))
+
+    def _primary_confidence_level(
+        self,
+        *,
+        disease_key: str,
+        basis: list[str],
+        result: dict[str, Any],
+    ) -> tuple[str, float, str]:
+        report = result.get("report") or {}
+        integrated = report.get("integrated_reasoning_summary") or {}
+        assessment = report.get("target_disease_assessment") or {}
+        if integrated.get("can_confirm_target_disease") is True or assessment.get("can_confirm_target_disease") is True:
+            return "high", 0.86, "高度支持"
+        basis_text = " ".join(basis)
+        if disease_key == "femoral_head_necrosis":
+            has_sclerotic = any(marker in basis_text for marker in ["硬化", "sclerotic"])
+            has_cystic = any(marker in basis_text for marker in ["囊性", "囊变", "cystic"])
+            has_collapse = any(marker in basis_text for marker in ["塌陷", "collapse", "新月"])
+            if has_collapse or (has_sclerotic and has_cystic):
+                return "high", 0.82, "高度支持"
+            if has_sclerotic or has_cystic:
+                return "moderate", 0.62, "中等支持"
+        status = str(
+            integrated.get("evidence_status")
+            or assessment.get("evidence_status")
+            or result.get("analysis_status")
+            or ""
+        )
+        if basis:
+            return "low", 0.42, "低度支持"
+        if status in {"insufficient", "requires_evidence_acquisition", "partial_evidence"}:
+            return "insufficient", 0.18, "证据不足"
+        return "low", 0.35, "低度支持"
+
+    def _primary_confidence_caveat(self, *, disease_key: str, level: str) -> str:
+        if disease_key == "femoral_head_necrosis":
+            if level == "high":
+                return "建议 MRI 明确坏死范围、分期和是否存在早期塌陷；最终诊断仍需影像科/骨科医生结合病史确认。"
+            return "X 光对早期股骨头坏死敏感性有限；如症状持续或风险因素明确，建议 MRI 进一步评估。"
+        return "该置信度是 evidence bundle 内部支持度，不是校准后的流行病学概率；最终诊断需医生确认。"
+
+    def _secondary_diagnostic_confidence_items(self, result: dict[str, Any]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for analysis in result.get("secondary_knowledge_analysis") or []:
+            if not isinstance(analysis, dict):
+                continue
+            confidence = (analysis.get("differential_review") or {}).get("diagnostic_confidence")
+            if isinstance(confidence, dict):
+                items.append({**confidence, "role": "secondary"})
+        return items
+
+    def _diagnostic_confidence_sentence(self, item: dict[str, Any]) -> str:
+        name = item.get("disease_name") or self._disease_name_for(str(item.get("disease_key") or ""))
+        level = item.get("confidence_label") or item.get("confidence_level") or "未分级"
+        basis = item.get("basis") if isinstance(item.get("basis"), list) else []
+        basis_text = f"；依据：{'、'.join(str(value) for value in basis[:3])}" if basis else ""
+        caveat = f"；{item.get('caveat')}" if item.get("caveat") else ""
+        return f"{name}：当前证据支持度为{level}{basis_text}{caveat}"
+
+    def _finding_name_for(self, target: str) -> str:
+        labels = {
+            "sclerotic_band": "硬化带",
+            "cystic_change": "囊性变",
+            "trabecular_blurring": "骨小梁模糊",
+            "collapse": "股骨头塌陷",
+            "crescent_sign": "新月征/软骨下骨折",
+            "joint_space_narrowing": "关节间隙变窄",
+            "osteophyte": "骨赘",
+        }
+        return labels.get(target, target)
 
     def _attach_case_outputs(self, result: dict[str, Any]) -> dict[str, Any]:
         report = result.get("report") or {}

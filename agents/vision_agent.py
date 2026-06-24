@@ -43,14 +43,14 @@ class VisionAgent:
     def analyze_image(
         self,
         image_path: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
     ) -> dict[str, Any]:
-        if disease_skill.get("imaging_evidence_protocol"):
+        if disease_knowledge.get("imaging_evidence_protocol"):
             return self.analyze_with_visual_protocol(
                 image_path=image_path,
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
             )
-        tasks = disease_skill.get("vision_agent_tasks", {})
+        tasks = disease_knowledge.get("vision_agent_tasks", {})
         evidence = VisualEvidence(
             femoral_head_shape="基本完整",
             collapse=False,
@@ -90,13 +90,13 @@ class VisionAgent:
     def analyze_with_visual_protocol(
         self,
         image_path: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         mask_path: str | None = None,
         overlay_path: str | None = None,
         segmentation_prompt: dict[str, Any] | None = None,
         output_mask_path: str | None = None,
     ) -> dict[str, Any]:
-        protocol = self._visual_protocol_from_skill(disease_skill)
+        protocol = self._visual_protocol_from_knowledge(disease_knowledge)
         visual_tool_plan = self.visual_tool_router.plan_from_protocol(protocol)
         if mask_path:
             resolved_overlay_path = overlay_path or self._default_overlay_path(image_path)
@@ -108,7 +108,7 @@ class VisionAgent:
             )
             return self._visual_result_from_segmentation(
                 image_path=image_path,
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
                 segmentation=segmentation,
                 segmentation_source=segmentation["segmentation_source"],
             )
@@ -123,7 +123,7 @@ class VisionAgent:
             )
             return self._visual_result_from_segmentation(
                 image_path=image_path,
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
                 segmentation=segmentation,
                 segmentation_source=segmentation["segmentation_source"],
             )
@@ -183,7 +183,7 @@ class VisionAgent:
         image_path: str,
         mask_path: str,
         overlay_path: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
     ) -> dict[str, Any]:
         segmentation_tool = SegmentationTool(
             mask_reader=self.nifti_mask_reader or NiftiMaskReaderTool(),
@@ -201,7 +201,7 @@ class VisionAgent:
         image_outputs = segmentation["image_outputs"]
         protocol_payload = self._build_visual_protocol_payload(
             features=features,
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
             image_path=image_path,
             image_outputs=image_outputs,
             segmentation_source=segmentation["segmentation_source"],
@@ -244,10 +244,10 @@ class VisionAgent:
             image_path=image_path,
             modality="MRI",
             body_part="brain",
-            requested_targets=disease_skill.get("vision_agent_tasks", {}).get(
+            requested_targets=disease_knowledge.get("vision_agent_tasks", {}).get(
                 "segmentation_targets", []
             ),
-            requested_features=disease_skill.get("vision_agent_tasks", {}).get(
+            requested_features=disease_knowledge.get("vision_agent_tasks", {}).get(
                 "quantitative_features", []
             ),
             image_outputs=ImageOutputs(
@@ -263,7 +263,7 @@ class VisionAgent:
         image_path: str,
         mask_path: str,
         overlay_path: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
     ) -> dict[str, Any]:
         segmentation = self.segmentation_tool.segment_from_mask(
             image_path=image_path,
@@ -275,7 +275,7 @@ class VisionAgent:
         image_outputs = segmentation["image_outputs"]
         protocol_payload = self._build_visual_protocol_payload(
             features=features,
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
             image_path=image_path,
             image_outputs=image_outputs,
             segmentation_source=segmentation["segmentation_source"],
@@ -318,10 +318,10 @@ class VisionAgent:
             image_path=image_path,
             modality="MRI",
             body_part="brain",
-            requested_targets=disease_skill.get("vision_agent_tasks", {}).get(
+            requested_targets=disease_knowledge.get("vision_agent_tasks", {}).get(
                 "segmentation_targets", []
             ),
-            requested_features=disease_skill.get("vision_agent_tasks", {}).get(
+            requested_features=disease_knowledge.get("vision_agent_tasks", {}).get(
                 "quantitative_features", []
             ),
             image_outputs=ImageOutputs(
@@ -338,7 +338,7 @@ class VisionAgent:
         prompt: dict[str, Any],
         mask_path: str,
         overlay_path: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
     ) -> dict[str, Any]:
         segmentation = self.segmentation_tool.segment_with_model(
             image_path=image_path,
@@ -352,7 +352,7 @@ class VisionAgent:
         source = segmentation["segmentation_source"]
         protocol_payload = self._build_visual_protocol_payload(
             features=features,
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
             image_path=image_path,
             image_outputs=image_outputs,
             segmentation_source=segmentation["segmentation_source"],
@@ -395,10 +395,10 @@ class VisionAgent:
             image_path=image_path,
             modality="MRI",
             body_part="brain",
-            requested_targets=disease_skill.get("vision_agent_tasks", {}).get(
+            requested_targets=disease_knowledge.get("vision_agent_tasks", {}).get(
                 "segmentation_targets", []
             ),
-            requested_features=disease_skill.get("vision_agent_tasks", {}).get(
+            requested_features=disease_knowledge.get("vision_agent_tasks", {}).get(
                 "quantitative_features", []
             ),
             image_outputs=ImageOutputs(
@@ -412,17 +412,17 @@ class VisionAgent:
     def _visual_result_from_segmentation(
         self,
         image_path: str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         segmentation: dict[str, Any],
         segmentation_source: str,
     ) -> dict[str, Any]:
         features = segmentation["features"]
         mask_shape = segmentation["mask_shape"]
         image_outputs = segmentation["image_outputs"]
-        protocol = self._visual_protocol_from_skill(disease_skill)
+        protocol = self._visual_protocol_from_knowledge(disease_knowledge)
         protocol_payload = self._build_visual_protocol_payload(
             features=features,
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
             image_path=image_path,
             image_outputs=image_outputs,
             segmentation_source=segmentation_source,
@@ -477,12 +477,12 @@ class VisionAgent:
     def _build_visual_protocol_payload(
         self,
         features: dict[str, Any],
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         image_path: str,
         image_outputs: dict[str, Any] | None = None,
         segmentation_source: str = "unknown",
     ) -> dict[str, Any]:
-        protocol = self._visual_protocol_from_skill(disease_skill)
+        protocol = self._visual_protocol_from_knowledge(disease_knowledge)
         if not protocol:
             return {}
         available_modalities = [
@@ -677,10 +677,10 @@ class VisionAgent:
     def _empty_measurements_from_protocol(self, protocol: dict[str, Any]) -> dict[str, Any]:
         return {str(measurement): None for measurement in protocol.get("measurements") or []}
 
-    def _visual_protocol_from_skill(self, disease_skill: dict[str, Any]) -> dict[str, Any]:
+    def _visual_protocol_from_knowledge(self, disease_knowledge: dict[str, Any]) -> dict[str, Any]:
         return dict(
-            disease_skill.get("imaging_evidence_protocol")
-            or disease_skill.get("visual_protocol")
+            disease_knowledge.get("imaging_evidence_protocol")
+            or disease_knowledge.get("visual_protocol")
             or {}
         )
 

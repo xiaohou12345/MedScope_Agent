@@ -74,10 +74,10 @@ class OnfhCocoProtocolEvaluationTest(unittest.TestCase):
             payload = run_onfh_coco_protocol_evaluation(
                 package_dir=root,
                 output_dir=Path(tmpdir) / "out",
-                baseline_skill_path=Path(
-                    "skills/baselines/femoral_head_necrosis_finding_list_baseline_20260604.yaml"
+                baseline_knowledge_path=Path(
+                    "knowledge/baselines/femoral_head_necrosis_finding_list_baseline_20260604.yaml"
                 ),
-                current_skill_path=Path("skills/femoral_head_necrosis.yaml"),
+                current_knowledge_path=Path("knowledge/femoral_head_necrosis.yaml"),
             )
             output_paths = payload["output_paths"]
             self.assertTrue(Path(output_paths["json_path"]).exists())
@@ -92,7 +92,7 @@ class OnfhCocoProtocolEvaluationTest(unittest.TestCase):
         self.assertEqual(payload["dataset"]["auxiliary_excluded_annotation_count"], 1)
         self.assertTrue(payload["safety"]["real_data_evaluation_only"])
         self.assertTrue(payload["safety"]["patient_paths_redacted"])
-        self.assertFalse(payload["safety"]["formal_skill_update_allowed"])
+        self.assertFalse(payload["safety"]["formal_knowledge_update_allowed"])
         self.assertFalse(payload["safety"]["diagnosis_allowed"])
 
         labels = payload["label_mapping"]
@@ -146,10 +146,10 @@ class OnfhCocoProtocolEvaluationTest(unittest.TestCase):
             payload = run_onfh_coco_protocol_evaluation(
                 package_dir=root,
                 output_dir=Path(tmpdir) / "out",
-                baseline_skill_path=Path(
-                    "skills/baselines/femoral_head_necrosis_finding_list_baseline_20260604.yaml"
+                baseline_knowledge_path=Path(
+                    "knowledge/baselines/femoral_head_necrosis_finding_list_baseline_20260604.yaml"
                 ),
-                current_skill_path=Path("skills/femoral_head_necrosis.yaml"),
+                current_knowledge_path=Path("knowledge/femoral_head_necrosis.yaml"),
                 include_auxiliary_modalities=True,
             )
 

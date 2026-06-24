@@ -13,14 +13,14 @@
 
 | 方向 | 当前状态 | 怎么理解 |
 | --- | --- | --- |
-| 1. Guideline Skill 结构扩展 | v1 基本完成 | FHN skill 已经从 finding list 升级为 evidence acquisition protocol，包含影像、量化、鉴别、临床上下文和综合推理协议。 |
+| 1. Guideline Knowledge 结构扩展 | v1 基本完成 | FHN knowledge 已经从 finding list 升级为 evidence acquisition protocol，包含影像、量化、鉴别、临床上下文和综合推理协议。 |
 | 2. 患者临床信息结合 | v1 完成并收敛 | 患者 prompt 已结构化为 clinical evidence bundle，report / memory / QA 可追溯展示，并被限制为 suspicion modifier，不能替代影像证据。 |
-| 3. 候选假设生成与 Skill Routing | v1 完成 | 用户不显式指定疾病时，髋痛 + X-ray 可以自动生成 FHN primary hypothesis 和 differential candidates；候选假设不是诊断结论。 |
-| 4. 论文证据安全补充 Guideline Skill | v1 完成并收敛 | 论文证据可以进入 proposal-only、gateway、human review checklist、dry-run、patch preview 和前端 Review 面板，但不会直接改正式 skill。 |
+| 3. 候选假设生成与 Knowledge Routing | v1 完成 | 用户不显式指定疾病时，髋痛 + X-ray 可以自动生成 FHN primary hypothesis 和 differential candidates；候选假设不是诊断结论。 |
+| 4. 论文证据安全补充 Guideline Knowledge | v1 完成并收敛 | 论文证据可以进入 proposal-only、gateway、human review checklist、dry-run、patch preview 和前端 Review 面板，但不会直接改正式 knowledge。 |
 
 ## 暂存目标
 
-### Real X-ray Case Comparison：finding-list baseline vs evidence-protocol skill
+### Real X-ray Case Comparison：finding-list baseline vs evidence-protocol knowledge
 
 状态：暂存，等待 VisionAgent 能力提升后恢复。
 
@@ -28,11 +28,11 @@
 
 - 当前 VisionAgent 对真实 X-ray 病灶的定位、分割和量化能力还不稳定。
 - 目前无法可靠依靠病灶提示词生成可用 mask。
-- 现在强行做旧 finding-list skill vs 新 evidence-protocol skill 的真实病例对比，会被视觉能力瓶颈干扰，无法公平体现 evidence protocol 本身的价值。
+- 现在强行做旧 finding-list knowledge vs 新 evidence-protocol knowledge 的真实病例对比，会被视觉能力瓶颈干扰，无法公平体现 evidence protocol 本身的价值。
 
 本阶段先不做：
 
-- 真实病例旧 skill vs 新 skill 对比。
+- 真实病例旧 knowledge vs 新 knowledge 对比。
 - 真实病灶自动分割效果对比。
 - 真实量化指标对比。
 - 基于 VisionAgent 输出证明新版 protocol 更优。
@@ -52,11 +52,11 @@
 - 完善 clinical context / audit / QA 的证据边界。
 - 保持 VisionAgent 作为独立优化线继续提升。
 
-## 1. Guideline Skill 结构扩展
+## 1. Guideline Knowledge 结构扩展
 
 ### 已完成
 
-- `skills/femoral_head_necrosis.yaml` 已包含：
+- `knowledge/femoral_head_necrosis.yaml` 已包含：
   - `imaging_evidence_protocol`
   - `quantitative_evidence_protocol`
   - `differential_diagnosis_protocol`
@@ -72,28 +72,28 @@
   - 几何或形态测量：collapse depth、suspected area ratio、subchondral fracture extent、左右不对称
 - `VisualProtocolValidator` 已检查量化协议、临床上下文边界和 integrated reasoning 必需字段。
 - Vision / Diagnosis 流程已经消费 protocol evidence，不再把所有 finding 自动当成诊断事实。
-- 保留历史 finding-list baseline，并在前端 Skill 对比面板中展示。
+- 保留历史 finding-list baseline，并在前端 Knowledge 对比面板中展示。
 - 真实 ONFH COCO protocol evaluation 默认只评估 X-ray，MRI 只作为辅助特征发现材料。
 
 ### 证据位置
 
-- Skill：`skills/femoral_head_necrosis.yaml`
+- Knowledge：`knowledge/femoral_head_necrosis.yaml`
 - Validator：`tools/visual_protocol_validator.py`
 - Runtime：`agents/vision_agent.py`、`agents/gaodoctor_agent.py`、`agents/diagnosis_agent.py`
 - 真实数据 protocol eval：`scripts/onfh_coco_protocol_eval.py`
-- 前端对比：`/v1/skills/femoral_head_necrosis/comparison`、`web/app.js`
+- 前端对比：`/v1/knowledge/femoral_head_necrosis/comparison`、`web/app.js`
 - 测试：
   - `tests/test_fhn_evidence_protocol.py`
   - `tests/test_visual_protocol_validator.py`
   - `tests/test_onfh_coco_protocol_eval.py`
-  - `tests/test_skill_baselines.py`
+  - `tests/test_knowledge_baselines.py`
   - `tests/test_http_entrypoint.py`
 
 ### 未完成 / v2
 
 - 量化测量还不是临床可靠测量引擎；ROI、contour、landmark、view quality gate 还主要是协议和质量边界。
 - texture / trabecular 这类影像特征量化仍是 exploratory，不是已验证 predictor。
-- rich evidence protocol 目前最强的是 FHN 和少数样例 skill，不是所有疾病都覆盖。
+- rich evidence protocol 目前最强的是 FHN 和少数样例 knowledge，不是所有疾病都覆盖。
 - MRI 标注目前只作为发现新病灶特征的辅助材料，不作为当前 runtime 主目标。
 
 ### 下一步建议
@@ -122,7 +122,7 @@ FHN X-ray Evidence Protocol v2：让量化/测量协议更可执行、更易审�
   - trauma history
 - 未提供字段会标记为 `missing` / `unknown`，明确否定的风险因素会标记为 `absent`，不会编造。
 - `DiagnosisAgent` 会生成 `clinical_context_bundle`。
-- 已支持从 skill protocol 中抽取/匹配风险因素：
+- 已支持从 knowledge protocol 中抽取/匹配风险因素：
   - 激素使用
   - 饮酒
   - 外伤史
@@ -141,7 +141,7 @@ FHN X-ray Evidence Protocol v2：让量化/测量协议更可执行、更易审�
 
 - Prompt preservation：`api/service.py`
 - Clinical context bundle：`agents/diagnosis_agent.py`
-- Skill protocol：`skills/femoral_head_necrosis.yaml`
+- Knowledge protocol：`knowledge/femoral_head_necrosis.yaml`
 - Memory：`memory/memory_manager.py`
 - Frontend：`web/app.js`
 - 测试：
@@ -169,11 +169,11 @@ Clinical Context Evidence v2：把结构化 clinical evidence bundle 产品化�
 边界：临床风险因素仍然只能作为 suspicion modifier，不能确诊。
 ```
 
-## 3. 候选假设生成与 Skill Routing
+## 3. 候选假设生成与 Knowledge Routing
 
 ### 已完成
 
-- 用户不提供 `disease_key` 时，service 可以自动推断 primary disease skill。
+- 用户不提供 `disease_key` 时，service 可以自动推断 primary disease knowledge。
 - 对“髋痛 + 髋关节/X-ray clues”，primary hypothesis 会变成 `femoral_head_necrosis`。
 - 已保留 differential candidates：
   - `osteoarthritis_or_degenerative_hip_disease`
@@ -182,7 +182,7 @@ Clinical Context Evidence v2：把结构化 clinical evidence bundle 产品化�
   - 有感染、炎症、肿瘤提示时追加相应候选
 - Routing 输出包括：
   - `primary_hypothesis`
-  - `differential_skill_candidates`
+  - `differential_knowledge_candidates`
   - `clinical_hypotheses`
   - `initial_evidence_status`
   - `routing_evidence_status`
@@ -215,12 +215,12 @@ Clinical Context Evidence v2：把结构化 clinical evidence bundle 产品化�
 这部分不要再作为 v1 重做。如果以后要做：
 
 ```text
-Hypothesis Routing v2：基于部位、模态、症状和临床上下文做多 skill 排序。
-范围：输出 ranked primary/differential skill candidates。
+Hypothesis Routing v2：基于部位、模态、症状和临床上下文做多 knowledge 排序。
+范围：输出 ranked primary/differential knowledge candidates。
 边界：候选假设仍然只是 routing/evidence-acquisition plan，不是诊断。
 ```
 
-## 4. 论文证据安全补充 Guideline Skill
+## 4. 论文证据安全补充 Guideline Knowledge
 
 ### 已完成
 
@@ -252,12 +252,12 @@ Hypothesis Routing v2：基于部位、模态、症状和临床上下文做多 s
   - quality gate report
   - human review checklist
   - promotion dry-run
-  - controlled skill extension draft
-  - formal skill extension patch preview
+  - controlled knowledge extension draft
+  - formal knowledge extension patch preview
 - 前端有默认折叠的 Research Evidence Review 面板。
 - 安全边界明确：
   - proposal-only
-  - 不更新正式 skill
+  - 不更新正式 knowledge
   - 不更新 diagnosis rules
   - 不更新 registry
   - promotion 需要人工审核
@@ -277,7 +277,7 @@ Hypothesis Routing v2：基于部位、模态、症状和临床上下文做多 s
 - 没有全文 PDF parser。
 - 没有 production approval identity / permission / signature 系统。
 - 没有真正点击后应用 controlled extension 的 UI。
-- 不自动更新正式 skill，这是刻意安全边界，不是 bug。
+- 不自动更新正式 knowledge，这是刻意安全边界，不是 bug。
 
 ### 下一步建议
 
@@ -286,7 +286,7 @@ Hypothesis Routing v2：基于部位、模态、症状和临床上下文做多 s
 ```text
 Research Ingestion v2：真实 PubMed review + production human approval。
 范围：真实 query 质量、reviewer workflow、签名、审计。
-边界：仍然不自动更新正式 skill。
+边界：仍然不自动更新正式 knowledge。
 ```
 
 ## 支撑模块状态
@@ -296,7 +296,7 @@ Research Ingestion v2：真实 PubMed review + production human approval。
 已完成：
 
 - 主病例输入、影像发现、诊断报告、追问。
-- Skill 版本对比。
+- Knowledge 版本对比。
 - Research Evidence Review。
 - 候选假设队列。
 - Clinical/evidence/debug section。
@@ -323,8 +323,8 @@ Research Ingestion v2：真实 PubMed review + production human approval。
 
 - `scripts/onfh_coco_protocol_eval.py` 支持真实 ONFH package。
 - 默认只评估 X-ray。
-- 可以对比历史 finding-list baseline 和当前 evidence-protocol skill。
-- 前端 Skill 对比会总结 coverage 和量化需求。
+- 可以对比历史 finding-list baseline 和当前 evidence-protocol knowledge。
+- 前端 Knowledge 对比会总结 coverage 和量化需求。
 
 未完成：
 
@@ -365,8 +365,8 @@ Research Ingestion v2：真实 PubMed review + production human approval。
 - `docs/PRE_COMMIT_AUDIT_20260604.md`
 - `docs/FHN_REAL_VLM_VALIDATION_20260604.md`
 - `docs/plans/2026-06-04-real-vlm-multiview-validation.md`
-- `docs/plans/2026-06-06-controlled-skill-extension-draft-v1.md`
-- `docs/plans/2026-06-06-formal-skill-extension-patch-preview-v1.md`
+- `docs/plans/2026-06-06-controlled-knowledge-extension-draft-v1.md`
+- `docs/plans/2026-06-06-formal-knowledge-extension-patch-preview-v1.md`
 - `docs/plans/2026-06-06-human-review-controlled-promotion-v1.md`
 
 ## 保留文档说明

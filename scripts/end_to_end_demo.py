@@ -84,7 +84,7 @@ def run_end_to_end_demo(
                 "uploaded_image_path": str(uploaded_image_path),
                 "reference_mask_path": str(mask_path) if mask_path else None,
             },
-            "auto_skill_routing": service_result.get("routing_decision", {}),
+            "auto_knowledge_routing": service_result.get("routing_decision", {}),
             "visual_segmentation": {
                 "status": "completed",
                 "image_outputs": service_result.get("image_outputs", {}),
@@ -175,9 +175,9 @@ def run_standard_demo_suite(
                 if DEFAULT_FHN_NO_MASK_IMAGE_PATH.exists()
                 else None,
                 payload={
-                    "patient_message": "右髋疼痛，上传 X 光，请根据股骨头坏死 skill 自动圈出候选征象",
+                    "patient_message": "右髋疼痛，上传 X 光，请根据股骨头坏死 knowledge 自动圈出候选征象",
                     "disease_key": "femoral_head_necrosis",
-                    "vision_mode": "no_mask_skill",
+                    "vision_mode": "no_mask_knowledge",
                     "patient_info": {
                         "patient_id": "demo_fhn_no_mask_001",
                         "age": 45,
@@ -276,7 +276,7 @@ def _run_demo_case(
                 "status": "completed",
                 "uploaded_image_path": str(uploaded_image_path),
             },
-            "auto_skill_routing": service_result.get("routing_decision", {}),
+            "auto_knowledge_routing": service_result.get("routing_decision", {}),
             "visual_segmentation": {
                 "status": visual_status,
                 "image_outputs": image_outputs,
@@ -348,7 +348,7 @@ def _render_standard_demo_markdown(payload: dict[str, Any]) -> str:
         f"- case_count: {payload['case_count']}",
         f"- output_dir: `{payload['demo_output_dir']}`",
         "",
-        "| case_key | analysis_status | selected_skill | vision | response | evidence | audit |",
+        "| case_key | analysis_status | selected_knowledge | vision | response | evidence | audit |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for case in payload["cases"]:
@@ -361,7 +361,7 @@ def _render_standard_demo_markdown(payload: dict[str, Any]) -> str:
                 [
                     str(case.get("case_key", "")),
                     str(case.get("analysis_status", "")),
-                    str(routing.get("selected_skill", "")),
+                    str(routing.get("selected_knowledge", "")),
                     str(vision.get("status", "")),
                     f"`{case.get('response_path', '')}`",
                     f"`{case.get('evidence_bundle_path', '')}`",

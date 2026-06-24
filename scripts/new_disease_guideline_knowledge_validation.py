@@ -5,32 +5,32 @@ import json
 from pathlib import Path
 from typing import Any
 
-from scripts.ipf_guideline_skill_demo import run_ipf_guideline_skill_demo
+from scripts.ipf_guideline_knowledge_demo import run_ipf_guideline_knowledge_demo
 from scripts.ipf_visual_demo import run_ipf_visual_demo
 from tools.visual_protocol_validator import VisualProtocolValidator
 
 
-DEFAULT_OUTPUT_DIR = Path("output/fake/new_disease_guideline_skill_validation")
+DEFAULT_OUTPUT_DIR = Path("output/fake/new_disease_guideline_knowledge_validation")
 DISEASE_KEY = "idiopathic_pulmonary_fibrosis_hrct"
 DISEASE_NAME = "特发性肺纤维化 HRCT 评估"
 
 
-def run_new_disease_guideline_skill_validation(
+def run_new_disease_guideline_knowledge_validation(
     *,
     output_dir: Path | str = DEFAULT_OUTPUT_DIR,
 ) -> dict[str, Any]:
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    guideline_dir = output / "ipf_guideline_skill"
+    guideline_dir = output / "ipf_guideline_knowledge"
     visual_dir = output / "ipf_visual_demo"
     manifest_path = _write_local_ipf_manifest(output / "local_osic_case")
 
-    guideline_result = run_ipf_guideline_skill_demo(
+    guideline_result = run_ipf_guideline_knowledge_demo(
         output_dir=guideline_dir,
         collect_sources=False,
     )
-    skill = _read_json(Path(guideline_result["skill_output_path"]))
-    visual_protocol_status = VisualProtocolValidator().validate_skill(skill)
+    knowledge = _read_json(Path(guideline_result["knowledge_output_path"]))
+    visual_protocol_status = VisualProtocolValidator().validate_knowledge(knowledge)
 
     visual_result = json.loads(
         run_ipf_visual_demo(
@@ -46,14 +46,14 @@ def run_new_disease_guideline_skill_validation(
     )
     payload = _build_summary_payload(
         guideline_result=guideline_result,
-        skill=skill,
+        knowledge=knowledge,
         visual_protocol_status=visual_protocol_status,
         visual_result=visual_result,
         evidence_bundle=evidence_bundle,
         manifest_path=manifest_path,
     )
-    json_path = output / "new_disease_guideline_skill_validation.json"
-    markdown_path = output / "new_disease_guideline_skill_validation.md"
+    json_path = output / "new_disease_guideline_knowledge_validation.json"
+    markdown_path = output / "new_disease_guideline_knowledge_validation.md"
     payload["output_paths"] = {
         "summary_json_path": str(json_path),
         "summary_markdown_path": str(markdown_path),
@@ -107,7 +107,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _build_summary_payload(
     *,
     guideline_result: dict[str, Any],
-    skill: dict[str, Any],
+    knowledge: dict[str, Any],
     visual_protocol_status: dict[str, Any],
     visual_result: dict[str, Any],
     evidence_bundle: dict[str, Any],
@@ -120,29 +120,29 @@ def _build_summary_payload(
         if isinstance(state, dict) and state.get("status") == "unassessed"
     ]
     anatomy_evidence = dict(evidence_bundle.get("anatomy_evidence") or {})
-    visual_protocol = dict(skill.get("visual_protocol") or {})
+    visual_protocol = dict(knowledge.get("visual_protocol") or {})
     diagnosis_allowed = bool(evidence_bundle.get("present_findings")) and not unassessed_targets
     return {
-        "schema_version": "new_disease_guideline_skill_validation.v1",
+        "schema_version": "new_disease_guideline_knowledge_validation.v1",
         "status": "ok" if visual_result.get("status") == "ok" else visual_result.get("status"),
         "disease_key": DISEASE_KEY,
         "disease_name": DISEASE_NAME,
         "source_paths": {
             "manifest_path": str(manifest_path),
-            "skill_output_path": guideline_result.get("skill_output_path"),
+            "knowledge_output_path": guideline_result.get("knowledge_output_path"),
             "visual_result_path": visual_result.get("result_path"),
             "evidence_bundle_path": visual_result.get("evidence_bundle_path"),
         },
-        "guideline_skill": {
+        "guideline_knowledge": {
             "generated": True,
-            "skill_type": skill.get("skill_type"),
-            "path_type": skill.get("path_type"),
+            "knowledge_type": knowledge.get("knowledge_type"),
+            "path_type": knowledge.get("path_type"),
             "source_count": guideline_result.get("source_count"),
             "visual_protocol_status": visual_protocol_status.get("status"),
             "visual_protocol_errors": visual_protocol_status.get("errors") or [],
-            "required_image_views": list(skill.get("required_image_views") or []),
+            "required_image_views": list(knowledge.get("required_image_views") or []),
             "segmentation_targets": list(
-                (skill.get("vision_agent_tasks") or {}).get("segmentation_targets") or []
+                (knowledge.get("vision_agent_tasks") or {}).get("segmentation_targets") or []
             ),
             "measurements": list(visual_protocol.get("measurements") or []),
         },
@@ -170,14 +170,14 @@ def _build_summary_payload(
                 if not diagnosis_allowed
                 else "all_required_visual_targets_supported"
             ),
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "candidate_artifacts_only": True,
         },
         "claims": {
             "can_claim": [
-                "new_disease_guideline_skill_generated",
+                "new_disease_guideline_knowledge_generated",
                 "visual_protocol_validated",
                 "visual_protocol_can_build_evidence_bundle",
                 "missing_visual_evidence_is_explicitly_unassessed",
@@ -185,7 +185,7 @@ def _build_summary_payload(
             "cannot_claim": [
                 "cannot_diagnose_ipf_from_dry_run_bundle",
                 "cannot_treat_lung_mask_as_fibrosis_ground_truth",
-                "cannot_claim_universal_guideline_skill_generation_without_review",
+                "cannot_claim_universal_guideline_knowledge_generation_without_review",
             ],
         },
         "next_actions": [
@@ -197,16 +197,16 @@ def _build_summary_payload(
 
 
 def _render_markdown(payload: dict[str, Any]) -> str:
-    guideline = payload.get("guideline_skill") or {}
+    guideline = payload.get("guideline_knowledge") or {}
     visual = payload.get("visual_evidence") or {}
     safety = payload.get("safety_boundary") or {}
     claims = payload.get("claims") or {}
     lines = [
-        "# 新病种 guideline skill 端到端验证",
+        "# 新病种 guideline knowledge 端到端验证",
         "",
         f"- `disease_key`: `{payload.get('disease_key')}`",
         f"- `status`: `{payload.get('status')}`",
-        f"- `skill_type`: `{guideline.get('skill_type')}`",
+        f"- `knowledge_type`: `{guideline.get('knowledge_type')}`",
         f"- `visual_protocol_status`: `{guideline.get('visual_protocol_status')}`",
         f"- `evidence_bundle_schema`: `{visual.get('evidence_bundle_schema')}`",
         f"- `diagnosis_allowed=false`: `{safety.get('diagnosis_allowed') is False}`",
@@ -243,7 +243,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args()
-    result = run_new_disease_guideline_skill_validation(output_dir=args.output_dir)
+    result = run_new_disease_guideline_knowledge_validation(output_dir=args.output_dir)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

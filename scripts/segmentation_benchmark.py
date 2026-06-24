@@ -59,8 +59,8 @@ def run_segmentation_benchmark(
             "not_clinical_diagnosis": bool(
                 (manifest.get("safety") or {}).get("not_clinical_diagnosis", True)
             ),
-            "formal_skill_update_allowed": bool(
-                (manifest.get("safety") or {}).get("formal_skill_update_allowed", False)
+            "formal_knowledge_update_allowed": bool(
+                (manifest.get("safety") or {}).get("formal_knowledge_update_allowed", False)
             ),
         },
         "aggregate": _aggregate(cases),
@@ -147,7 +147,7 @@ def _evaluate_case(
         "metrics": metrics,
         "quality_gate": quality_gate,
         "diagnosis_allowed": False,
-        "formal_skill_update_allowed": False,
+        "formal_knowledge_update_allowed": False,
         "limitations": limitations,
     }
 
@@ -294,7 +294,7 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         [
             "",
             "Safety boundary: benchmark outputs are validation artifacts only. They do not update",
-            "formal skills and cannot be used as clinical diagnosis reports.",
+            "formal knowledge and cannot be used as clinical diagnosis reports.",
         ]
     )
     return "\n".join(lines) + "\n"

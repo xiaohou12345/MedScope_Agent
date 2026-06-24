@@ -11,7 +11,7 @@ Current scope:
 - Explicit separation between public-safe generated fixtures and real labeled
   benchmark data.
 - No clinical diagnosis claims.
-- No formal skill updates from benchmark results.
+- No formal knowledge updates from benchmark results.
 
 The initial FHN manifest is a public-safe smoke fixture. It verifies that the
 benchmark runner, case schema, and safety gates work, but it does not contain a
@@ -19,7 +19,7 @@ reference mask and therefore does not produce Dice/IoU metrics.
 
 When real labeled cases are added, define `metric_gates` in the manifest. The
 runner will report metric pass/fail counts, but benchmark results still cannot
-upgrade diagnosis output or update formal skills automatically.
+upgrade diagnosis output or update formal knowledge automatically.
 
 For FHN X-ray cases, use `evaluator_type: binary_mask` unless a disease-specific
 evaluator is added and validated separately. The legacy `brats_regions`

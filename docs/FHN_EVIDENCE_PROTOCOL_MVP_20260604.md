@@ -10,8 +10,8 @@ The current MVP demonstrates a bounded medical-agent workflow for `femoral_head_
 
 ```text
 patient symptoms + one or more hip X-ray images
-  -> Clinical Orchestrator hypothesis / skill routing
-  -> FHN guideline skill evidence protocol
+  -> Clinical Orchestrator hypothesis / knowledge routing
+  -> FHN guideline knowledge evidence protocol
   -> visual execution strategy
   -> structured evidence bundle
   -> bounded diagnosis report
@@ -22,9 +22,9 @@ This phase is not a clinically validated automatic diagnosis or segmentation sys
 
 ## What Changed
 
-### Skill Protocol
+### Knowledge Protocol
 
-`skills/femoral_head_necrosis.yaml` now acts as the sample disease skill for a multi-dimensional evidence protocol. It supports, while remaining backward-compatible with older visual finding lists:
+`knowledge/femoral_head_necrosis.yaml` now acts as the sample disease knowledge for a multi-dimensional evidence protocol. It supports, while remaining backward-compatible with older visual finding lists:
 
 - `imaging_evidence_protocol`
 - `quantitative_evidence_protocol`
@@ -75,7 +75,7 @@ This is the contract that prevents missing or low-quality evidence from being si
 - It does not inspect raw images.
 - It does not treat missing evidence as negative evidence.
 - It does not treat nonspecific findings as confirmed disease evidence.
-- It includes differential considerations from the skill protocol.
+- It includes differential considerations from the knowledge protocol.
 - It states modality limitations, especially that X-ray cannot reliably exclude early FHN.
 
 ### Multi-Image Input
@@ -133,7 +133,7 @@ git diff --check
 
 Accurate statement:
 
-> The project now has an FHN-centered evidence protocol MVP that separates skill routing, visual evidence extraction, evidence quality, bounded diagnosis reasoning, and memory audit.
+> The project now has an FHN-centered evidence protocol MVP that separates knowledge routing, visual evidence extraction, evidence quality, bounded diagnosis reasoning, and memory audit.
 
 Do not claim:
 
@@ -151,4 +151,4 @@ Keep these as separate goals rather than extending this phase:
 2. Strict AP + frog-lateral paired dataset or small manually curated set.
 3. FHN anatomical ROI / landmark / contour quality gates.
 4. APTR / FPTR / collapse depth / sphericity measurement protocol.
-5. Skill Builder proposal-skill review flow through the Evidence Gateway.
+5. Knowledge Builder proposal-knowledge review flow through the Evidence Gateway.

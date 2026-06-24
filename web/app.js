@@ -6,8 +6,8 @@ const state = {
   sampleDiseaseKey: "",
   sampleVisionMode: "",
   demoCaseSlug: "",
-  sampleSkillSelectionMode: "",
-  sampleManualSecondarySkills: [],
+  sampleKnowledgeSelectionMode: "",
+  sampleManualSecondaryKnowledges: [],
   realDemoMode: false,
   publicSafeDemoMode: false,
   casePending: false,
@@ -18,13 +18,14 @@ const state = {
   caseProgressTimer: null,
   caseProgressStartedAt: 0,
   caseProgressLabel: "",
-  selectedSkillKey: "",
-  selectedSkillDetail: {},
+  selectedKnowledgeKey: "",
+  selectedKnowledgeDetail: {},
+  sampleEvidenceProtocolMode: "finding_list_baseline",
   uploadedImagePaths: [],
   uploadedImageNames: [],
   activeWorkspaceView: "clinical",
   selectedArchitectureModule: "clinical_orchestrator",
-  selectedOptimizationDirection: "guideline_skill_structure",
+  selectedOptimizationDirection: "guideline_knowledge_structure",
 };
 
 const elements = {
@@ -57,8 +58,9 @@ const elements = {
   patientMessage: document.getElementById("patientMessage"),
   imagePath: document.getElementById("imagePath"),
   symptoms: document.getElementById("symptoms"),
-  skillSelectionMode: document.getElementById("skillSelectionMode"),
-  manualSecondarySkills: document.getElementById("manualSecondarySkills"),
+  knowledgeSelectionMode: document.getElementById("knowledgeSelectionMode"),
+  evidenceProtocolMode: document.getElementById("evidenceProtocolMode"),
+  manualSecondaryKnowledges: document.getElementById("manualSecondaryKnowledges"),
   qaInput: document.getElementById("qaInput"),
   qaSubmitButton: document.getElementById("qaSubmitButton"),
   reportView: document.getElementById("reportView"),
@@ -70,16 +72,17 @@ const elements = {
   evidenceView: document.getElementById("evidenceView"),
   auditView: document.getElementById("auditView"),
   qaLog: document.getElementById("qaLog"),
-  refreshSkillsButton: document.getElementById("refreshSkillsButton"),
-  saveSkillDraftButton: document.getElementById("saveSkillDraftButton"),
-  skillListView: document.getElementById("skillListView"),
-  skillDetailView: document.getElementById("skillDetailView"),
-  skillReviewStatus: document.getElementById("skillReviewStatus"),
-  skillProtocolComparisonView: document.getElementById("skillProtocolComparisonView"),
+  refreshKnowledgesButton: document.getElementById("refreshKnowledgesButton"),
+  saveKnowledgeDraftButton: document.getElementById("saveKnowledgeDraftButton"),
+  promoteKnowledgeButton: document.getElementById("promoteKnowledgeButton"),
+  knowledgeListView: document.getElementById("knowledgeListView"),
+  knowledgeDetailView: document.getElementById("knowledgeDetailView"),
+  knowledgeReviewStatus: document.getElementById("knowledgeReviewStatus"),
+  knowledgeProtocolComparisonView: document.getElementById("knowledgeProtocolComparisonView"),
   researchEvidenceReviewView: document.getElementById("researchEvidenceReviewView"),
 };
 
-const skillComparisonFallbackLabels = {
+const knowledgeComparisonFallbackLabels = {
   finding_list_baseline: "版本 1：历史 finding-list baseline",
   evidence_protocol_v1: "版本 2：Evidence protocol + quantitative protocol",
 };
@@ -96,107 +99,105 @@ const architectureRoadmapData = {
     {
       key: "clinical_orchestrator",
       title: "Clinical Orchestrator",
-      short: "入口分诊、clinical hypothesis 生成、skill routing、流程协调。",
-      positioning: "入口分诊、clinical hypothesis 生成、skill routing、流程协调。",
-      inputs: ["患者主诉", "图像模态", "部位", "疾病线索"],
-      outputs: ["primary_hypothesis", "selected_skill", "differential_candidates", "routing_reason"],
-      boundaries: ["不直接诊断", "不把 routing 结果升级为确诊结论"],
+      short: "高医生入口：理解问题、选择 Knowledge、协调流程。",
+      positioning: "高医生入口：把患者描述和图像类型转成分析任务，决定用哪个 Knowledge。",
+      inputs: ["患者描述", "上传图像类型", "部位和症状", "疾病线索"],
+      outputs: ["主要怀疑方向（primary hypothesis）", "选中的 Knowledge（selected_knowledge）", "备用可能性（differential candidates）", "选择理由（routing reason）"],
+      boundaries: ["不直接诊断", "不把 Knowledge 选择当成确诊结论"],
       status: "in_progress",
-      todo: ["扩展 body-part + modality + symptom routing registry", "统一 routing output 格式"],
+      todo: ["补充“部位 + 图像类型 + 症状”的轻量路由表", "统一 Knowledge 选择结果格式"],
     },
     {
       key: "vision_evidence_agent",
       title: "Vision Evidence Agent",
-      short: "把医学图像转成结构化视觉证据。",
-      positioning: "把 raw medical image 转成 visual_evidence、candidate mask、measurement、quality、completeness。",
-      inputs: ["raw_image", "selected_skill", "visual_protocol"],
-      outputs: ["visual_evidence", "candidate mask", "measurement", "quality", "completeness"],
-      boundaries: ["不直接输出诊断", "不把弱视觉候选证据升级为确定病灶"],
+      short: "从图片里提取证据，不负责下诊断。",
+      positioning: "从图片里提取证据：按 Knowledge 要求找可疑区域、生成候选分割，并输出可读的结构化数值。",
+      inputs: ["原始图像（raw image）", "选中的 Knowledge（selected knowledge）", "看什么的清单（visual checklist）"],
+      outputs: ["视觉证据（visual evidence）", "候选病灶图 / mask", "面积、比例、位置等数值（measurement）", "证据质量和缺失项"],
+      boundaries: ["不直接输出诊断", "不把不稳定的候选框当成确定病灶"],
       status: "in_progress",
-      todo: ["继续优化病灶候选定位", "补 mask QC、ROI / contour / landmark", "真实量化执行暂缓到 VisionAgent 稳定后"],
+      todo: ["继续优化病灶候选定位", "补 mask 质量检查", "真实量化先等 VisionAgent 稳定"],
     },
     {
       key: "diagnosis_reasoning_agent",
       title: "Diagnosis Reasoning Agent",
-      short: "只基于 evidence_bundle 和 guideline skill 生成 bounded diagnosis report。",
-      positioning: "只消费结构化 evidence_bundle 与 guideline_rules，输出受证据约束的诊断报告。",
-      inputs: ["patient_info", "selected_skill", "evidence_bundle", "guideline_rules"],
-      outputs: ["支持证据", "缺失证据", "非特异征象", "诊断边界", "建议"],
-      boundaries: ["不直接看原图", "不重新选 skill", "不补全未被 evidence_bundle 支持的字段"],
+      short: "判断还能不能下结论，只能使用证据包。",
+      positioning: "判断还能不能下结论：只根据 evidence_bundle 和指南规则生成有边界的报告。",
+      inputs: ["患者信息（patient info）", "选中的 Knowledge", "证据包（evidence_bundle）", "指南规则（guideline rules）"],
+      outputs: ["支持什么", "缺少什么", "哪些表现不特异", "能说到哪一步", "下一步建议"],
+      boundaries: ["不直接看原图", "不重新选择 Knowledge", "不补全证据包里没有的内容"],
       status: "in_progress",
-      todo: ["验证 annotation-derived evidence bundle 下的推理正确性", "继续收紧缺失证据表达"],
+      todo: ["用人工标注生成的 evidence_bundle 验证推理", "继续收紧缺失证据表达"],
     },
     {
-      key: "skill_builder_guideline_agent",
-      title: "Skill Builder / Guideline Agent",
-      short: "条件触发，缺少 skill 时检索指南并生成 candidate skill。",
-      positioning: "缺少 skill 或需要更新时，检索指南并生成 candidate skill、visual protocol 和 proposal artifact。",
-      inputs: ["disease", "modality", "guideline source"],
-      outputs: ["candidate skill", "visual protocol", "proposal artifact"],
-      boundaries: ["不自动修改正式 guideline skill", "proposal-only 必须经过 Evidence Gateway"],
+      key: "knowledge_builder_guideline_agent",
+      title: "Knowledge Builder / Guideline Agent",
+      short: "缺少 Knowledge 时，找指南并生成候选 Knowledge。",
+      positioning: "缺少 Knowledge 时才工作：检索权威指南，把指南整理成候选 Knowledge 和视觉检查清单。",
+      inputs: ["疾病名", "图像类型", "指南来源"],
+      outputs: ["候选 Knowledge", "视觉检查清单", "待审核草稿（proposal）"],
+      boundaries: ["不自动覆盖正式 Knowledge", "候选草稿必须人工审核"],
       status: "in_progress",
-      todo: ["保持 proposal-only", "完善指南来源追溯", "继续强化 Evidence Gateway 安全边界"],
+      todo: ["保持只生成草稿", "完善指南来源追溯", "继续强化 Evidence Gateway 安全边界"],
     },
     {
       key: "memory_audit_layer",
       title: "Memory & Audit Layer",
-      short: "横向基础设施层，记录 patient/image/skill/reasoning/evidence bundle store。",
-      positioning: "横向基础设施层，不是 Agent，支持 replay、audit、QA 追溯。",
-      inputs: ["patient memory", "image memory", "skill memory", "reasoning memory", "evidence bundle store"],
-      outputs: ["memory audit", "case replay trace", "QA trace"],
-      boundaries: ["不参与诊断推理", "不覆盖 evidence_bundle 的证据边界"],
+      short: "底层记录层：病例、图像、Knowledge、推理和证据包。",
+      positioning: "底层基础设施，不是 Agent；负责记录全链路，方便回放、审计和追问。",
+      inputs: ["患者记忆（patient memory）", "图像记忆（image memory）", "Knowledge 记忆", "推理记忆", "证据包存档"],
+      outputs: ["审计记录", "病例回放", "追问依据"],
+      boundaries: ["不参与诊断推理", "不改变 evidence_bundle 的证据边界"],
       status: "in_progress",
-      todo: ["增强前端 audit 展示可读性", "把四类 memory 的来源和时间线展示得更清楚"],
+      todo: ["增强前端 audit 可读性", "把四类 memory 的来源和时间线展示得更清楚"],
     },
     {
       key: "evidence_bundle",
       title: "evidence_bundle",
-      short: "DiagnosisAgent 的唯一证据输入。",
-      positioning: "核心证据对象，负责把患者上下文、视觉证据、质量、缺失项和来源 trace 放在同一个契约里。",
-      inputs: ["patient_context", "visual_evidence", "measurements", "quality", "missing_evidence", "limitations", "source trace"],
-      outputs: ["bounded diagnosis evidence", "missing evidence matrix", "audit-ready source trace"],
-      boundaries: ["不包含未被观测支持的诊断结论", "不把 research evidence 当 guideline evidence"],
+      short: "把视觉结果打包成证据包（evidence_bundle）。",
+      positioning: "核心对象：把视觉证据、患者信息、缺失证据和来源记录打包，交给诊断 Agent。",
+      inputs: ["患者上下文", "视觉证据", "测量数值", "质量判断", "缺失证据", "来源记录"],
+      outputs: ["可用于诊断的证据", "缺失证据矩阵", "可审计来源"],
+      boundaries: ["不包含未经观察支持的诊断结论", "不把论文证据当成指南证据"],
       status: "in_progress",
-      todo: ["完善 annotation-derived evidence bundle", "补 clinical context 来源追溯"],
+      todo: ["完善人工标注证据包", "补患者上下文来源追溯"],
     },
   ],
   optimizationDirections: [
     {
-      key: "guideline_skill_structure",
-      title: "Guideline Skill 结构扩展",
+      key: "guideline_knowledge_structure",
+      title: "Guideline Knowledge 结构扩展",
       progress: 84,
       status: "in_progress",
-      summary: "v1 基本完成，v2 可继续。",
+      summary: "指南 Knowledge 升级：把“要看什么、怎么量化、缺什么证据”写清楚。",
       completed: [
-        "finding list -> evidence protocol",
-        "imaging evidence protocol",
-        "quantitative evidence protocol",
-        "differential protocol",
-        "clinical context protocol",
-        "integrated reasoning protocol",
-        "量化拆分为 image-feature quantification 和 geometric / morphologic measurement",
+        "影像证据清单（Imaging evidence）：告诉视觉 Agent 要找哪些征象",
+        "可量化指标（Measurement）：面积、比例、位置等能转成数值的内容",
+        "鉴别诊断（Differential diagnosis）：哪些相似疾病需要排除",
+        "患者背景（Clinical context）：激素、饮酒、外伤等只能作为风险线索",
+        "综合判断规则（Reasoning rules）：明确哪些证据足够，哪些证据不足",
       ],
       todo: [
-        "统一 schema / validator",
-        "继续沉淀通用 skill protocol 模板",
-        "未来接入 annotation-derived evidence bundle",
+        "统一 Knowledge 格式和校验器",
+        "沉淀通用 Knowledge 模板",
+        "未来接入 Annotation-derived Evidence Bundle v1",
       ],
       limits: [
-        "真实 ROI / contour / landmark / view quality gate 仍主要是协议层",
-        "真实临床可靠测量引擎还未完成",
+        "真实 ROI、轮廓、关键点质量检查还不稳定",
+        "真实可靠测量引擎还未完成",
       ],
       recovery: "等 VisionAgent 稳定后恢复 Real X-ray Case Comparison。",
-      safety: "协议只定义证据需求，不替代真实测量引擎。",
+      safety: "Knowledge 只定义证据需求，不替代真实测量模型。",
     },
     {
       key: "clinical_context",
       title: "患者临床信息结合",
       progress: 76,
       status: "in_progress",
-      summary: "v1 已收敛，可做 v2；clinical risk changes suspicion level only。",
+      summary: "把症状和风险因素放进证据包，但只改变怀疑程度。",
       completed: [
-        "patient prompt / risk factors 进入 clinical context bundle",
-        "risk factor 只能作为 suspicion modifier",
+        "患者描述和风险因素进入临床背景（clinical context）",
+        "激素、饮酒、外伤史只能提高或降低怀疑程度",
         "不能替代影像证据确诊",
       ],
       todo: [
@@ -207,61 +208,60 @@ const architectureRoadmapData = {
       ],
       limits: ["不做完整问诊系统", "不做复杂风险评分模型"],
       recovery: "当病例展示需要更强临床上下文时推进 v2。",
-      safety: "临床风险只能改变怀疑程度，不能替代影像或指南证据。",
+      safety: "临床风险只改变怀疑程度（clinical risk changes suspicion level only），不能替代影像或指南证据。",
     },
     {
-      key: "skill_routing",
-      title: "系统生成候选假设 / Skill Routing",
+      key: "knowledge_routing",
+      title: "系统生成候选假设 / Knowledge Routing",
       progress: 84,
       status: "done",
       summary: "v1 完成，暂时不需要重做。",
       completed: [
-        "用户不明确说 FHN 时，可根据髋痛 + X-ray 生成 primary hypothesis",
-        "自动选择 FHN skill",
-        "保留 differential candidates",
+        "用户没明确说股骨头坏死时，可根据髋痛 + X-ray 生成主要怀疑方向",
+        "自动选择 FHN knowledge",
+        "保留备用可能性（differential candidates）",
         "前端提示 routing 不是诊断结论",
       ],
       todo: [
-        "统一 routing output 格式",
-        "轻量补 body-part + modality + symptom routing registry",
-        "未来可做 Differential Skill Run v1",
+        "统一路由输出格式",
+        "补一个轻量的“部位 + 图像类型 + 症状”路由表",
+        "未来可做 Differential Knowledge Run v1",
       ],
-      limits: ["不做完整多疾病排序", "不做多 skill 自动诊断", "不自动运行所有 differential candidates"],
-      recovery: "当主线 demo 稳定后，再扩展 differential skill run。",
+      limits: ["不做完整多疾病排序", "不做多 knowledge 自动诊断", "不自动运行所有 differential candidates"],
+      recovery: "当主线 demo 稳定后，再扩展 differential knowledge run。",
       safety: "routing 是流程选择，不是最终诊断。",
     },
     {
       key: "research_evidence",
-      title: "论文证据安全补充 Guideline Skill",
+      title: "论文证据安全补充 Guideline Knowledge",
       progress: 88,
       status: "frozen",
-      summary: "v1 收敛，暂时冻结；research evidence is not guideline evidence。",
+      summary: "论文证据只能做补充建议，不能直接变成指南规则。",
       completed: [
-        "Research Evidence Builder",
-        "Research Evidence Proposal",
-        "PubMed metadata / abstract retrieval",
-        "supplied metadata fallback",
-        "Evidence Gateway",
-        "source quality / freshness / applicability / conflict gate",
-        "human review checklist",
-        "controlled skill extension draft",
-        "formal patch preview",
+        "论文证据生成器（Research Evidence Builder）",
+        "论文证据草稿（Research Evidence Proposal）",
+        "PubMed 摘要和元数据读取",
+        "证据安全门（Evidence Gateway）",
+        "来源质量、时效性、适用性和冲突检查",
+        "人工审核清单",
         "前端 Research Evidence Review",
-        "proposal-only",
-        "formal_update=false",
+        "只生成草稿（proposal-only）",
+        "不写入正式 Knowledge（formal_update=false）",
       ],
       todo: [
+        "按需触发 Research Evidence Retrieval：只有 guideline knowledge 不足、出现 evidence gap、需要量化 protocol 或 differential clue 时才检索",
         "Research Evidence Ingestion production v2",
         "全文 PDF parser",
         "正式人工审批系统",
       ],
       limits: [
+        "默认诊断流程不固定检索论文",
         "不做 production PubMed 检索质量评估",
-        "不做 skill registry 写入",
+        "不做 knowledge registry 写入",
         "不做真实 apply controlled extension",
       ],
-      recovery: "等 Guideline Skill 主线和 annotation-derived evidence bundle 稳定后再恢复。",
-      safety: "research evidence is not guideline evidence；不进入 diagnosis rules；不自动修改正式 skill。",
+      recovery: "等 Guideline Knowledge 主线和 annotation-derived evidence bundle 稳定后再恢复。",
+      safety: "research evidence is not guideline evidence；按需检索只补 evidence gap；不进入 diagnosis rules；不自动修改正式 knowledge。",
     },
   ],
   todos: [
@@ -287,13 +287,13 @@ const architectureRoadmapData = {
       title: "Real X-ray Case Comparison",
       priority: "暂存",
       status: "parked",
-      description: "旧 finding-list skill vs 新 evidence-protocol skill 的病例级对比暂存，原因是 VisionAgent 真实定位、分割、量化还不稳定。",
+      description: "旧版“征象列表 Knowledge”和新版“证据包 Knowledge”的病例级对比暂存，原因是 VisionAgent 真实定位、分割、量化还不稳定。",
     },
     {
       title: "Research Evidence Ingestion production v2",
       priority: "冻结",
       status: "frozen",
-      description: "论文证据 v1 已收敛，production PubMed/PDF/approval workflow 暂缓。",
+      description: "论文证据 v1 已收敛，production PubMed/PDF/approval workflow 暂缓；后续改成 evidence gap 触发的按需检索，而不是每次诊断固定检索。",
     },
   ],
 };
@@ -330,18 +330,72 @@ function renderArchitectureRoadmap() {
 
 function renderArchitectureDiagram() {
   elements.architectureDiagramView.innerHTML = `
-    <div class="architecture-flow-diagram" role="img" aria-label="MedScope guideline-aware evidence pipeline">
-      <button type="button" data-architecture-module="clinical_orchestrator">Clinical Orchestrator</button>
-      <span class="flow-arrow">-></span>
-      <button type="button" data-architecture-module="vision_evidence_agent">Vision Evidence Agent</button>
-      <span class="flow-arrow">-></span>
-      <button type="button" data-architecture-module="evidence_bundle">evidence_bundle</button>
-      <span class="flow-arrow">-></span>
-      <button type="button" data-architecture-module="diagnosis_reasoning_agent">Diagnosis Reasoning Agent</button>
-      <button type="button" data-architecture-module="skill_builder_guideline_agent" class="flow-support">Skill Builder / Guideline Agent</button>
-      <button type="button" data-architecture-module="memory_audit_layer" class="flow-support">Memory & Audit Layer</button>
+    <div class="architecture-flow-diagram pipeline-poster" role="img" aria-label="MedScope guideline-aware evidence pipeline poster">
+      <section class="poster-card poster-input poster-flow-node-compact">
+        <strong>模拟输入</strong>
+        <span>患者上传 X 光 + 主诉</span>
+      </section>
+
+      <div class="poster-main-flow">
+        <button type="button" data-architecture-module="clinical_orchestrator" data-scroll-target="architectureDetailView" class="poster-card poster-flow-node-compact">
+          <span class="poster-step">1</span>
+          <strong>Clinical Orchestrator</strong>
+          <em>分诊 / 选 Knowledge</em>
+        </button>
+        <span class="poster-flow-arrow-inline" aria-hidden="true">→</span>
+        <button type="button" data-architecture-module="vision_evidence_agent" data-scroll-target="architectureDetailView" class="poster-card poster-flow-node-compact">
+          <span class="poster-step">2</span>
+          <strong>Vision Evidence Agent</strong>
+          <em>从图像提证据</em>
+        </button>
+        <span class="poster-flow-arrow-inline" aria-hidden="true">→</span>
+        <button type="button" data-architecture-module="evidence_bundle" data-scroll-target="architectureDetailView" class="poster-card poster-flow-node-compact poster-bundle-compact">
+          <span class="poster-step">核心</span>
+          <strong>evidence_bundle</strong>
+          <em>证据包</em>
+        </button>
+        <span class="poster-flow-arrow-inline" aria-hidden="true">→</span>
+        <button type="button" data-architecture-module="diagnosis_reasoning_agent" data-scroll-target="architectureDetailView" class="poster-card poster-flow-node-compact poster-diagnosis-compact">
+          <span class="poster-step">3</span>
+          <strong>Diagnosis Reasoning Agent</strong>
+          <em>判断能不能下结论</em>
+        </button>
+      </div>
+
+      <div class="poster-support-flow">
+        <button type="button" data-architecture-module="knowledge_builder_guideline_agent" data-scroll-target="architectureDetailView" class="poster-card poster-flow-node-compact poster-knowledge-compact">
+          <span class="poster-step">4</span>
+          <strong>Knowledge Builder / Guideline Agent</strong>
+          <em>缺 Knowledge 时找指南</em>
+        </button>
+        <span class="poster-flow-arrow-inline poster-flow-arrow-return" aria-hidden="true">↗</span>
+        <button type="button" data-architecture-module="memory_audit_layer" data-scroll-target="architectureDetailView" class="poster-card poster-flow-node-compact poster-memory-compact">
+          <span class="poster-step">5</span>
+          <strong>Memory & Audit Layer</strong>
+          <em>记录 / 回放 / 审计</em>
+        </button>
+      </div>
+
+      <section class="poster-optimization-inline" aria-label="Optimization Directions">
+        <strong>优化方向</strong>
+        ${renderPosterOptimizationButtons()}
+      </section>
     </div>
   `;
+}
+
+function renderPosterOptimizationButtons() {
+  return architectureRoadmapData.optimizationDirections.map((direction) => `
+    <button
+      type="button"
+      class="poster-optimization-button poster-flow-node-compact"
+      data-optimization-direction="${escapeHtml(direction.key)}"
+      data-scroll-target="optimizationDirectionDetail"
+    >
+      <span>${escapeHtml(String(direction.progress))}%</span>
+      <strong>${escapeHtml(direction.title)}</strong>
+    </button>
+  `).join("");
 }
 
 function renderArchitectureModules() {
@@ -350,6 +404,7 @@ function renderArchitectureModules() {
       type="button"
       class="architecture-module-card ${module.key === state.selectedArchitectureModule ? "selected" : ""}"
       data-architecture-module="${escapeHtml(module.key)}"
+      data-scroll-target="architectureDetailView"
     >
       <strong>${escapeHtml(module.title)}</strong>
       <span>${escapeHtml(module.short)}</span>
@@ -381,6 +436,9 @@ function selectArchitectureModule(moduleKey, options = {}) {
       ${renderRoadmapSection("TODO / 后续优化", module.todo)}
     </article>
   `;
+  if (options.scroll) {
+    scrollArchitectureTarget("architectureDetailView");
+  }
 }
 
 function renderOptimizationDirections() {
@@ -389,6 +447,7 @@ function renderOptimizationDirections() {
       type="button"
       class="optimization-card ${direction.key === state.selectedOptimizationDirection ? "selected" : ""}"
       data-optimization-direction="${escapeHtml(direction.key)}"
+      data-scroll-target="optimizationDirectionDetail"
     >
       <span>${renderStatusBadge(direction.status)}</span>
       <strong>${escapeHtml(direction.title)}</strong>
@@ -423,6 +482,17 @@ function selectOptimizationDirection(directionKey, options = {}) {
       <section class="roadmap-note"><strong>安全边界</strong><p>${escapeHtml(direction.safety)}</p></section>
     </article>
   `;
+  if (options.scroll) {
+    scrollArchitectureTarget("optimizationDirectionDetail");
+  }
+}
+
+function scrollArchitectureTarget(targetId) {
+  const target = document.getElementById(targetId);
+  if (!target) {
+    return;
+  }
+  target.scrollIntoView({behavior: "smooth", block: "start"});
 }
 
 function renderRoadmapTodos() {
@@ -481,7 +551,7 @@ function clearCaseProgressTimer() {
 
 function caseProgressStage(elapsedSeconds, stages) {
   const stageList = stages && stages.length ? stages : [
-    {after: 0, text: "正在选择 skill 和检查影像输入"},
+    {after: 0, text: "正在选择 knowledge 和检查影像输入"},
     {after: 8, text: "正在调用视觉模型定位候选征象"},
     {after: 25, text: "正在生成或校验分割候选区域"},
     {after: 45, text: "正在整合 evidence bundle 和诊断报告"},
@@ -489,6 +559,27 @@ function caseProgressStage(elapsedSeconds, stages) {
   return stageList.reduce((current, stage) => (
     elapsedSeconds >= stage.after ? stage.text : current
   ), stageList[0].text);
+}
+
+function caseProgressStagesForPayload(payload) {
+  const selectedSecondaryKnowledges = Array.isArray(payload?.manual_secondary_knowledge_candidates)
+    ? payload.manual_secondary_knowledge_candidates
+    : [];
+  if (payload?.knowledge_selection_mode === "manual_secondary" && selectedSecondaryKnowledges.length) {
+    return [
+      {after: 0, text: "正在选择主 Knowledge 并检查影像输入"},
+      {after: 6, text: "正在调用 KnowledgeBuilder 建立备用 Knowledge 草案"},
+      {after: 16, text: "正在加载或生成备用 Knowledge evidence protocol"},
+      {after: 28, text: "正在进行备用 Knowledge hypothesis validation"},
+      {after: 45, text: "正在整合主分析、备用复查和诊断报告"},
+    ];
+  }
+  return [
+    {after: 0, text: "正在选择 knowledge 和检查影像输入"},
+    {after: 8, text: "正在调用 VLM/API 定位候选影像征象"},
+    {after: 25, text: "正在运行或跳过分割候选区域"},
+    {after: 45, text: "正在生成 evidence bundle 和诊断报告"},
+  ];
 }
 
 function startCaseProgress(label, stages) {
@@ -548,17 +639,28 @@ function buildCasePayload() {
   if (state.sampleDiseaseKey) {
     payload.disease_key = state.sampleDiseaseKey;
   }
-  const skillSelectionMode = elements.skillSelectionMode.value || "primary_only";
-  payload.skill_selection_mode = skillSelectionMode;
-  const manualSecondarySkills = splitList(elements.manualSecondarySkills.value);
-  if (skillSelectionMode === "manual_secondary" && manualSecondarySkills.length) {
-    payload.manual_secondary_skill_candidates = manualSecondarySkills;
+  const knowledgeSelectionMode = elements.knowledgeSelectionMode.value || "primary_only";
+  payload.knowledge_selection_mode = knowledgeSelectionMode;
+  payload.evidence_protocol_mode = elements.evidenceProtocolMode.value || "finding_list_baseline";
+  if (knowledgeSelectionMode !== "manual_secondary") {
+    clearManualSecondaryKnowledges();
   }
-  const selectedVisionMode = state.sampleVisionMode;
+  const manualSecondaryKnowledges = splitList(elements.manualSecondaryKnowledges.value);
+  if (knowledgeSelectionMode === "manual_secondary" && manualSecondaryKnowledges.length) {
+    payload.manual_secondary_knowledge_candidates = manualSecondaryKnowledges;
+  }
+  const selectedVisionMode = manualSecondaryVisionMode(knowledgeSelectionMode);
   if (selectedVisionMode) {
     payload.vision_mode = selectedVisionMode;
   }
   return payload;
+}
+
+function manualSecondaryVisionMode(knowledgeSelectionMode) {
+  if (knowledgeSelectionMode !== "manual_secondary") {
+    return state.sampleVisionMode;
+  }
+  return state.sampleVisionMode;
 }
 
 function inferViewHint(path, filename) {
@@ -633,8 +735,8 @@ async function parseJsonResponse(response) {
   }
 }
 
-async function fetchSkillList() {
-  const response = await fetch("/v1/skills");
+async function fetchKnowledgeList() {
+  const response = await fetch("/v1/knowledge");
   const body = await response.json();
   if (!response.ok) {
     throw new Error(formatApiError(body, response.status));
@@ -642,8 +744,8 @@ async function fetchSkillList() {
   return body;
 }
 
-async function fetchSkillDetail(skillKey) {
-  const response = await fetch(`/v1/skills/${encodeURIComponent(skillKey)}`);
+async function fetchKnowledgeDetail(knowledgeKey) {
+  const response = await fetch(`/v1/knowledge/${encodeURIComponent(knowledgeKey)}`);
   const body = await response.json();
   if (!response.ok) {
     throw new Error(formatApiError(body, response.status));
@@ -651,8 +753,8 @@ async function fetchSkillDetail(skillKey) {
   return body;
 }
 
-async function fetchSkillProtocolComparison() {
-  const response = await fetch("/v1/skills/femoral_head_necrosis/comparison");
+async function fetchKnowledgeProtocolComparison() {
+  const response = await fetch("/v1/knowledge/femoral_head_necrosis/comparison");
   const body = await response.json();
   if (!response.ok) {
     throw new Error(formatApiError(body, response.status));
@@ -669,13 +771,13 @@ async function fetchResearchEvidenceReview() {
   return body;
 }
 
-async function saveSkillReviewDraft() {
-  if (!state.selectedSkillKey) {
-    setStatus("请先选择一个 Skill", "warn");
+async function saveKnowledgeReviewDraft() {
+  if (!state.selectedKnowledgeKey) {
+    setStatus("请先选择一个 Knowledge", "warn");
     return;
   }
-  const payload = buildSkillDraftPayload();
-  const response = await fetch(`/v1/skills/${encodeURIComponent(state.selectedSkillKey)}/review-draft`, {
+  const payload = buildKnowledgeDraftPayload();
+  const response = await fetch(`/v1/knowledge/${encodeURIComponent(state.selectedKnowledgeKey)}/review-draft`, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(payload),
@@ -684,9 +786,36 @@ async function saveSkillReviewDraft() {
   if (!response.ok) {
     throw new Error(formatApiError(body, response.status));
   }
-  elements.skillReviewStatus.textContent = `草稿已保存：${body.draft_path}`;
-  setStatus("Skill 审核：保存草稿完成", "ok");
-  await loadSkillDetail(state.selectedSkillKey);
+  elements.knowledgeReviewStatus.textContent = `草稿已保存：${body.draft_path}`;
+  setStatus("Knowledge 审核：保存草稿完成", "ok");
+  await loadKnowledgeDetail(state.selectedKnowledgeKey);
+}
+
+async function promoteKnowledgeToFormalLibrary() {
+  if (!state.selectedKnowledgeKey) {
+    setStatus("请先选择一个候选 Knowledge", "warn");
+    return;
+  }
+  if (!state.selectedKnowledgeKey.startsWith("proposal:")) {
+    setStatus("当前已经是正式 Knowledge，不需要重复保存", "warn");
+    return;
+  }
+  const response = await fetch(`/v1/knowledge/${encodeURIComponent(state.selectedKnowledgeKey)}/promote`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      reviewer_name: "doctor_reviewer",
+      review_note: document.getElementById("knowledgeReviewNotes")?.value.trim() || "",
+    }),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(formatApiError(body, response.status));
+  }
+  elements.knowledgeReviewStatus.textContent = `已保存为正式 Knowledge：${body.knowledge_path}；状态 ${body.review_status}`;
+  setStatus("Knowledge 已进入正式库，可后续复用", "ok");
+  await loadKnowledgeList();
+  await loadKnowledgeDetail(body.knowledge_key);
 }
 
 async function fetchMemoryReplay(caseId) {
@@ -777,7 +906,7 @@ function buildRealVlmMedSAM2Payload(parts) {
     localization_overlay_path: rawImageOutputs.localization_overlay_path || vlmPrompt.bbox_overlay_path,
   };
   const evaluation = evidenceBundle.evaluation || segmentation.evaluation || {};
-  const usedSkill = report.used_skill || {};
+  const usedKnowledge = report.used_knowledge || {};
   const caseId = summary.case_id || evidenceBundle.case_id || segmentation.case_id || "brats2021_00030";
   const diseaseKey = evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats";
   const promptBoxes = Array.isArray(vlmPrompt.boxes)
@@ -822,7 +951,7 @@ function buildRealVlmMedSAM2Payload(parts) {
     alignment_plan: {
       analysis_status: "partial_evidence",
       clinical_focus: "adult diffuse glioma imaging evidence",
-      selected_skill: evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats",
+      selected_knowledge: evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats",
       image_context: {
         modality: imageEvidence.modality,
         body_part: imageEvidence.body_part,
@@ -865,15 +994,15 @@ function buildRealVlmMedSAM2Payload(parts) {
         prompt_source: summary.prompt_source || segmentation.prompt_source || vlmPrompt.prompt_source,
       },
       image_evidence: imageEvidence,
-      skill_evidence: {
-        selected_skill: evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats",
+      knowledge_evidence: {
+        selected_knowledge: evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats",
         selected_vision_mode: "medsam2",
-        skill_type: usedSkill.skill_type || "guideline_based",
+        knowledge_type: usedKnowledge.knowledge_type || "guideline_based",
         guideline_evidence: {
-          citations: usedSkill.source_documents || usedSkill.guideline_extraction?.citations || [],
+          citations: usedKnowledge.source_documents || usedKnowledge.guideline_extraction?.citations || [],
         },
         quality_control: {
-          formal_skill_status: usedSkill.skill_type ? "loaded" : "not_reported",
+          formal_knowledge_status: usedKnowledge.knowledge_type ? "loaded" : "not_reported",
           visual_protocol_status: "used_by_demo",
         },
       },
@@ -889,7 +1018,7 @@ function buildRealVlmMedSAM2Payload(parts) {
       memory_completeness: {
         patient_memory: {status: "demo_artifact", reason: "pre-generated demo sample"},
         image_memory: {status: "supported", reason: "real VLM prompt and MedSAM2 artifact available"},
-        skill_memory: {status: "supported", reason: evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats"},
+        knowledge_memory: {status: "supported", reason: evidenceBundle.disease_key || summary.disease_key || "diffuse_glioma_brats"},
         reasoning_memory: {status: "supported", reason: "diagnosis report artifact available"},
       },
       memory_type_details: {
@@ -907,10 +1036,10 @@ function buildRealVlmMedSAM2Payload(parts) {
           mask_preview_path: imageOutputs.mask_preview_path,
           segmentation_quality: imageEvidence.segmentation_quality,
         },
-        skill_memory: {
-          selected_skill: diseaseKey,
-          used_skill: diseaseKey,
-          skill_type: usedSkill.skill_type || "guideline_based",
+        knowledge_memory: {
+          selected_knowledge: diseaseKey,
+          used_knowledge: diseaseKey,
+          knowledge_type: usedKnowledge.knowledge_type || "guideline_based",
           analysis_status: "partial_evidence",
           required_next_images: [
             {region: "brain", modality: "T1/T1ce/T2", reason: "Complete MRI sequences are required."},
@@ -931,10 +1060,10 @@ function buildRealVlmMedSAM2Payload(parts) {
           {region: "brain", modality: "T1/T1ce/T2", reason: "Complete MRI sequences are required."},
         ],
       },
-      skill_quality: {
-        formal_skill_status: usedSkill.skill_type ? "loaded" : "not_reported",
+      knowledge_quality: {
+        formal_knowledge_status: usedKnowledge.knowledge_type ? "loaded" : "not_reported",
         visual_protocol_status: "used_by_demo",
-        citation_status: usedSkill.source_documents?.length ? "present" : "not_reported",
+        citation_status: usedKnowledge.source_documents?.length ? "present" : "not_reported",
       },
       qa_safety: {
         evidence_bundle_required: true,
@@ -947,7 +1076,7 @@ function buildRealVlmMedSAM2Payload(parts) {
       },
       agents_traced: [
         "GaoDoctorAgent",
-        "SkillBuilderAgent",
+        "KnowledgeBuilderAgent",
         "VisionAgent",
         "DiagnosisDoctorAgent",
         "MemoryManager",
@@ -965,15 +1094,15 @@ function buildRealVlmMedSAM2Payload(parts) {
           input: Array.isArray(summary.symptoms) ? summary.symptoms : [],
           output: "diagnosis",
           routing_decision: {
-            selected_skill: diseaseKey,
+            selected_knowledge: diseaseKey,
             selected_vision_mode: "medsam2",
             source: "auto",
             agent_scope: "orchestrator_api",
-            skill_builder_action: "load_existing_skill",
+            knowledge_builder_action: "load_existing_knowledge",
           },
         },
-        SkillBuilderAgent: {
-          input: {selected_skill: diseaseKey},
+        KnowledgeBuilderAgent: {
+          input: {selected_knowledge: diseaseKey},
           output: diseaseKey,
         },
         VisionAgent: {
@@ -990,7 +1119,7 @@ function buildRealVlmMedSAM2Payload(parts) {
         MemoryManager: {
           input: {
             case_id: caseId,
-            memory_types: ["patient_memory", "image_memory", "skill_memory", "reasoning_memory"],
+            memory_types: ["patient_memory", "image_memory", "knowledge_memory", "reasoning_memory"],
           },
           output: {
             audit_status: "available",
@@ -1021,31 +1150,31 @@ function buildRealVlmMedSAM2Payload(parts) {
         },
         {
           agent: "GaoDoctorAgent",
-          event: "skill_routing",
-          memory_scope: "skill_memory",
+          event: "knowledge_routing",
+          memory_scope: "knowledge_memory",
           decision_owner: "orchestrator_api",
           routing_decision: {
-            selected_skill: diseaseKey,
+            selected_knowledge: diseaseKey,
             selected_vision_mode: "medsam2",
             source: "auto",
             agent_scope: "orchestrator_api",
-            skill_builder_action: "load_existing_skill",
+            knowledge_builder_action: "load_existing_knowledge",
           },
-          selected_skill: diseaseKey,
+          selected_knowledge: diseaseKey,
           selected_vision_mode: "medsam2",
-          skill_type: usedSkill.skill_type,
-          skill_builder_action: "load_existing_skill",
+          knowledge_type: usedKnowledge.knowledge_type,
+          knowledge_builder_action: "load_existing_knowledge",
         },
         {
-          agent: "SkillBuilderAgent",
-          event: "skill_loading",
-          memory_scope: "skill_memory",
-          action: "load_existing_skill",
-          selected_skill: diseaseKey,
-          used_skill: diseaseKey,
-          skill_type: usedSkill.skill_type,
-          evidence_level: usedSkill.evidence_level,
-          formal_skill_status: usedSkill.skill_type ? "loaded" : "not_reported",
+          agent: "KnowledgeBuilderAgent",
+          event: "knowledge_loading",
+          memory_scope: "knowledge_memory",
+          action: "load_existing_knowledge",
+          selected_knowledge: diseaseKey,
+          used_knowledge: diseaseKey,
+          knowledge_type: usedKnowledge.knowledge_type,
+          evidence_level: usedKnowledge.evidence_level,
+          formal_knowledge_status: usedKnowledge.knowledge_type ? "loaded" : "not_reported",
           visual_protocol_status: "used_by_demo",
         },
         {agent: "VisionAgent", event: "vlm_prompt_generation", memory_scope: "image_memory", tool: "VLM Prompt", segmentation_quality: "vision_model_bbox", measurements: {bbox: promptBoxes}},
@@ -1062,7 +1191,7 @@ function buildRealVlmMedSAM2Payload(parts) {
         {
           agent: "MemoryManager",
           event: "memory_audit",
-          memory_scope: "patient_memory,image_memory,skill_memory,reasoning_memory",
+          memory_scope: "patient_memory,image_memory,knowledge_memory,reasoning_memory",
           evidence_bundle_status: "available",
           audit_status: "available",
           quality_warnings: [
@@ -1156,6 +1285,9 @@ function shortApiErrorMessage(error, fallbackMessage = "病例分析失败") {
   if (body.error_type === "medsam2_not_ready") {
     return "分割后端未配置，详情见报告区";
   }
+  if (body.error_type === "vlm_api_unavailable") {
+    return "视觉模型调用中断，详情见报告区";
+  }
   if (body.error_type) {
     return `${fallbackMessage}：${body.error_type}`;
   }
@@ -1199,7 +1331,9 @@ async function uploadFiles(fileList) {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
-  setSkillSelectionMode("primary_only");
+  setKnowledgeSelectionMode("primary_only");
+  setEvidenceProtocolMode("finding_list_baseline");
+  setEvidenceProtocolMode("finding_list_baseline");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -1333,61 +1467,108 @@ function getVisualToolPlan(payload) {
   return [];
 }
 
-function renderSkillList(payload) {
-  const skills = Array.isArray(payload.skills) ? payload.skills : [];
-  const proposals = differentialSkillCandidateProposals(skills);
-  const reviewItems = [...skills, ...proposals];
+function renderKnowledgeList(payload) {
+  const knowledge = Array.isArray(payload.knowledge) ? payload.knowledge : [];
+  const proposals = differentialKnowledgeCandidateProposals(knowledge);
+  const reviewItems = [...knowledge, ...proposals];
   if (!reviewItems.length) {
-    elements.skillListView.innerHTML = '<div class="trace-empty">暂无可审核 Skill</div>';
+    elements.knowledgeListView.innerHTML = '<div class="trace-empty">暂无可审核 Knowledge</div>';
     return;
   }
-  elements.skillListView.innerHTML = `
-    <div class="doctor-skill-list">
-      ${reviewItems.map((skill) => {
-        const summary = skill.doctor_summary || {};
-        const selectedClass = skill.skill_key === state.selectedSkillKey ? " selected" : "";
-        const isProposal = skill.proposal_status === "proposal_only";
+  elements.knowledgeListView.innerHTML = `
+    <div class="doctor-knowledge-list">
+      ${reviewItems.map((knowledge) => {
+        const summary = knowledge.doctor_summary || {};
+        const selectedClass = knowledge.knowledge_key === state.selectedKnowledgeKey ? " selected" : "";
+        const isProposal = knowledge.proposal_status === "proposal_only";
+        const proposalLabel = knowledge.candidate_status === "selected_for_knowledgebuilder"
+          ? "未审核"
+          : isProposal ? "本次病例候选" : "";
         return `
-          <button class="doctor-skill-item${selectedClass}" type="button" data-skill-key="${escapeHtml(skill.skill_key)}" ${isProposal ? `data-proposal-candidate-key="${escapeHtml(skill.candidate_key)}"` : ""}>
-            <strong>${escapeHtml(skill.disease_name || skill.skill_key)}</strong>
-            <span>${escapeHtml(skill.evidence_level || "未标注")} · ${escapeHtml(skill.skill_type || "skill")}</span>
+          <button class="doctor-knowledge-item${selectedClass}" type="button" data-knowledge-key="${escapeHtml(knowledge.knowledge_key)}" ${isProposal ? `data-proposal-candidate-key="${escapeHtml(knowledge.candidate_key)}"` : ""}>
+            <strong>${escapeHtml(knowledge.disease_name || knowledge.knowledge_key)}</strong>
+            <span>${escapeHtml(knowledgeEvidenceLevelLabel(knowledge.evidence_level))} · ${escapeHtml(knowledge.knowledge_type || "knowledge")}</span>
             <small>症状 ${formatValue(summary.symptom_count)} / 影像 ${formatValue(summary.image_requirement_count)} / 征象 ${formatValue(summary.visual_finding_count)}</small>
-            <em>${isProposal ? "本次病例候选" : skill.review_status === "draft_saved" ? "已有医生草稿" : "未审核"}</em>
+            <em>${proposalLabel || (knowledge.review_status === "draft_saved" ? "已有医生草稿" : "未审核")}</em>
           </button>
         `;
       }).join("")}
     </div>
   `;
-  elements.skillListView.querySelectorAll("[data-skill-key]").forEach((button) => {
-    button.addEventListener("click", () => {
+  elements.knowledgeListView.querySelectorAll("[data-knowledge-key]").forEach((button) => {
+    button.addEventListener("click", async () => {
       if (button.dataset.proposalCandidateKey) {
-        renderSkillProposalCandidateDetail(button.dataset.proposalCandidateKey, payload);
+        const persistedProposal = payload.knowledge.some((knowledge) => knowledge.knowledge_key === button.dataset.knowledgeKey);
+        if (persistedProposal) {
+          await loadKnowledgeDetail(button.dataset.knowledgeKey);
+          return;
+        }
+        renderKnowledgeProposalCandidateDetail(button.dataset.proposalCandidateKey, payload);
         return;
       }
-      loadSkillDetail(button.dataset.skillKey);
+      await loadKnowledgeDetail(button.dataset.knowledgeKey);
     });
   });
 }
 
-function differentialSkillCandidateProposals(formalSkills = []) {
+function knowledgeEvidenceLevelLabel(evidenceLevel) {
+  const labels = {
+    unreviewed: "未审核",
+    pending_medical_source_review: "医疗来源待补充",
+  };
+  return labels[evidenceLevel] || evidenceLevel || "未标注";
+}
+
+function differentialKnowledgeCandidateProposals(formalKnowledges = []) {
   const routing = state.lastPayload.routing_decision
-    || state.lastPayload.evidence_bundle?.skill_evidence?.routing_decision
+    || state.lastPayload.evidence_bundle?.knowledge_evidence?.routing_decision
     || {};
-  const formalKeys = new Set(formalSkills.map((skill) => skill.skill_key));
-  const selected = routing.selected_skill || routing.primary_hypothesis;
-  const candidates = Array.isArray(routing.differential_skill_candidates)
-    ? routing.differential_skill_candidates
+  const formalKeys = new Set(
+    formalKnowledges.flatMap((knowledge) => [knowledge.knowledge_key, knowledge.candidate_key]).filter(Boolean)
+  );
+  const selected = routing.selected_knowledge || routing.primary_hypothesis;
+  const planCandidateItems = Array.isArray(routing.secondary_knowledge_run_plan?.candidates)
+    ? routing.secondary_knowledge_run_plan.candidates
     : [];
+  const analysisItems = Array.isArray(state.lastPayload.secondary_knowledge_analysis)
+    ? state.lastPayload.secondary_knowledge_analysis
+    : [];
+  const candidateMetadata = new Map();
+  [...planCandidateItems, ...analysisItems].forEach((item) => {
+    if (item?.disease_key) {
+      candidateMetadata.set(item.disease_key, item);
+    }
+  });
+  const planCandidates = planCandidateItems.map((item) => item.disease_key);
+  const analysisCandidates = analysisItems
+    ? analysisItems.map((item) => item.disease_key)
+    : [];
+  const candidates = uniqueStrings([
+    ...(Array.isArray(routing.differential_knowledge_candidates)
+      ? routing.differential_knowledge_candidates
+      : []),
+    ...(Array.isArray(routing.manual_secondary_knowledge_candidates)
+      ? routing.manual_secondary_knowledge_candidates
+      : []),
+    ...planCandidates,
+    ...analysisCandidates,
+  ]);
   return candidates
     .filter((candidate) => candidate && candidate !== selected && !formalKeys.has(candidate))
     .map((candidate) => ({
-      skill_key: `proposal:${candidate}`,
+      knowledge_key: `proposal:${candidate}`,
       candidate_key: candidate,
       disease_name: humanDiseaseName(candidate),
       evidence_level: "proposal_only",
-      skill_type: "differential_candidate",
+      knowledge_type: "differential_candidate",
       review_status: "proposal_only",
       proposal_status: "proposal_only",
+      candidate_status: candidateMetadata.get(candidate)?.candidate_status || "case_candidate",
+      selected_by_user: Boolean(candidateMetadata.get(candidate)?.selected_by_user),
+      knowledge_builder_status: candidateMetadata.get(candidate)?.knowledge_builder_status || "",
+      knowledge_builder_progress: candidateMetadata.get(candidate)?.knowledge_builder_progress || [],
+      knowledge_builder_proposal_detail: candidateMetadata.get(candidate)?.knowledge_builder_proposal_detail || {},
+      differential_review: candidateMetadata.get(candidate)?.differential_review || {},
       doctor_summary: {
         symptom_count: "待指南抽取",
         image_requirement_count: "待指南抽取",
@@ -1396,16 +1577,16 @@ function differentialSkillCandidateProposals(formalSkills = []) {
     }));
 }
 
-async function loadSkillProtocolComparison() {
-  if (!elements.skillProtocolComparisonView) {
+async function loadKnowledgeProtocolComparison() {
+  if (!elements.knowledgeProtocolComparisonView) {
     return;
   }
-  elements.skillProtocolComparisonView.innerHTML = '<div class="trace-empty">Skill 版本对比加载中...</div>';
+  elements.knowledgeProtocolComparisonView.innerHTML = '<div class="trace-empty">Knowledge 版本对比加载中...</div>';
   try {
-    const payload = await fetchSkillProtocolComparison();
-    renderSkillProtocolComparison(payload);
+    const payload = await fetchKnowledgeProtocolComparison();
+    renderKnowledgeProtocolComparison(payload);
   } catch (error) {
-    elements.skillProtocolComparisonView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
+    elements.knowledgeProtocolComparisonView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
   }
 }
 
@@ -1436,11 +1617,11 @@ function renderResearchEvidenceReview(payload) {
     <div class="research-review-workspace">
       <section class="research-review-summary">
         <h3>${escapeHtml(request.research_question || "Research Evidence Review")}</h3>
-        <p>research evidence is not guideline evidence；当前证据只进入 proposal-only / dry-run，不直接作为诊断规则或正式 skill 更新。</p>
+        <p>research evidence is not guideline evidence；当前证据只进入 proposal-only / dry-run，不直接作为诊断规则或正式 knowledge 更新。</p>
         <div class="research-safety-badges">
           ${[
             "proposal_only=true",
-            "formal_skill_updated=false",
+            "formal_knowledge_updated=false",
             "diagnosis_rules_modified=false",
             "registry_updated=false",
             "promotion_requires_human_approval=true",
@@ -1448,11 +1629,11 @@ function renderResearchEvidenceReview(payload) {
         </div>
         ${renderMetricGrid({
           "Disease": payload.disease_key,
-          "Target skill": payload.target_skill_id,
+          "Target knowledge": payload.target_knowledge_id,
           "Papers": papers.length,
           "Claims": claims.length,
           "Gateway": payload.gateway_review_artifact?.review_status || "-",
-          "Patch preview": payload.formal_skill_extension_patch_preview?.patch_status || "-",
+          "Patch preview": payload.formal_knowledge_extension_patch_preview?.patch_status || "-",
         })}
       </section>
       <section class="research-review-grid">
@@ -1499,7 +1680,7 @@ function renderResearchClaimList(claims) {
       ${claims.length ? claims.map((claim) => `
         <div class="research-claim-item">
           <strong>${escapeHtml(claim.claim_type || claim.legacy_candidate_type || "candidate")}</strong>
-          <span>${escapeHtml(claim.proposed_skill_section || claim.target_protocol_section || "-")}</span>
+          <span>${escapeHtml(claim.proposed_knowledge_section || claim.target_protocol_section || "-")}</span>
           <p>${escapeHtml(claim.summary || "")}</p>
           <em>promotion_allowed=false · requires_human_review=true · ${escapeHtml(claim.diagnosis_usable_level || "not_diagnosis_usable")}</em>
         </div>
@@ -1535,45 +1716,45 @@ function renderResearchGateBadges(gates) {
 
 function renderResearchDryRunSummary(payload) {
   const checklist = payload.human_review_checklist || {};
-  const patch = payload.formal_skill_extension_patch_preview || {};
+  const patch = payload.formal_knowledge_extension_patch_preview || {};
   return `
     <article class="research-review-card">
       <h3>dry-run / patch-preview summary</h3>
       ${renderMetricGrid({
         "Dry run": payload.promotion_dry_run?.promotion_status || "-",
-        "Controlled draft": payload.controlled_skill_extension_draft?.draft_status || "-",
+        "Controlled draft": payload.controlled_knowledge_extension_draft?.draft_status || "-",
         "Patch preview": patch.patch_status || "-",
         "Human review": checklist.review_status || "-",
         "Pre-apply audit": patch.pre_apply_audit?.audit_status || "-",
       })}
-      <p>Patch preview 只允许 research-mode / supplemental section；正式 skill、diagnosis rules 和 registry 都不会在这里被修改。</p>
+      <p>Patch preview 只允许 research-mode / supplemental section；正式 knowledge、diagnosis rules 和 registry 都不会在这里被修改。</p>
     </article>
   `;
 }
 
-function renderSkillProtocolComparison(payload) {
+function renderKnowledgeProtocolComparison(payload) {
   const versions = Array.isArray(payload.versions) ? payload.versions : [];
   const evaluation = payload.evaluation_summary || {};
   const takeaway = payload.comparison_takeaway || {};
-  elements.skillProtocolComparisonView.innerHTML = `
-    <div class="skill-comparison-workspace">
-      <section class="skill-comparison-summary">
-        <h3>${escapeHtml(payload.title || "Skill 版本对比")}</h3>
+  elements.knowledgeProtocolComparisonView.innerHTML = `
+    <div class="knowledge-comparison-workspace">
+      <section class="knowledge-comparison-summary">
+        <h3>${escapeHtml(payload.title || "Knowledge 版本对比")}</h3>
         <p>${escapeHtml(payload.safety_note || "该对比只用于 protocol coverage 审阅。")}</p>
-        ${renderSkillComparisonTakeaway(takeaway)}
-        ${renderSkillComparisonCoverage(evaluation)}
+        ${renderKnowledgeComparisonTakeaway(takeaway)}
+        ${renderKnowledgeComparisonCoverage(evaluation)}
       </section>
-      <div class="skill-version-grid">
-        ${versions.map(renderSkillVersionCard).join("") || '<div class="trace-empty">暂无版本信息</div>'}
+      <div class="knowledge-version-grid">
+        ${versions.map(renderKnowledgeVersionCard).join("") || '<div class="trace-empty">暂无版本信息</div>'}
       </div>
     </div>
   `;
 }
 
-function renderSkillComparisonTakeaway(takeaway) {
+function renderKnowledgeComparisonTakeaway(takeaway) {
   const advantages = Array.isArray(takeaway.advantages) ? takeaway.advantages : [];
   return `
-    <article class="skill-takeaway-card">
+    <article class="knowledge-takeaway-card">
       <strong>${escapeHtml(takeaway.title || "新版强在哪")}</strong>
       <p>${escapeHtml(takeaway.summary || "新版把 finding-list baseline 升级为 Evidence protocol：不仅列出征象，还说明如何获取证据、哪些需要量化、哪些不能直接诊断。")}</p>
       <ul>
@@ -1587,10 +1768,10 @@ function renderSkillComparisonTakeaway(takeaway) {
   `;
 }
 
-function renderSkillComparisonCoverage(evaluation) {
+function renderKnowledgeComparisonCoverage(evaluation) {
   if (!evaluation || evaluation.status === "missing") {
     return `
-      <article class="skill-coverage-card">
+      <article class="knowledge-coverage-card">
         <strong>真实 X-ray protocol coverage</strong>
         <p>${escapeHtml(evaluation?.interpretation || "暂无真实 X-ray protocol coverage 结果。")}</p>
       </article>
@@ -1600,7 +1781,7 @@ function renderSkillComparisonCoverage(evaluation) {
     ? evaluation.baseline_missing_labels
     : [];
   return `
-    <article class="skill-coverage-card">
+    <article class="knowledge-coverage-card">
       <div>
         <strong>真实 X-ray protocol coverage</strong>
         <span>${escapeHtml(evaluation.primary_modality || "Xray")}</span>
@@ -1615,16 +1796,16 @@ function renderSkillComparisonCoverage(evaluation) {
   `;
 }
 
-function renderSkillVersionCard(version) {
+function renderKnowledgeVersionCard(version) {
   const names = Array.isArray(version.finding_names) ? version.finding_names : [];
   const targets = Array.isArray(version.evidence_targets) ? version.evidence_targets : [];
   const quantitative = Array.isArray(version.quantitative_items) ? version.quantitative_items : [];
   const quantificationGroups = Array.isArray(version.quantification_groups) ? version.quantification_groups : [];
   const limits = Array.isArray(version.human_readable_limits) ? version.human_readable_limits : [];
-  const versionLabel = version.label || skillComparisonFallbackLabels[version.version_key] || "Skill 版本";
+  const versionLabel = version.label || knowledgeComparisonFallbackLabels[version.version_key] || "Knowledge 版本";
   return `
-    <article class="skill-version-card">
-      <div class="skill-version-heading">
+    <article class="knowledge-version-card">
+      <div class="knowledge-version-heading">
         <strong>${escapeHtml(versionLabel)}</strong>
         <span>${escapeHtml(version.version_key || "")}</span>
       </div>
@@ -1634,11 +1815,11 @@ function renderSkillVersionCard(version) {
         "Evidence protocol": version.has_evidence_protocol ? "有" : "无",
         "Quantitative protocol": version.has_quantitative_protocol ? "有" : "无",
       })}
-      <div class="skill-pill-list">
+      <div class="knowledge-pill-list">
         ${names.map((name) => `<span>${escapeHtml(name)}</span>`).join("")}
       </div>
       ${targets.length ? `
-        <div class="skill-target-table">
+        <div class="knowledge-target-table">
           ${targets.map((target) => `
             <div>
               <strong>${escapeHtml(target.name || target.target || "")}</strong>
@@ -1652,7 +1833,7 @@ function renderSkillVersionCard(version) {
         ${renderQuantificationNeedDetails(quantificationGroups, quantitative)}
       ` : ""}
       ${limits.length ? `
-        <div class="skill-readable-block">
+        <div class="knowledge-readable-block">
           <strong>边界</strong>
           <ul>${limits.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
         </div>
@@ -1664,10 +1845,10 @@ function renderSkillVersionCard(version) {
 function renderQuantificationNeedDetails(groups, quantitativeItems) {
   const hasGroups = Array.isArray(groups) && groups.some((group) => Array.isArray(group.items) && group.items.length);
   return `
-    <details class="skill-quantification-details">
+    <details class="knowledge-quantification-details">
       <summary>哪些指标需要量化</summary>
       ${hasGroups ? groups.map(renderQuantificationGroup).join("") : `
-        <div class="skill-readable-block">
+        <div class="knowledge-readable-block">
           <strong>量化入口</strong>
           <p>${escapeHtml((quantitativeItems || []).join("、"))}</p>
         </div>
@@ -1682,7 +1863,7 @@ function renderQuantificationGroup(group) {
     return "";
   }
   return `
-    <section class="skill-quantification-group">
+    <section class="knowledge-quantification-group">
       <strong>${escapeHtml(group.label || "量化指标")}</strong>
       <p>${escapeHtml(group.summary || "")}</p>
       <div>
@@ -1698,82 +1879,138 @@ function renderQuantificationGroup(group) {
   `;
 }
 
-async function loadSkillList() {
-  elements.skillListView.innerHTML = '<div class="trace-empty">Skill 加载中...</div>';
+async function loadKnowledgeList() {
+  elements.knowledgeListView.innerHTML = '<div class="trace-empty">Knowledge 加载中...</div>';
   try {
-    const payload = await fetchSkillList();
-    renderSkillList(payload);
-    if (!state.selectedSkillKey && payload.skills && payload.skills.length) {
-      await loadSkillDetail(payload.skills[0].skill_key);
+    const payload = await fetchKnowledgeList();
+    renderKnowledgeList(payload);
+    if (!state.selectedKnowledgeKey && payload.knowledge && payload.knowledge.length) {
+      await loadKnowledgeDetail(payload.knowledge[0].knowledge_key);
     }
   } catch (error) {
-    elements.skillListView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
+    elements.knowledgeListView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
   }
 }
 
-async function loadSkillDetail(skillKey) {
-  state.selectedSkillKey = skillKey;
-  elements.skillDetailView.innerHTML = '<div class="trace-empty">Skill 详情加载中...</div>';
+async function loadKnowledgeDetail(knowledgeKey) {
+  state.selectedKnowledgeKey = knowledgeKey;
+  elements.knowledgeDetailView.innerHTML = '<div class="trace-empty">Knowledge 详情加载中...</div>';
   try {
-    const detail = await fetchSkillDetail(skillKey);
-    state.selectedSkillDetail = detail;
-    renderSkillReviewWorkspace(detail);
-    const listPayload = await fetchSkillList();
-    renderSkillList(listPayload);
+    const detail = await fetchKnowledgeDetail(knowledgeKey);
+    state.selectedKnowledgeDetail = detail;
+    renderKnowledgeReviewWorkspace(detail);
+    const listPayload = await fetchKnowledgeList();
+    renderKnowledgeList(listPayload);
   } catch (error) {
-    elements.skillDetailView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
+    elements.knowledgeDetailView.innerHTML = `<div class="trace-empty">${escapeHtml(error.message)}</div>`;
   }
 }
 
-function renderSkillProposalCandidateDetail(candidateKey, listPayload = {skills: []}) {
-  state.selectedSkillKey = `proposal:${candidateKey}`;
+function renderKnowledgeProposalCandidateDetail(candidateKey, listPayload = {knowledge: []}) {
+  state.selectedKnowledgeKey = `proposal:${candidateKey}`;
   const routing = state.lastPayload.routing_decision
-    || state.lastPayload.evidence_bundle?.skill_evidence?.routing_decision
+    || state.lastPayload.evidence_bundle?.knowledge_evidence?.routing_decision
     || {};
+  const planCandidates = Array.isArray(routing.secondary_knowledge_run_plan?.candidates)
+    ? routing.secondary_knowledge_run_plan.candidates
+    : [];
+  const analysisItems = Array.isArray(state.lastPayload.secondary_knowledge_analysis)
+    ? state.lastPayload.secondary_knowledge_analysis
+    : [];
+  const secondaryMetaFromPayload = [...planCandidates, ...analysisItems]
+    .find((item) => item?.disease_key === candidateKey) || {};
+  const proposalFromListPayload = Array.isArray(listPayload.knowledge)
+    ? listPayload.knowledge.find((item) => item?.candidate_key === candidateKey) || {}
+    : {};
+  const secondaryMeta = Object.keys(secondaryMetaFromPayload).length
+    ? secondaryMetaFromPayload
+    : proposalFromListPayload;
   const hypotheses = Array.isArray(routing.clinical_hypotheses)
     ? routing.clinical_hypotheses
     : [];
   const hypothesis = hypotheses.find((item) => item.disease_key === candidateKey) || {};
   const diseaseName = humanDiseaseName(candidateKey);
-  elements.skillReviewStatus.textContent = "Differential candidate 已进入 proposal-only Skill 审核队列；不会直接写入正式 skill 库。";
-  elements.skillDetailView.innerHTML = `
-    <div class="doctor-skill-workspace">
-      <section class="doctor-skill-section">
-        <h3>${escapeHtml(diseaseName || candidateKey)} 待建 Skill</h3>
+  const selectedForKnowledgeBuilder = secondaryMeta.candidate_status === "selected_for_knowledgebuilder";
+  const proposalReady = secondaryMeta.knowledge_builder_status === "proposal_prepared"
+    || selectedForKnowledgeBuilder;
+  elements.knowledgeReviewStatus.textContent = selectedForKnowledgeBuilder
+    ? "未审核；当前仍是候选草案，医生确认后可保存为正式 Knowledge 复用。"
+    : "Differential candidate 已进入 proposal-only Knowledge 审核队列；医生确认后可保存为正式 Knowledge。";
+  elements.knowledgeDetailView.innerHTML = `
+    <div class="doctor-knowledge-workspace">
+      <section class="doctor-knowledge-section">
+        <h3>${escapeHtml(diseaseName || candidateKey)} ${proposalReady ? "未审核备用 Knowledge" : "待建 Knowledge"}</h3>
         ${renderMetricGrid({
           candidate_key: candidateKey,
-          proposal_status: "proposal_only",
+          proposal_status: selectedForKnowledgeBuilder ? "selected_for_knowledgebuilder" : "proposal_only",
           candidate_type: "differential_candidate",
           source: "current_case_routing",
-          formal_skill_updated: "false",
+          knowledge_builder_status: secondaryMeta.knowledge_builder_status || "pending",
+          review_queue_status: secondaryMeta.review_queue_status || secondaryMeta.knowledge_builder_proposal_detail?.review_queue_status || "pending",
+          formal_knowledge_updated: "false",
           diagnosis_allowed: "false",
         })}
-        <p class="warning-text">这是本次病例 routing 生成的鉴别候选，用于提醒医生审核是否需要补建 guideline skill。它不是正式 skill，不会作为正式诊断 Skill 运行。</p>
+        <p class="warning-text">${selectedForKnowledgeBuilder
+          ? "这是医生在本次病例中选中的备用疾病；KnowledgeBuilder proposal 已生成并进入审核库。点击“保存为正式 Knowledge”后会写入 knowledge/，但仍标记为 needs_review，不会自动作为确诊规则运行。"
+          : "这是本次病例 routing 生成的鉴别候选，用于提醒医生审核是否需要补建 guideline knowledge。医生确认后可保存进正式 Knowledge 库。"
+        }</p>
+        ${renderKnowledgeBuilderProposalDetail(secondaryMeta.knowledge_builder_proposal_detail)}
+        ${renderSecondaryKnowledgeBuilderProgress(secondaryMeta)}
       </section>
-      <section class="doctor-skill-section">
+      <section class="doctor-knowledge-section">
         <h3>候选来源</h3>
         ${renderList([
-          `主分析 Skill：${humanDiseaseName(routing.selected_skill || routing.primary_hypothesis || "")}`,
+          `主分析 Knowledge：${humanDiseaseName(routing.selected_knowledge || routing.primary_hypothesis || "")}`,
           `候选角色：${hypothesisRoleLabel(hypothesis.role || "differential")}`,
           `当前状态：${routingEvidenceStatusLabel(hypothesis.status || "differential_candidate")}`,
           hypothesis.reason || "Alternative explanation retained by routing.",
         ])}
       </section>
-      <section class="doctor-skill-section">
-        <h3>进入正式 Skill 前需要</h3>
+      <section class="doctor-knowledge-section">
+        <h3>进入正式 Knowledge 前需要</h3>
         ${renderList([
-          "由 SkillBuilder 检索指南或共识来源。",
+          "由 KnowledgeBuilder 检索指南或共识来源。",
           "抽取 clinical / imaging / quantitative / differential protocol。",
           "通过 validator 和人工审核。",
-          "审核通过前 formal_update_allowed=false，diagnosis_allowed=false。",
+          "保存为正式 Knowledge 后进入 knowledge/ 复用，但状态仍为 needs_review。",
+          "审核通过前 diagnosis_allowed=false，不作为正式确诊规则。",
         ])}
       </section>
     </div>
   `;
-  renderSkillList(listPayload);
+  renderKnowledgeList(listPayload);
 }
 
-function renderSkillReviewWorkspace(detail) {
+function renderKnowledgeBuilderProposalDetail(detail = {}) {
+  if (!detail || !Object.keys(detail).length) {
+    return "";
+  }
+  const expected = Array.isArray(detail.expected_evidence_to_check)
+    ? detail.expected_evidence_to_check
+    : [];
+  return `
+    <div class="doctor-knowledge-subsection">
+      <h4>KnowledgeBuilder 草案说明</h4>
+      <p>${escapeHtml(detail.doctor_facing_summary || "当前候选已进入 KnowledgeBuilder proposal-only 草案。")}</p>
+      ${renderMetricGrid({
+        knowledge_id: detail.knowledge_id || "-",
+        knowledge_type: detail.knowledge_type || "-",
+        evidence_level: detail.evidence_level || "-",
+        source_type: detail.source_type || "-",
+        formal_knowledge_updated: detail.formal_knowledge_updated === true ? "是" : "否",
+      })}
+      ${renderGuidelineEvidenceSummary(detail)}
+      ${expected.length ? `
+        <div class="trace-subblock">
+          <strong>需要复查的证据</strong>
+          ${renderList(expected)}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderKnowledgeReviewWorkspace(detail) {
   const view = detail.doctor_view || {};
   const identity = view.identity || {};
   const clinical = view.clinical_profile || {};
@@ -1783,49 +2020,49 @@ function renderSkillReviewWorkspace(detail) {
   const safety = Array.isArray(view.safety_notes) ? view.safety_notes : [];
   const sources = Array.isArray(view.source_documents) ? view.source_documents : [];
   const draft = detail.draft || {};
-  elements.skillReviewStatus.textContent = draft.exists
+  elements.knowledgeReviewStatus.textContent = draft.exists
     ? `已有医生草稿：${draft.draft_path}`
-    : "医生审核模式：草稿只保存到 output/fake，不直接覆盖正式 skill。";
-  elements.skillDetailView.innerHTML = `
-    <div class="doctor-skill-workspace">
-      <section class="doctor-skill-section">
-        <h3>${escapeHtml(identity.disease_name || detail.skill_key || "未命名 Skill")}</h3>
+    : "医生审核模式：正式 Knowledge 可保存审核草稿；候选 Knowledge 可另存到正式库复用。";
+  elements.knowledgeDetailView.innerHTML = `
+    <div class="doctor-knowledge-workspace">
+      <section class="doctor-knowledge-section">
+        <h3>${escapeHtml(identity.disease_name || detail.knowledge_key || "未命名 Knowledge")}</h3>
         ${renderMetricGrid({
-          skill_id: identity.skill_id,
-          skill_type: identity.skill_type,
+          knowledge_id: identity.knowledge_id,
+          knowledge_type: identity.knowledge_type,
           evidence_level: identity.evidence_level,
           source: identity.source,
         })}
       </section>
-      <section class="doctor-skill-section doctor-edit-grid">
+      <section class="doctor-knowledge-section doctor-edit-grid">
         <label>常见症状
-          <textarea id="skillCommonSymptoms" rows="4">${escapeHtml((clinical.common_symptoms || []).join("\n"))}</textarea>
+          <textarea id="knowledgeCommonSymptoms" rows="4">${escapeHtml((clinical.common_symptoms || []).join("\n"))}</textarea>
         </label>
         <label>危险因素
-          <textarea id="skillRiskFactors" rows="4">${escapeHtml((clinical.risk_factors || []).join("\n"))}</textarea>
+          <textarea id="knowledgeRiskFactors" rows="4">${escapeHtml((clinical.risk_factors || []).join("\n"))}</textarea>
         </label>
         <label>需要的影像检查
-          <textarea id="skillImageRequirements" rows="4">${escapeHtml(imaging.map((item) => item.label).join("\n"))}</textarea>
+          <textarea id="knowledgeImageRequirements" rows="4">${escapeHtml(imaging.map((item) => item.label).join("\n"))}</textarea>
         </label>
         <label>医生审核备注
-          <textarea id="skillReviewNotes" rows="4" placeholder="写下需要修改、删除或补充的医学意见"></textarea>
+          <textarea id="knowledgeReviewNotes" rows="4" placeholder="写下需要修改、删除或补充的医学意见"></textarea>
         </label>
       </section>
-      <section class="doctor-skill-section">
+      <section class="doctor-knowledge-section">
         <h3>影像征象</h3>
         <div class="doctor-finding-list">
           ${findings.map((finding, index) => renderDoctorFindingEditor(finding, index)).join("") || '<div class="trace-empty">暂无影像征象</div>'}
         </div>
       </section>
-      <section class="doctor-skill-section">
+      <section class="doctor-knowledge-section">
         <h3>分期 / 判断规则</h3>
         ${renderDoctorStageCards(stages)}
       </section>
-      <section class="doctor-skill-section">
+      <section class="doctor-knowledge-section">
         <h3>证据不足和下一步检查</h3>
         ${renderDoctorSafetyNotes(safety)}
       </section>
-      <section class="doctor-skill-section">
+      <section class="doctor-knowledge-section">
         <h3>指南来源</h3>
         ${sources.length ? `<div class="citation-list">${sources.map(renderCitation).join("")}</div>` : '<div class="trace-empty">暂无来源</div>'}
       </section>
@@ -1848,7 +2085,7 @@ function renderDoctorFindingEditor(finding, index) {
         diagnostic_role: finding.diagnostic_role,
       })}
       <label>医生对该征象的修改意见
-        <textarea class="skillFindingComment" rows="2" data-target="${escapeHtml(finding.target || "")}" data-display-name="${escapeHtml(finding.display_name || finding.target || "")}" placeholder="例如：描述不准确 / 需要补充典型表现 / 不建议分割"></textarea>
+        <textarea class="knowledgeFindingComment" rows="2" data-target="${escapeHtml(finding.target || "")}" data-display-name="${escapeHtml(finding.display_name || finding.target || "")}" placeholder="例如：描述不准确 / 需要补充典型表现 / 不建议分割"></textarea>
       </label>
     </article>
   `;
@@ -1888,8 +2125,8 @@ function renderDoctorSafetyNotes(notes) {
   `;
 }
 
-function buildSkillDraftPayload() {
-  const comments = Array.from(elements.skillDetailView.querySelectorAll(".skillFindingComment"))
+function buildKnowledgeDraftPayload() {
+  const comments = Array.from(elements.knowledgeDetailView.querySelectorAll(".knowledgeFindingComment"))
     .map((input) => ({
       target: input.dataset.target,
       display_name: input.dataset.displayName,
@@ -1900,12 +2137,12 @@ function buildSkillDraftPayload() {
     reviewer_name: "doctor_reviewer",
     sections: {
       clinical_profile: {
-        common_symptoms: splitListByLine(document.getElementById("skillCommonSymptoms")?.value || ""),
-        risk_factors: splitListByLine(document.getElementById("skillRiskFactors")?.value || ""),
+        common_symptoms: splitListByLine(document.getElementById("knowledgeCommonSymptoms")?.value || ""),
+        risk_factors: splitListByLine(document.getElementById("knowledgeRiskFactors")?.value || ""),
       },
-      imaging_requirements: splitListByLine(document.getElementById("skillImageRequirements")?.value || ""),
+      imaging_requirements: splitListByLine(document.getElementById("knowledgeImageRequirements")?.value || ""),
       visual_findings_review: comments,
-      review_notes: document.getElementById("skillReviewNotes")?.value.trim() || "",
+      review_notes: document.getElementById("knowledgeReviewNotes")?.value.trim() || "",
     },
   };
 }
@@ -1920,7 +2157,7 @@ function splitListByLine(value) {
 function renderGuidelineEvidence(payload) {
   const bundle = payload.evidence_bundle || {};
   const report = payload.report || {};
-  const evidence = bundle.skill_evidence?.guideline_evidence || payload.guideline_evidence || report.guideline_evidence || {};
+  const evidence = bundle.knowledge_evidence?.guideline_evidence || payload.guideline_evidence || report.guideline_evidence || {};
   const citations = Array.isArray(evidence.citations) ? evidence.citations : [];
   const sourceDocuments = Array.isArray(evidence.source_documents) ? evidence.source_documents : [];
   const references = citations.length ? citations : sourceDocuments;
@@ -1941,7 +2178,7 @@ function renderGuidelineEvidence(payload) {
 
 function getAlignmentPlan(payload) {
   return payload.alignment_plan
-    || payload.evidence_bundle?.skill_evidence?.alignment_plan
+    || payload.evidence_bundle?.knowledge_evidence?.alignment_plan
     || payload.report?.alignment_plan
     || {};
 }
@@ -1965,9 +2202,9 @@ function renderAlignmentPlan(payload) {
       <span>${escapeHtml(plan.clinical_focus || "-")}</span>
     </div>
     <div class="trace-block">
-      <h3>图像与 Skill</h3>
+      <h3>图像与 Knowledge</h3>
       ${renderMetricGrid({
-        selected_skill: plan.selected_skill,
+        selected_knowledge: plan.selected_knowledge,
         modality: imageContext.modality,
         body_part: imageContext.body_part,
         available_sequences: Array.isArray(imageContext.available_sequences)
@@ -2130,29 +2367,68 @@ function renderCitation(citation) {
 
 function renderReport(payload) {
   const report = payload.report || {};
-  const skillProposalHtml = renderSkillProposalReport(payload);
-  if (skillProposalHtml) {
-    elements.reportView.innerHTML = `${renderRoutingClinicalSummary(payload)}${skillProposalHtml}`;
+  const knowledgeProposalHtml = renderKnowledgeProposalReport(payload);
+  if (knowledgeProposalHtml) {
+    setReportHtml(`${renderRoutingClinicalSummary(payload)}${knowledgeProposalHtml}`);
     return;
   }
   if (!Object.keys(report).length && payload.reply_to_patient) {
-    elements.reportView.innerHTML = `<div class="report-section"><p>${escapeHtml(payload.reply_to_patient)}</p></div>`;
+    setReportHtml(`<div class="report-section"><p>${escapeHtml(payload.reply_to_patient)}</p></div>`);
     return;
   }
   const routingSummaryHtml = renderRoutingClinicalSummary(payload);
+  const evidenceProtocolModeHtml = renderEvidenceProtocolModeSummary(payload);
   const patientSummaryHtml = renderPatientDiagnosisSummary(payload);
   const hasStructuredReport = Boolean(patientSummaryHtml);
   if (patientSummaryHtml) {
-    elements.reportView.innerHTML = `${routingSummaryHtml}${patientSummaryHtml}`;
+    elements.reportView.innerHTML = `${routingSummaryHtml}${evidenceProtocolModeHtml}${patientSummaryHtml}`;
     return;
   }
   const reportHtml = renderLegacyReportSections(report, hasStructuredReport);
   const differentialHtml = renderDifferentialConsiderations(payload);
   const guidelineEvidenceHtml = renderGuidelineEvidence(payload);
-  elements.reportView.innerHTML =
+  setReportHtml(
     routingSummaryHtml || reportHtml || differentialHtml || guidelineEvidenceHtml
-      ? `${routingSummaryHtml}${reportHtml}${differentialHtml}${guidelineEvidenceHtml}`
-      : '<div class="report-empty">无报告字段</div>';
+      ? `${routingSummaryHtml}${evidenceProtocolModeHtml}${reportHtml}${differentialHtml}${guidelineEvidenceHtml}`
+      : '<div class="report-empty">无报告字段</div>'
+  );
+}
+
+function setReportHtml(html) {
+  elements.reportView.innerHTML = html;
+  bindManualSecondaryActionButtons();
+}
+
+function bindManualSecondaryActionButtons() {
+  elements.reportView.querySelectorAll("[data-secondary-knowledge-key]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      selectManualSecondaryKnowledge(button.dataset.secondaryKnowledgeKey);
+    });
+  });
+  elements.reportView.querySelectorAll("[data-secondary-knowledge-remove-key]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      removeManualSecondaryKnowledge(button.dataset.secondaryKnowledgeRemoveKey);
+    });
+  });
+}
+
+function renderEvidenceProtocolModeSummary(payload) {
+  const report = payload.report || {};
+  const summary = payload.evidence_protocol_mode_summary || report["证据提取范围"] || {};
+  if (!Object.keys(summary).length) {
+    return "";
+  }
+  return `
+    <div class="report-section evidence-protocol-mode-summary">
+      <h3>证据提取范围</h3>
+      <p>${escapeHtml(summary.doctor_facing_summary || summary.mode_label || "")}</p>
+      ${summary.safety_boundary ? `<p class="muted">${escapeHtml(summary.safety_boundary)}</p>` : ""}
+    </div>
+  `;
 }
 
 function renderPatientDiagnosisSummary(payload) {
@@ -2168,14 +2444,26 @@ function renderPatientDiagnosisSummary(payload) {
   if (!hasStructuredReport) {
     return "";
   }
-  const evidenceItems = patientDiagnosisEvidenceItems(payload).slice(0, 3);
+  const evidenceItems = patientDiagnosisEvidenceItems(payload).slice(0, 5);
+  const lesionHighlights = patientDiagnosisLesionHighlights(payload).slice(0, 4);
   const nextSteps = patientDiagnosisNextSteps(payload).slice(0, 3);
   return `
     <div class="report-section patient-diagnosis-summary" aria-label="患者诊断摘要">
-      <h3>患者诊断摘要</h3>
-      <div class="patient-summary-block">
-        <h4>结论</h4>
-        <p>${escapeHtml(patientDiagnosisConclusion(payload))}</p>
+      <h3>重点结论</h3>
+      <div class="patient-priority-grid">
+        <article class="patient-priority-card patient-priority-disease">
+          <h4>疾病判断</h4>
+          ${renderPatientPrimaryDiagnosis(payload)}
+          ${renderPatientSecondaryReviewSummary(payload)}
+        </article>
+        <article class="patient-priority-card patient-priority-lesions">
+          <h4>发现的病灶/征象</h4>
+          ${lesionHighlights.length ? renderList(lesionHighlights) : "<p>当前报告没有返回明确可用的病灶或影像征象。</p>"}
+        </article>
+        <article class="patient-priority-card patient-priority-boundary">
+          <h4>疑似/确诊边界</h4>
+          <p>${escapeHtml(patientDiagnosisBoundary(payload))}</p>
+        </article>
       </div>
       <div class="patient-summary-block">
         <h4>主要依据</h4>
@@ -2189,12 +2477,237 @@ function renderPatientDiagnosisSummary(payload) {
   `;
 }
 
+function patientDiagnosisHeadline(payload) {
+  const report = payload.report || {};
+  const integrated = report.integrated_reasoning_summary || {};
+  const assessment = report.target_disease_assessment || {};
+  const targetDisease = integrated.target_disease || assessment.target_disease || payload.routing_decision?.primary_hypothesis;
+  const diseaseName = humanDiseaseName(targetDisease || "");
+  const canConfirm = integrated.can_confirm_target_disease === true || assessment.can_confirm_target_disease === true;
+  const confidence = primaryDiagnosticConfidence(payload);
+  if (confidence) {
+    return diagnosticConfidenceSentence(confidence);
+  }
+  if (canConfirm) {
+    return diseaseName ? `支持/倾向：${diseaseName}` : "支持/倾向：目标疾病";
+  }
+  const status = integrated.evidence_status || assessment.evidence_status || payload.routing_decision?.routing_evidence_status;
+  if (status === "insufficient" || status === "requires_evidence_acquisition") {
+    return diseaseName ? `不能确认：${diseaseName}` : "不能确认目标疾病";
+  }
+  const tendency = report.diagnostic_tendency || report["诊断倾向"];
+  if (tendency) {
+    return String(tendency);
+  }
+  return diseaseName ? `疑似方向：${diseaseName}` : "当前未形成明确疾病判断";
+}
+
+function renderPatientPrimaryDiagnosis(payload) {
+  const confidence = primaryDiagnosticConfidence(payload);
+  if (!confidence) {
+    return `<p class="diagnosis-main-text">${escapeHtml(patientDiagnosisHeadline(payload))}</p>`;
+  }
+  const diseaseName = confidence.disease_name || humanDiseaseName(confidence.disease_key || "") || "目标疾病";
+  const level = confidence.confidence_label || confidence.confidence_level || "未分级";
+  const score = Number(confidence.confidence_score);
+  const scoreText = Number.isFinite(score) ? `规则支持度 ${Math.round(score * 100)}%` : "规则支持度未计算";
+  const basis = Array.isArray(confidence.basis) ? confidence.basis.filter(Boolean).slice(0, 3) : [];
+  return `
+    <div class="diagnosis-main-line">
+      <strong>${escapeHtml(diseaseName)}</strong>
+      <span class="diagnosis-confidence-pill">${escapeHtml(level)}</span>
+    </div>
+    <p class="diagnosis-score-line">${escapeHtml(scoreText)}</p>
+    ${basis.length ? `
+      <p class="diagnosis-confidence-note">依据：${escapeHtml(basis.join("、"))}</p>
+    ` : ""}
+    <p class="diagnosis-confidence-note">该支持度由当前 evidence bundle 的规则估计得到，不是校准后的真实患病概率。</p>
+  `;
+}
+
+function renderPatientSecondaryReviewSummary(payload) {
+  const items = patientSecondaryReviewItems(payload);
+  if (!items.length) {
+    return "";
+  }
+  const title = patientSecondaryReviewTitle(payload);
+  return `
+    <div class="patient-secondary-review-summary">
+      <div class="secondary-review-heading">
+        <strong>${escapeHtml(title)}</strong>
+        <small>按备用 Knowledge 专属视觉协议复查</small>
+      </div>
+      <ul>
+        ${items.map((item) => `
+          <li class="secondary-review-${escapeHtml(item.confidenceLevel)}">
+            <div>
+              <span>${escapeHtml(item.diseaseName)}</span>
+              <em class="secondary-review-pill">${escapeHtml(item.confidenceText)}</em>
+            </div>
+            <small class="secondary-review-evidence">${escapeHtml(item.evidenceText)}</small>
+          </li>
+        `).join("")}
+      </ul>
+    </div>
+  `;
+}
+
+function patientSecondaryReviewTitle(payload) {
+  const mode = payload.routing_decision?.knowledge_selection_mode || payload.knowledge_selection_mode || "";
+  if (mode === "agent_auto_secondary") {
+    return "Agent 自动备用复查";
+  }
+  if (mode === "manual_secondary") {
+    return "人工备用复查";
+  }
+  return "备用复查";
+}
+
+function patientSecondaryReviewItems(payload) {
+  const report = payload.report || {};
+  const items = Array.isArray(payload.secondary_knowledge_analysis)
+    ? payload.secondary_knowledge_analysis
+    : Array.isArray(report["备用 Knowledge 复查结果"])
+      ? report["备用 Knowledge 复查结果"]
+      : [];
+  return items
+    .filter((item) => item && Object.keys(item).length)
+    .slice(0, 3)
+    .map((item) => {
+      const review = item.differential_review || {};
+      const confidence = review.diagnostic_confidence || {};
+      const confidenceLevel = confidence.confidence_level || "insufficient";
+      return {
+        diseaseName: item.disease_name || humanDiseaseName(item.disease_key || "") || "备用疾病",
+        confidenceText: secondaryConfidenceText(confidence),
+        confidenceLevel,
+        evidenceText: secondaryReviewEvidenceLine(item),
+      };
+    });
+}
+
+function secondaryReviewEvidenceLine(item = {}) {
+  const bundle = item.secondary_visual_evidence_bundle || {};
+  const findings = Array.isArray(bundle.findings) ? bundle.findings : [];
+  const present = Array.isArray(bundle.present_findings) ? bundle.present_findings : [];
+  const labels = uniqueStrings([
+    ...findings.map((finding) => visualFindingDisplayName(finding)),
+    ...present.map(humanFindingName),
+  ]).filter(Boolean).slice(0, 3);
+  if (labels.length) {
+    return `按备用 Knowledge 专属视觉协议复查：${labels.join("、")}`;
+  }
+  if (item.secondary_visual_status === "ok") {
+    return "按备用 Knowledge 专属视觉协议复查：未提取到该备用病种的专属支持征象";
+  }
+  const review = item.differential_review || {};
+  const current = review.current_observation_summary || "";
+  if (current) {
+    return current;
+  }
+  return "未提取到该备用病种的专属支持征象";
+}
+
+function primaryDiagnosticConfidence(payload) {
+  const items = Array.isArray(payload.diagnostic_confidence)
+    ? payload.diagnostic_confidence
+    : Array.isArray(payload.report?.["诊断置信度"])
+      ? payload.report["诊断置信度"]
+      : [];
+  return items.find((item) => item?.role === "primary")
+    || items[0]
+    || derivedPrimaryDiagnosticConfidence(payload);
+}
+
+function derivedPrimaryDiagnosticConfidence(payload) {
+  const report = payload.report || {};
+  const integrated = report.integrated_reasoning_summary || {};
+  const assessment = report.target_disease_assessment || {};
+  const targetDisease = integrated.target_disease || assessment.target_disease || payload.routing_decision?.primary_hypothesis;
+  if (targetDisease !== "femoral_head_necrosis") {
+    return null;
+  }
+  const lesionText = patientDiagnosisLesionHighlights(payload).join(" ");
+  const hasSclerotic = /硬化|sclerotic/i.test(lesionText);
+  const hasCystic = /囊性|囊变|cystic/i.test(lesionText);
+  const hasCollapse = /塌陷|新月|collapse|crescent/i.test(lesionText);
+  if (!hasSclerotic && !hasCystic && !hasCollapse) {
+    return null;
+  }
+  const confidenceLevel = hasCollapse || (hasSclerotic && hasCystic) ? "high" : "moderate";
+  const confidenceLabel = confidenceLevel === "high" ? "高度支持" : "中等支持";
+  const confidenceScore = confidenceLevel === "high" ? 0.82 : 0.62;
+  const basis = [];
+  if (hasSclerotic) basis.push("硬化带");
+  if (hasCystic) basis.push("囊性变");
+  if (hasCollapse) basis.push("股骨头塌陷/新月征");
+  return {
+    disease_key: "femoral_head_necrosis",
+    disease_name: "股骨头坏死",
+    role: "primary",
+    confidence_level: confidenceLevel,
+    confidence_label: confidenceLabel,
+    confidence_score: confidenceScore,
+    basis,
+    caveat: confidenceLevel === "high"
+      ? "当前 X 光征象已经高度支持股骨头坏死方向；建议 MRI 明确坏死范围、分期和是否存在早期塌陷，最终仍需影像科/骨科医生结合病史确认。"
+      : "当前 X 光征象中等支持股骨头坏死方向；如症状持续或风险因素明确，建议 MRI 进一步评估。",
+  };
+}
+
+function diagnosticConfidenceSentence(confidence = {}) {
+  const diseaseName = confidence.disease_name || humanDiseaseName(confidence.disease_key || "") || "目标疾病";
+  const level = confidence.confidence_label || confidence.confidence_level || "未分级";
+  const score = Number(confidence.confidence_score);
+  const scoreText = Number.isFinite(score) ? `，规则支持度 ${Math.round(score * 100)}%` : "";
+  if (confidence.confidence_level === "insufficient") {
+    return `证据不足：${diseaseName}${scoreText}`;
+  }
+  return `影像证据${level}：${diseaseName}${scoreText}`;
+}
+
+function patientDiagnosisLesionHighlights(payload) {
+  const report = payload.report || {};
+  const integrated = report.integrated_reasoning_summary || {};
+  const imaging = integrated.imaging_support || report.imaging_evidence_summary || {};
+  const visualBundle = getVisualEvidenceBundle(payload);
+  const visibleFindings = patientVisibleFindings(visualBundle)
+    .map((finding) => finding.text
+      ? `${finding.title}：${finding.text}`
+      : finding.title
+    );
+  const supportedTargets = Array.isArray(imaging.supported_targets)
+    ? uniquePatientFindingNames(imaging.supported_targets).map((name) => `可参考发现：${name}`)
+    : [];
+  const presentFindings = Array.isArray(visualBundle.present_findings)
+    ? uniquePatientFindingNames(visualBundle.present_findings).map((name) => `视觉候选：${name}`)
+    : [];
+  return uniqueStrings([
+    ...visibleFindings,
+    ...supportedTargets,
+    ...presentFindings,
+  ]).filter(Boolean);
+}
+
+function patientDiagnosisBoundary(payload) {
+  const primaryConclusion = patientDiagnosisConclusion(payload);
+  return primaryConclusion;
+}
+
 function patientDiagnosisConclusion(payload) {
   const report = payload.report || {};
   const integrated = report.integrated_reasoning_summary || {};
   const assessment = report.target_disease_assessment || {};
   const targetDisease = integrated.target_disease || assessment.target_disease || payload.routing_decision?.primary_hypothesis;
   const diseaseName = humanDiseaseName(targetDisease || "");
+  const confidence = primaryDiagnosticConfidence(payload);
+  if (confidence && confidence.confidence_level !== "insufficient") {
+    return confidence.caveat || (
+      diseaseName
+        ? `当前证据支持${diseaseName}方向，但仍需医生结合完整检查确认。`
+        : "当前证据支持目标疾病方向，但仍需医生结合完整检查确认。"
+    );
+  }
   if (integrated.can_confirm_target_disease === true || assessment.can_confirm_target_disease === true) {
     return diseaseName
       ? `当前证据支持${diseaseName}方向，但仍需医生结合完整检查确认。`
@@ -2207,6 +2720,61 @@ function patientDiagnosisConclusion(payload) {
       : "目前证据不足，不能仅凭当前资料确认目标疾病。";
   }
   return report.diagnostic_tendency || report["诊断倾向"] || payload.reply_to_patient || "当前报告未给出明确结论。";
+}
+
+function patientSecondaryKnowledgeConclusion(payload, options = {}) {
+  const report = payload.report || {};
+  const items = Array.isArray(payload.secondary_knowledge_analysis)
+    ? payload.secondary_knowledge_analysis
+    : Array.isArray(report["备用 Knowledge 复查结果"])
+      ? report["备用 Knowledge 复查结果"]
+      : [];
+  const visibleItems = items.filter((item) => item && Object.keys(item).length).slice(0, 3);
+  if (!visibleItems.length) {
+    return "";
+  }
+  return visibleItems
+    .map((item) => secondaryKnowledgeConclusionText(item, options))
+    .filter(Boolean)
+    .join(options.compact ? "；" : " ");
+}
+
+function secondaryConfidenceText(confidence = {}) {
+  const label = confidence.confidence_label || confidence.confidence_level || "证据不足";
+  const score = Number(confidence.confidence_score);
+  if (!Number.isFinite(score)) {
+    return label;
+  }
+  return `${label} · 规则支持度 ${Math.round(score * 100)}%`;
+}
+
+function secondaryKnowledgeConclusionText(item, options = {}) {
+  const diseaseName = item.disease_name || humanDiseaseName(item.disease_key || "") || "备用疾病";
+  const diagnosisAllowed = item.diagnosis_allowed === true;
+  const review = item.differential_review || {};
+  const confidence = review.diagnostic_confidence || {};
+  const confidenceText = secondaryConfidenceText(confidence);
+  if (diagnosisAllowed) {
+    return options.compact
+      ? `备用复查支持：${diseaseName}${confidenceText ? `（${confidenceText}）` : ""}`
+      : `备用疾病复查：当前证据支持${diseaseName}方向${confidenceText ? `，支持度为${confidenceText}` : ""}，但仍需医生结合完整检查确认。`;
+  }
+  if (options.compact) {
+    return `备用复查：${diseaseName}${confidenceText ? `（${confidenceText}）` : "证据不足"}`;
+  }
+  const weakSupport = Array.isArray(review.weak_supporting_evidence)
+    ? review.weak_supporting_evidence.slice(0, 2)
+    : [];
+  const missing = Array.isArray(review.missing_required_evidence)
+    ? review.missing_required_evidence.slice(0, 2)
+    : [];
+  const supportText = weakSupport.length
+    ? `当前有 ${weakSupport.join("、")} 等弱提示，`
+    : "";
+  const missingText = missing.length
+    ? `仍需复查 ${missing.join("、")}。`
+    : "仍需补充针对性证据。";
+  return `备用疾病复查：${diseaseName}当前证据支持度为${confidenceText || "证据不足"}，${supportText}${missingText}`;
 }
 
 function patientDiagnosisEvidenceItems(payload) {
@@ -2234,6 +2802,7 @@ function patientDiagnosisEvidenceItems(payload) {
   } else {
     items.push("当前没有稳定的量化证据可以直接支持确诊。");
   }
+  items.push(...secondaryReviewEvidenceItems(payload));
   const missingTargets = Array.isArray(missing.missing_required_targets)
     ? missing.missing_required_targets
     : [];
@@ -2241,6 +2810,17 @@ function patientDiagnosisEvidenceItems(payload) {
     items.push(`仍缺少：${missingTargets.slice(0, 3).map(patientMissingEvidenceName).join("、")}。`);
   }
   return items;
+}
+
+function secondaryReviewEvidenceItems(payload) {
+  const items = Array.isArray(payload.secondary_knowledge_analysis)
+    ? payload.secondary_knowledge_analysis
+    : [];
+  return items
+    .map((item) => item.differential_review?.report_sentence)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((sentence) => `备用复查：${sentence}`);
 }
 
 function patientDiagnosisNextSteps(payload) {
@@ -2265,8 +2845,8 @@ function patientDiagnosisNextSteps(payload) {
   return [];
 }
 
-function renderSkillProposalReport(payload) {
-  const proposal = payload.skill_builder_proposal || {};
+function renderKnowledgeProposalReport(payload) {
+  const proposal = payload.knowledge_builder_proposal || {};
   if (!Object.keys(proposal).length) {
     return "";
   }
@@ -2274,18 +2854,18 @@ function renderSkillProposalReport(payload) {
   const limitations = Array.isArray(payload.modality_limitations) ? payload.modality_limitations : [];
   const recommendations = Array.isArray(payload.recommendation) ? payload.recommendation : [];
   return `
-    <div class="report-section report-skill-proposal">
-      <h3>Skill Builder 候选草案</h3>
-      <p>${escapeHtml(payload.reply_to_patient || "当前缺少本地正式 skill，已进入候选草案流程。")}</p>
+    <div class="report-section report-knowledge-proposal">
+      <h3>Knowledge Builder 候选草案</h3>
+      <p>${escapeHtml(payload.reply_to_patient || "当前缺少本地正式 knowledge，已进入候选草案流程。")}</p>
       ${renderMetricGrid({
-        selected_skill: proposal.selected_skill,
+        selected_knowledge: proposal.selected_knowledge,
         disease_name: proposal.disease_name,
-        skill_type: proposal.skill_type,
+        knowledge_type: proposal.knowledge_type,
         evidence_level: proposal.evidence_level,
         formal_update_allowed: proposal.formal_update_allowed === true ? "是" : "否",
         diagnosis_allowed: proposal.diagnosis_allowed === true ? "是" : "否",
       })}
-      <p class="warning-text">不能直接诊断；候选 skill 需要指南来源与人工审核后才能进入正式诊断流程。</p>
+      <p class="warning-text">不能直接诊断；候选 knowledge 需要指南来源与人工审核后才能进入正式诊断流程。</p>
       ${missingEvidence.length ? `<h4>缺失依据</h4>${renderList(missingEvidence.map((item) => `${item.field || "evidence"}：${item.reason || item.status || "-"}`))}` : ""}
       ${limitations.length ? `<h4>当前限制</h4>${renderList(limitations)}` : ""}
       ${recommendations.length ? `<h4>建议下一步</h4>${renderList(recommendations)}` : ""}
@@ -2317,11 +2897,11 @@ function renderLegacyReportSections(report, hasStructuredReport) {
 
 function renderRoutingClinicalSummary(payload) {
   const routing = payload.routing_decision
-    || payload.evidence_bundle?.skill_evidence?.routing_decision
+    || payload.evidence_bundle?.knowledge_evidence?.routing_decision
     || {};
   const report = payload.report || {};
   const assessment = report.target_disease_assessment || {};
-  const hypothesis = routing.primary_hypothesis || assessment.target_disease || routing.selected_skill;
+  const hypothesis = routing.primary_hypothesis || assessment.target_disease || routing.selected_knowledge;
   const status = routing.routing_evidence_status
     || routing.initial_evidence_status
     || assessment.evidence_status;
@@ -2329,12 +2909,12 @@ function renderRoutingClinicalSummary(payload) {
     return "";
   }
   const parts = [];
-  const selectedSkill = routing.selected_skill || hypothesis;
-  if (routing.skill_selection_mode) {
-    parts.push(`Skill 模式：${skillSelectionModeLabel(routing.skill_selection_mode)}`);
+  const selectedKnowledge = routing.selected_knowledge || hypothesis;
+  if (routing.knowledge_selection_mode) {
+    parts.push(`Knowledge 模式：${knowledgeSelectionModeLabel(routing.knowledge_selection_mode)}`);
   }
-  if (selectedSkill) {
-    parts.push(`主分析 Skill：${humanDiseaseName(selectedSkill)}`);
+  if (selectedKnowledge) {
+    parts.push(`主分析 Knowledge：${humanDiseaseName(selectedKnowledge)}`);
   }
   if (hypothesis) {
     parts.push(`Primary hypothesis：${humanDiseaseName(hypothesis)}`);
@@ -2342,19 +2922,25 @@ function renderRoutingClinicalSummary(payload) {
   if (status) {
     parts.push(`证据状态：${routingEvidenceStatusLabel(status)}`);
   }
-  const candidates = Array.isArray(routing.differential_skill_candidates)
-    ? routing.differential_skill_candidates
+  const candidates = Array.isArray(routing.differential_knowledge_candidates)
+    ? routing.differential_knowledge_candidates
     : [];
-  const displayCandidates = Array.isArray(routing.display_differential_skill_candidates)
-    ? routing.display_differential_skill_candidates
-    : candidates.slice(0, 2);
+  const displayCandidates = Array.isArray(routing.display_differential_knowledge_candidates)
+    ? routing.display_differential_knowledge_candidates
+    : candidates.slice(0, 3);
   if (displayCandidates.length) {
     parts.push(`重点鉴别复核：${displayCandidates.map(humanDiseaseName).join("、")}`);
   }
   const hypotheses = Array.isArray(routing.clinical_hypotheses)
     ? routing.clinical_hypotheses
     : [];
-  const selectedSecondarySkills = selectedManualSecondarySkills();
+  const secondaryAnalysisItems = Array.isArray(payload.secondary_knowledge_analysis)
+    ? payload.secondary_knowledge_analysis
+    : Array.isArray(report["备用 Knowledge 复查结果"])
+      ? report["备用 Knowledge 复查结果"]
+      : [];
+  const hasSecondaryAnalysis = secondaryAnalysisItems.length > 0;
+  const selectedSecondaryKnowledges = selectedManualSecondaryKnowledges();
   const visibleRoutingHypotheses = hypotheses.filter((item) => (
     item.role === "primary"
     || item.display_group === "strong_differential"
@@ -2369,11 +2955,51 @@ function renderRoutingClinicalSummary(payload) {
     ...hypotheses
       .filter((item) => item.role === "differential")
       .map((item) => item.disease_key || item.target || ""),
-  ]).filter((candidate) => candidate && candidate !== selectedSkill);
+  ]).filter((candidate) => candidate && candidate !== selectedKnowledge);
   const manualSecondaryCandidateHtml = renderManualSecondaryCandidateList(
     manualSecondaryCandidateKeys,
-    selectedSecondarySkills,
+    selectedSecondaryKnowledges,
   );
+  const secondaryKnowledgeNameItems = uniqueStrings(
+    secondaryAnalysisItems
+      .map((item) => item.disease_key || item.knowledge_id || item.target || "")
+      .filter(Boolean),
+  );
+  const secondaryKnowledgeNamesHtml = secondaryKnowledgeNameItems.length
+    ? `
+      <div class="doctor-routing-knowledge-list" aria-label="已运行的备用 Knowledge">
+        ${secondaryKnowledgeNameItems.map((knowledgeKey) => `
+          <span>${escapeHtml(humanDiseaseName(knowledgeKey))}</span>
+        `).join("")}
+      </div>
+    `
+    : "";
+  const doctorRoutingSummaryHtml = hasSecondaryAnalysis ? `
+    <div class="doctor-routing-summary">
+      <article class="doctor-routing-card">
+        <strong>主分析 Knowledge</strong>
+        <span>${escapeHtml(humanDiseaseName(selectedKnowledge || hypothesis || ""))}</span>
+        <small>${escapeHtml(routingEvidenceStatusLabel(status || ""))}</small>
+      </article>
+      <article class="doctor-routing-card">
+        <strong>备用复查状态</strong>
+        <span>已按备用 Knowledge 运行复查</span>
+        ${secondaryKnowledgeNamesHtml}
+        <small>复查结果仍受 evidence bundle 和审核状态约束。</small>
+      </article>
+      ${secondaryAnalysisItems.slice(0, 3).map((item) => {
+        const review = item.differential_review || {};
+        const confidence = review.diagnostic_confidence || {};
+        return `
+          <article class="doctor-routing-card doctor-routing-secondary">
+            <strong>${escapeHtml(humanDiseaseName(item.disease_key || ""))}</strong>
+            <span>${escapeHtml(secondaryConfidenceText(confidence))}</span>
+            <small>${escapeHtml(secondaryReviewEvidenceLine(item))}</small>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  ` : "";
   const hypothesisQueueHtml = hypotheses.length
     ? `
       <div class="hypothesis-queue">
@@ -2385,7 +3011,7 @@ function renderRoutingClinicalSummary(payload) {
               <b>${escapeHtml(humanDiseaseName(item.disease_key || item.target || ""))}</b>
               <em>${escapeHtml(routingEvidenceStatusLabel(item.status || ""))}</em>
               ${item.reason ? `<small>${escapeHtml(item.reason)}</small>` : ""}
-              ${renderManualSecondaryAction(item, selectedSecondarySkills)}
+              ${renderManualSecondaryAction(item, selectedSecondaryKnowledges)}
             </li>
           `).join("")}
         </ul>
@@ -2399,45 +3025,60 @@ function renderRoutingClinicalSummary(payload) {
                   <b>${escapeHtml(humanDiseaseName(item.disease_key || item.target || ""))}</b>
                   <em>${escapeHtml(routingEvidenceStatusLabel(item.status || ""))}</em>
                   ${item.reason ? `<small>${escapeHtml(item.reason)}</small>` : ""}
-                  ${renderManualSecondaryAction(item, selectedSecondarySkills)}
+                  ${renderManualSecondaryAction(item, selectedSecondaryKnowledges)}
                 </li>
               `).join("")}
             </ul>
           </details>
         ` : ""}
-        <p class="muted">这不是诊断结论；只是根据症状、部位和影像类型决定先检查哪些 evidence。当前只加载主分析 Skill；鉴别候选会进入 proposal-only Skill 审核队列，但不会被当作正式或已运行的诊断 Skill。</p>
+        <p class="muted">${hasSecondaryAnalysis
+          ? "这不是诊断结论；只是根据症状、部位和影像类型决定先检查哪些 evidence。下方已按备用 Knowledge 运行复查，复查结果仍受 evidence bundle 和审核状态约束。"
+          : "这不是诊断结论；只是根据症状、部位和影像类型决定先检查哪些 evidence。当前只加载主分析 Knowledge；鉴别候选会进入 proposal-only Knowledge 审核队列，但不会被当作正式或已运行的诊断 Knowledge。"
+        }</p>
       </div>
     `
     : "";
-  const secondarySkillRunPlan = routing.secondary_skill_run_plan || {};
-  const secondaryCandidates = Array.isArray(secondarySkillRunPlan.candidates)
-    ? secondarySkillRunPlan.candidates
+  const secondaryKnowledgeRunPlan = routing.secondary_knowledge_run_plan || {};
+  const secondaryCandidates = Array.isArray(secondaryKnowledgeRunPlan.candidates)
+    ? secondaryKnowledgeRunPlan.candidates
     : [];
-  const secondarySkillRunHtml = secondarySkillRunPlan.status ? `
-    <div class="hypothesis-queue secondary-skill-run-plan">
-      <strong>Secondary skill run</strong>
-      <p>${escapeHtml(secondarySkillRunPlan.reason || routingEvidenceStatusLabel(secondarySkillRunPlan.status))}</p>
+  const secondaryKnowledgeRunHtml = secondaryKnowledgeRunPlan.status ? `
+    <div class="hypothesis-queue secondary-knowledge-run-plan">
+      <strong>${hasSecondaryAnalysis ? "已运行备用 Knowledge 复查" : "Secondary knowledge run"}</strong>
+      <p>${escapeHtml(secondaryKnowledgeRunPlan.reason || routingEvidenceStatusLabel(secondaryKnowledgeRunPlan.status))}</p>
       ${secondaryCandidates.length ? `
         <ul>
           ${secondaryCandidates.map((item) => `
             <li>
-              <span>${escapeHtml(item.review_status === "unreviewed" ? "未审核 Skill 可用于假设验证" : "正式 Skill")}</span>
+              <span>${escapeHtml(hasSecondaryAnalysis ? "已按备用 Knowledge 运行复查" : item.review_status === "unreviewed" ? "未审核 Knowledge 可用于假设验证" : "正式 Knowledge")}</span>
               <b>${escapeHtml(humanDiseaseName(item.disease_key || ""))}</b>
               <em>${escapeHtml(item.use_scope || item.action || "")}</em>
               <small>${escapeHtml(item.diagnosis_allowed === false ? "不能作为正式确诊依据" : "可进入受证据约束的二级诊断")}</small>
+              ${renderSecondaryKnowledgeBuilderProgress(item)}
             </li>
           `).join("")}
         </ul>
       ` : ""}
     </div>
   ` : "";
+  const secondaryKnowledgeAnalysisHtml = renderSecondaryKnowledgeAnalysis(payload);
+  const technicalRoutingDetailsHtml = hasSecondaryAnalysis ? `
+    <details class="routing-technical-details">
+      <summary>查看技术细节</summary>
+      ${hypothesisQueueHtml}
+      ${manualSecondaryCandidateHtml}
+      ${secondaryKnowledgeRunHtml}
+      ${secondaryKnowledgeAnalysisHtml}
+    </details>
+  ` : "";
   return `
     <div class="report-section report-path-summary">
       <h3>分析路径</h3>
       <p>${escapeHtml(parts.join("；"))}</p>
-      ${hypothesisQueueHtml}
-      ${manualSecondaryCandidateHtml}
-      ${secondarySkillRunHtml}
+      ${hasSecondaryAnalysis ? doctorRoutingSummaryHtml : hypothesisQueueHtml}
+      ${hasSecondaryAnalysis ? technicalRoutingDetailsHtml : manualSecondaryCandidateHtml}
+      ${hasSecondaryAnalysis ? "" : secondaryKnowledgeRunHtml}
+      ${hasSecondaryAnalysis ? "" : secondaryKnowledgeAnalysisHtml}
     </div>
   `;
 }
@@ -2454,7 +3095,7 @@ function uniqueStrings(values) {
   });
 }
 
-function renderManualSecondaryCandidateList(candidateKeys, selectedSecondarySkills = []) {
+function renderManualSecondaryCandidateList(candidateKeys, selectedSecondaryKnowledges = []) {
   const keys = Array.isArray(candidateKeys) ? candidateKeys : [];
   if (!keys.length) {
     return "";
@@ -2468,29 +3109,161 @@ function renderManualSecondaryCandidateList(candidateKeys, selectedSecondarySkil
             <b>${escapeHtml(humanDiseaseName(candidateKey))}</b>
             ${renderManualSecondaryAction(
               {disease_key: candidateKey, role: "differential"},
-              selectedSecondarySkills,
+              selectedSecondaryKnowledges,
             )}
           </li>
         `).join("")}
       </ul>
-      <p class="muted">点击候选后会切换到人工备用 Skill 模式；如果本地没有正式 Skill，会先走 SkillBuilder proposal，并仅用于 hypothesis validation。</p>
+      <p class="muted">点击候选后会切换到人工备用 Knowledge 模式；如果本地没有正式 Knowledge，会先走 KnowledgeBuilder proposal，并仅用于 hypothesis validation。</p>
     </div>
   `;
 }
 
-function renderManualSecondaryAction(item, selectedSecondarySkills = []) {
+function renderManualSecondaryAction(item, selectedSecondaryKnowledges = []) {
   const diseaseKey = item.disease_key || item.target || "";
   if (!diseaseKey || item.role !== "differential") {
     return "";
   }
-  const selected = selectedSecondarySkills.includes(diseaseKey);
+  const selected = selectedSecondaryKnowledges.includes(diseaseKey);
   return `
     <button
       type="button"
-      class="secondary-skill-action"
-      data-secondary-skill-key="${escapeHtml(diseaseKey)}"
-      ${selected ? "disabled" : ""}
-    >${selected ? "已选择备用复查" : "加入备用复查"}</button>
+      class="secondary-knowledge-action${selected ? " selected" : ""}"
+      ${selected
+        ? `data-secondary-knowledge-remove-key="${escapeHtml(diseaseKey)}"`
+        : `data-secondary-knowledge-key="${escapeHtml(diseaseKey)}"`}
+    >${selected ? "取消备用复查" : "加入备用复查"}</button>
+  `;
+}
+
+function renderSecondaryKnowledgeAnalysis(payload) {
+  const report = payload.report || {};
+  const items = Array.isArray(payload.secondary_knowledge_analysis)
+    ? payload.secondary_knowledge_analysis
+    : Array.isArray(report["备用 Knowledge 复查结果"])
+      ? report["备用 Knowledge 复查结果"]
+      : [];
+  if (!items.length) {
+    return "";
+  }
+  return `
+    <div class="hypothesis-queue secondary-knowledge-analysis">
+      <strong>备用 Knowledge 复查结果</strong>
+      <ul>
+        ${items.map((item) => `
+          <li>
+            <b>${escapeHtml(humanDiseaseName(item.disease_key || ""))}</b>
+            <em>${escapeHtml(item.analysis_mode || "")}</em>
+            <small>${escapeHtml(item.evidence_boundary || "")}</small>
+            ${item.finding ? `<small>${escapeHtml(item.finding)}</small>` : ""}
+            ${renderGuidelineEvidenceSummary(item.guideline_evidence_summary || item.knowledge_builder_proposal_detail || {})}
+            ${renderSecondaryVisualEvidenceSummary(item)}
+            ${renderSecondaryDifferentialReview(item.differential_review)}
+            ${renderSecondaryKnowledgeBuilderProgress(item)}
+          </li>
+        `).join("")}
+      </ul>
+    </div>
+  `;
+}
+
+function renderSecondaryVisualEvidenceSummary(item = {}) {
+  const bundle = item.secondary_visual_evidence_bundle || {};
+  const findings = Array.isArray(bundle.findings) ? bundle.findings : [];
+  const present = Array.isArray(bundle.present_findings) ? bundle.present_findings : [];
+  const labels = uniqueStrings([
+    ...findings.map((finding) => visualFindingDisplayName(finding)),
+    ...present.map(humanFindingName),
+  ]).filter(Boolean).slice(0, 5);
+  const status = item.secondary_visual_protocol_status || item.secondary_visual_status || "";
+  if (!labels.length && !status) {
+    return "";
+  }
+  return `
+    <div class="trace-subblock secondary-visual-evidence-summary">
+      <strong>备用视觉证据包</strong>
+      ${status ? `<small>视觉协议状态：${escapeHtml(status)}</small>` : ""}
+      ${labels.length ? `<small>备用 Knowledge 观察到：${escapeHtml(labels.join("、"))}</small>` : ""}
+    </div>
+  `;
+}
+
+function renderGuidelineEvidenceSummary(summary = {}) {
+  const sourceTitles = Array.isArray(summary.source_titles) ? summary.source_titles : [];
+  const guidelineSections = Array.isArray(summary.guideline_sections) ? summary.guideline_sections : [];
+  if (!sourceTitles.length && !guidelineSections.length && !summary.citation_status) {
+    return "";
+  }
+  return `
+    <div class="trace-subblock guideline-evidence-summary">
+      <strong>指南/规则来源</strong>
+      ${sourceTitles.length ? `
+        <small>来源：${escapeHtml(sourceTitles.slice(0, 3).join("；"))}</small>
+      ` : ""}
+      ${guidelineSections.length ? `
+        <small>已抽取结构：${escapeHtml(guidelineSections.slice(0, 5).join("、"))}</small>
+      ` : ""}
+      ${summary.citation_status ? `
+        <small>引用状态：${escapeHtml(summary.citation_status)}</small>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderSecondaryDifferentialReview(review = {}) {
+  if (!review || !Object.keys(review).length) {
+    return "";
+  }
+  const expected = Array.isArray(review.expected_evidence_to_check)
+    ? review.expected_evidence_to_check
+    : [];
+  const weakSupport = Array.isArray(review.weak_supporting_evidence)
+    ? review.weak_supporting_evidence
+    : [];
+  return `
+    <div class="secondary-differential-review">
+      <strong>备用复查判断</strong>
+      <p>${escapeHtml(review.report_sentence || review.review_title || "")}</p>
+      ${review.current_observation_summary ? `
+        <small>当前图像观察：${escapeHtml(review.current_observation_summary)}</small>
+      ` : ""}
+      ${expected.length ? `
+        <small>需要复查的证据：${escapeHtml(expected.join("、"))}</small>
+      ` : ""}
+      ${weakSupport.length ? `
+        <small>弱提示：${escapeHtml(weakSupport.join("、"))}</small>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderSecondaryKnowledgeBuilderProgress(item = {}) {
+  const progress = Array.isArray(item.knowledge_builder_progress) ? item.knowledge_builder_progress : [];
+  const selectedForKnowledgeBuilder = item.candidate_status === "selected_for_knowledgebuilder"
+    || item.knowledge_builder_status === "proposal_prepared";
+  if (!progress.length && !selectedForKnowledgeBuilder) {
+    return "";
+  }
+  const steps = progress.length ? progress : [
+    {
+      step: "prepare_knowledge_proposal",
+      label: "KnowledgeBuilder proposal 已生成并进入审核库",
+      status: "done",
+    },
+  ];
+  return `
+    <div class="knowledgebuilder-progress">
+      <strong>KnowledgeBuilder 备用 Knowledge 进度</strong>
+      ${selectedForKnowledgeBuilder ? `<span>未审核</span>` : ""}
+      <ol>
+        ${steps.map((step) => `
+          <li>
+            <b>${escapeHtml(step.label || step.step || "KnowledgeBuilder step")}</b>
+            <em>${escapeHtml(step.status || "")}</em>
+          </li>
+        `).join("")}
+      </ol>
+    </div>
   `;
 }
 
@@ -2673,8 +3446,65 @@ function humanFindingName(target) {
     trabecular_blurring: "骨小梁模糊",
     collapse: "股骨头塌陷",
     early_osteonecrosis: "早期股骨头坏死",
+    insufficient_visual_input: "影像输入不足",
+    image_review_limitation: "影像查看受限",
+    real_vlm_validation: "VLM 候选验证未返回可用结果",
   };
   return labels[target] || target || "";
+}
+
+const VISUAL_SYSTEM_FINDING_LABELS = {
+  insufficient_visual_input: {
+    label: "影像输入不足",
+    description: "当前没有可直接读取的 X 光图像像素内容，系统不能可靠提取股骨头坏死相关视觉征象。请确认已上传可读图像，或等待 VLM/API 返回候选标注。",
+  },
+  image_review_limitation: {
+    label: "影像查看受限",
+    description: "当前影像只能作为候选观察提示，不能单独作为诊断依据。",
+  },
+  real_vlm_validation: {
+    label: "VLM 候选验证未返回可用结果",
+    description: "VLM 没有返回可用于复核的候选征象，需要重新上传可读影像或由医生人工复核。",
+  },
+};
+
+function normalizedVisualFindingKey(finding = {}) {
+  return String(
+    finding.target
+    || finding.finding_id
+    || finding.code
+    || finding.name
+    || finding.display_name
+    || ""
+  );
+}
+
+function visualFindingDisplayName(finding = {}) {
+  const key = normalizedVisualFindingKey(finding);
+  const configured = VISUAL_SYSTEM_FINDING_LABELS[key];
+  if (configured?.label) {
+    return configured.label;
+  }
+  const displayName = finding.display_name || humanFindingName(key);
+  return displayName || "候选影像发现";
+}
+
+function visualFindingRawTextIsChinese(text) {
+  return /[\u3400-\u9fff]/.test(String(text || ""));
+}
+
+function visualFindingReadableText(finding = {}) {
+  const key = normalizedVisualFindingKey(finding);
+  const configured = VISUAL_SYSTEM_FINDING_LABELS[key];
+  const rawText = finding.evidence_text
+    || finding.evidence_basis
+    || finding.description
+    || finding.reason
+    || "";
+  if (configured?.description && !visualFindingRawTextIsChinese(rawText)) {
+    return configured.description;
+  }
+  return rawText || configured?.description || "";
 }
 
 function quantitativeEvidencePatientSummary(quantitative) {
@@ -2816,11 +3646,11 @@ function hypothesisRoleLabel(role) {
   return labels[role] || role || "候选";
 }
 
-function skillSelectionModeLabel(mode) {
+function knowledgeSelectionModeLabel(mode) {
   const labels = {
-    primary_only: "主 Skill 单路",
-    manual_secondary: "主 Skill + 人工备用 Skill",
-    agent_auto_secondary: "Agent 自动多 Skill",
+    primary_only: "主 Knowledge 单路",
+    manual_secondary: "主 Knowledge + 人工备用 Knowledge",
+    agent_auto_secondary: "Agent 自动多 Knowledge",
   };
   return labels[mode] || mode || "";
 }
@@ -3060,8 +3890,8 @@ function patientVisibleFindings(visualBundle) {
   const findings = Array.isArray(visualBundle.findings) ? visualBundle.findings : [];
   return findings
     .map((finding) => ({
-      title: finding.display_name || finding.target || "候选影像发现",
-      text: finding.evidence_text || finding.evidence_basis || finding.description || "",
+      title: visualFindingDisplayName(finding),
+      text: visualFindingReadableText(finding),
       diagnosisUsable: finding.diagnosis_usable === true,
     }))
     .filter((finding) => finding.text || finding.title)
@@ -3149,7 +3979,7 @@ function renderVlmAnnotationPanel({annotation_path, target_overlay_paths, origin
         </div>
       ` : ""}
       ${targetGalleryHtml}
-      <p>显示 VLM/Codex 根据 skill 给出的候选位置、框选区域和文字证据；这不是像素级医学分割。</p>
+      <p>显示 VLM/Codex 根据 knowledge 给出的候选位置、框选区域和文字证据；这不是像素级医学分割。</p>
     </section>
   `;
 }
@@ -3296,7 +4126,7 @@ function targetDescription(item, findingsByTarget) {
   return findingsByTarget[target]?.description
     || VISUAL_FINDING_LABELS[target]?.description
     || item.description
-    || "根据当前 skill 定位出的候选影像征象，点击可放大查看。";
+    || "根据当前 knowledge 定位出的候选影像征象，点击可放大查看。";
 }
 
 function visualFindingStyle(target) {
@@ -3729,7 +4559,7 @@ function renderFindingList(findings) {
         const regions = Array.isArray(finding.regions) ? finding.regions : [];
         return `
           <div class="finding-item">
-            <strong>${escapeHtml(finding.display_name || finding.target || "-")}</strong>
+            <strong>${escapeHtml(visualFindingDisplayName(finding))}</strong>
             <span>${escapeHtml(finding.status || "-")}</span>
             ${renderMetricGrid({
               target: finding.target,
@@ -3882,7 +4712,7 @@ function renderEvidenceBundle(payload) {
     return;
   }
   const image = bundle.image_evidence || {};
-  const skill = bundle.skill_evidence || {};
+  const knowledge = bundle.knowledge_evidence || {};
   const clinicalContext = bundle.clinical_context_evidence || {};
   const differentialReasoning = bundle.differential_reasoning_evidence || {};
   const quantitativeEvidence = bundle.quantitative_evidence || {};
@@ -3946,13 +4776,13 @@ function renderEvidenceBundle(payload) {
       ${renderList(warnings)}
     </div>
     <div class="trace-block">
-      <h3>Skill</h3>
+      <h3>Knowledge</h3>
       ${renderMetricGrid({
-        selected_skill: skill.selected_skill,
-        selected_vision_mode: skill.selected_vision_mode,
-        skill_type: skill.skill_type,
-        formal_skill_status: skill.quality_control?.formal_skill_status,
-        visual_protocol_status: skill.quality_control?.visual_protocol_status,
+        selected_knowledge: knowledge.selected_knowledge,
+        selected_vision_mode: knowledge.selected_vision_mode,
+        knowledge_type: knowledge.knowledge_type,
+        formal_knowledge_status: knowledge.quality_control?.formal_knowledge_status,
+        visual_protocol_status: knowledge.quality_control?.visual_protocol_status,
       })}
     </div>
   `;
@@ -4072,8 +4902,8 @@ function renderMemoryAudit(payload) {
       ${renderAlignmentAuditSummary(audit.alignment_summary || {})}
     </div>
     <div class="trace-block">
-      <h3>Skill Quality</h3>
-      ${renderSkillQuality(audit.skill_quality || {})}
+      <h3>Knowledge Quality</h3>
+      ${renderKnowledgeQuality(audit.knowledge_quality || {})}
     </div>
     <div class="trace-block">
       <h3>QA Safety</h3>
@@ -4146,7 +4976,7 @@ function renderRuntimeGatewayTrace(trace, runtimeGatewayTracePath) {
   const safety = trace.safety_invariants || {};
   const consistency = trace.trace_consistency || {};
   return `
-    <p class="pipeline-note">Runtime Gateway Trace 汇总底层 gateway 的四段执行轨迹：skill 分发、stop hook、自我候选沉淀和正式升级验证门。</p>
+    <p class="pipeline-note">Runtime Gateway Trace 汇总底层 gateway 的四段执行轨迹：knowledge 分发、stop hook、自我候选沉淀和正式升级验证门。</p>
     ${renderMetricGrid({
       schema_version: trace.schema_version,
       trace_path: runtimeGatewayTracePath || trace.trace_path,
@@ -4176,7 +5006,7 @@ function renderRuntimeGatewayTrace(trace, runtimeGatewayTracePath) {
     <div class="trace-subblock">
       <strong>Safety Invariants</strong>
       ${renderMetricGrid({
-        formal_skill_updated: safety.formal_skill_updated,
+        formal_knowledge_updated: safety.formal_knowledge_updated,
         formal_guideline_updated: safety.formal_guideline_updated,
         diagnosis_report_updated: safety.diagnosis_report_updated,
         candidate_artifacts_only: safety.candidate_artifacts_only,
@@ -4221,7 +5051,7 @@ function renderCandidateValidationGate(gate, candidateValidationGatePath) {
       ${renderMetricGrid({
         validation_gate_executed: safety.validation_gate_executed,
         read_only: safety.read_only,
-        formal_skill_updated: safety.formal_skill_updated,
+        formal_knowledge_updated: safety.formal_knowledge_updated,
         formal_guideline_updated: safety.formal_guideline_updated,
         diagnosis_report_updated: safety.diagnosis_report_updated,
       })}
@@ -4237,7 +5067,7 @@ function renderSelfEvolvingQueue(queue, selfEvolvingQueuePath) {
   const items = Array.isArray(queue.queue_items) ? queue.queue_items : [];
   const policy = queue.review_policy || {};
   return `
-    <p class="pipeline-note">Self-evolving Queue 只沉淀候选记忆、候选规则或 candidate skill patch；验证前不更新正式医疗 skill。</p>
+    <p class="pipeline-note">Self-evolving Queue 只沉淀候选记忆、候选规则或 candidate knowledge patch；验证前不更新正式医疗 knowledge。</p>
     ${renderMetricGrid({
       schema_version: queue.schema_version,
       status: queue.status,
@@ -4267,7 +5097,7 @@ function renderSelfEvolvingQueue(queue, selfEvolvingQueuePath) {
       ${renderMetricGrid({
         queue_written: safety.queue_written,
         candidate_only: safety.candidate_only,
-        formal_skill_updated: safety.formal_skill_updated,
+        formal_knowledge_updated: safety.formal_knowledge_updated,
         formal_guideline_updated: safety.formal_guideline_updated,
         diagnosis_report_updated: safety.diagnosis_report_updated,
       })}
@@ -4282,7 +5112,7 @@ function renderStopHookGate(gate, stopHookGatePath) {
   const safety = gate.runtime_safety || {};
   const warnings = Array.isArray(gate.runtime_warnings) ? gate.runtime_warnings : [];
   return `
-    <p class="pipeline-note">Stop Hook Gate 是只读自检：发现风险并给出 next actions，不自动修改报告或正式 skill。</p>
+    <p class="pipeline-note">Stop Hook Gate 是只读自检：发现风险并给出 next actions，不自动修改报告或正式 knowledge。</p>
     ${renderMetricGrid({
       schema_version: gate.schema_version,
       gate_path: stopHookGatePath || gate.gate_path,
@@ -4303,15 +5133,15 @@ function renderStopHookGate(gate, stopHookGatePath) {
       ${renderList(gate.next_actions || [])}
     </div>
     <div class="trace-subblock">
-      <strong>Candidate Skill Patch</strong>
-      ${renderMetricGrid(gate.candidate_skill_patch || {})}
+      <strong>Candidate Knowledge Patch</strong>
+      ${renderMetricGrid(gate.candidate_knowledge_patch || {})}
     </div>
     <div class="trace-subblock">
       <strong>Runtime Safety</strong>
       ${renderMetricGrid({
         stop_hook_executed: safety.stop_hook_executed,
         read_only: safety.read_only,
-        formal_skill_updated: safety.formal_skill_updated,
+        formal_knowledge_updated: safety.formal_knowledge_updated,
         diagnosis_report_updated: safety.diagnosis_report_updated,
         self_evolving_queue_updated: safety.self_evolving_queue_updated,
       })}
@@ -4327,12 +5157,12 @@ function renderRuntimeManifest(manifest, runtimeManifestPath) {
   const blocked = manifest.blocked_or_missing_evidence || {};
   const generated = manifest.generated_artifacts || {};
   return `
-    <p class="pipeline-note">Evidence Gateway 记录本轮 skill 分发、文件 artifact、工具调用、contract guards 和只读 safety 状态。</p>
+    <p class="pipeline-note">Evidence Gateway 记录本轮 knowledge 分发、文件 artifact、工具调用、contract guards 和只读 safety 状态。</p>
     ${renderMetricGrid({
       schema_version: manifest.schema_version,
-      selected_skill: manifest.selected_skill,
-      skill_version: manifest.skill_version,
-      skill_type: manifest.skill_type,
+      selected_knowledge: manifest.selected_knowledge,
+      knowledge_version: manifest.knowledge_version,
+      knowledge_type: manifest.knowledge_type,
       analysis_status: blocked.analysis_status,
       manifest_path: runtimeManifestPath || manifest.manifest_path,
     })}
@@ -4371,7 +5201,7 @@ function renderRuntimeManifest(manifest, runtimeManifestPath) {
       ${renderMetricGrid({
         manifest_only: safety.manifest_only,
         stop_hook_executed: safety.stop_hook_executed,
-        formal_skill_updated: safety.formal_skill_updated,
+        formal_knowledge_updated: safety.formal_knowledge_updated,
         self_evolving_action: safety.self_evolving_action,
       })}
     </div>
@@ -4391,9 +5221,9 @@ function renderMemoryRoleSummary() {
       description: "记录图像模态、病灶图、结构化视觉证据、测量值和证据充分性。",
     },
     {
-      name: "skill_memory",
-      title: "Skill / 指南 / 路由",
-      description: "记录选择了哪个 skill、路由依据、指南来源、质量控制和 alignment plan。",
+      name: "knowledge_memory",
+      title: "Knowledge / 指南 / 路由",
+      description: "记录选择了哪个 knowledge、路由依据、指南来源、质量控制和 alignment plan。",
     },
     {
       name: "reasoning_memory",
@@ -4420,29 +5250,29 @@ function renderAgentFlowSummary(audit) {
     {
       agent: "GaoDoctorAgent",
       title: "临床编排 / 入口分诊",
-      memory: "patient_memory / skill_memory",
-      description: "核心 Agent。读取患者描述和图像上下文，决定 intent、目标 skill、视觉模式和下游调用顺序。",
+      memory: "patient_memory / knowledge_memory",
+      description: "核心 Agent。读取患者描述和图像上下文，决定 intent、目标 knowledge、视觉模式和下游调用顺序。",
       metrics: {
-        selected_skill: summary.GaoDoctorAgent?.routing_decision?.selected_skill,
+        selected_knowledge: summary.GaoDoctorAgent?.routing_decision?.selected_knowledge,
         selected_vision_mode: summary.GaoDoctorAgent?.routing_decision?.selected_vision_mode,
-        skill_builder_action: summary.GaoDoctorAgent?.routing_decision?.skill_builder_action,
+        knowledge_builder_action: summary.GaoDoctorAgent?.routing_decision?.knowledge_builder_action,
       },
     },
     {
-      agent: "SkillBuilderAgent",
-      title: "条件 Skill 构建 / 加载",
-      memory: "skill_memory",
-      description: "条件组件。有现成 skill 时只加载/校验；缺失时才进入指南检索、skill 生成和 visual protocol 构建。",
+      agent: "KnowledgeBuilderAgent",
+      title: "条件 Knowledge 构建 / 加载",
+      memory: "knowledge_memory",
+      description: "条件组件。有现成 knowledge 时只加载/校验；缺失时才进入指南检索、knowledge 生成和 visual protocol 构建。",
       metrics: {
-        input: summary.SkillBuilderAgent?.input,
-        output: summary.SkillBuilderAgent?.output,
+        input: summary.KnowledgeBuilderAgent?.input,
+        output: summary.KnowledgeBuilderAgent?.output,
       },
     },
     {
       agent: "VisionAgent",
       title: "视觉证据提取",
       memory: "image_memory",
-      description: "核心 Agent。按 skill 视觉协议调用 VLM prompt、MedSAM2 和测量工具，返回病灶图与结构化数值。",
+      description: "核心 Agent。按 knowledge 视觉协议调用 VLM prompt、MedSAM2 和测量工具，返回病灶图与结构化数值。",
       metrics: {
         tool: summary.VisionAgent?.tool,
         prompt_tool: summary.VisionAgent?.prompt_tool,
@@ -4466,7 +5296,7 @@ function renderAgentFlowSummary(audit) {
     {
       agent: "MemoryManager",
       title: "Memory / Audit Layer",
-      memory: "patient/image/skill/reasoning",
+      memory: "patient/image/knowledge/reasoning",
       description: "基础设施层，不作为诊断 Agent。保存四类 memory、agent I/O、evidence bundle 与可回放审计链。",
       metrics: {
         audit_status: summary.MemoryManager?.output?.audit_status,
@@ -4492,7 +5322,7 @@ function renderAgentFlowSummary(audit) {
     });
   }
   return `
-    <p class="pipeline-note">架构按医疗安全边界拆分为 3 个核心 Agent、1 个条件 Skill 组件和 1 个 Memory/Audit 基础设施层；下方实现节点 trace 保留内部类名用于审计。</p>
+    <p class="pipeline-note">架构按医疗安全边界拆分为 3 个核心 Agent、1 个条件 Knowledge 组件和 1 个 Memory/Audit 基础设施层；下方实现节点 trace 保留内部类名用于审计。</p>
     <div class="agent-flow-list">
       ${stages.map((stage, index) => `
         <article class="agent-flow-item">
@@ -4549,8 +5379,8 @@ function renderMemoryReplay(replay) {
 function replayStepLabel(eventName) {
   const labels = {
     patient_intake: "患者入口",
-    skill_routing: "Skill 路由",
-    skill_loading: "Skill 加载",
+    knowledge_routing: "Knowledge 路由",
+    knowledge_loading: "Knowledge 加载",
     vlm_prompt_generation: "视觉提示生成",
     visual_evidence: "视觉证据",
     diagnosis_report: "诊断推理",
@@ -4569,26 +5399,26 @@ function replayStepSummary(step) {
       symptoms: Array.isArray(step.symptoms) ? step.symptoms.join(", ") : step.symptoms,
     };
   }
-  if (step.event === "skill_routing") {
+  if (step.event === "knowledge_routing") {
     const routingDecision = step.routing_decision || {};
     return {
       memory_scope: step.memory_scope,
       decision_owner: step.decision_owner || routingDecision.agent_scope,
-      selected_skill: step.selected_skill,
-      skill_type: step.skill_type,
+      selected_knowledge: step.selected_knowledge,
+      knowledge_type: step.knowledge_type,
       routing_source: routingDecision.source,
-      skill_builder_action: step.skill_builder_action || routingDecision.skill_builder_action,
+      knowledge_builder_action: step.knowledge_builder_action || routingDecision.knowledge_builder_action,
       analysis_status: step.analysis_status,
     };
   }
-  if (step.event === "skill_loading") {
+  if (step.event === "knowledge_loading") {
     return {
       memory_scope: step.memory_scope,
       action: step.action,
-      selected_skill: step.selected_skill,
-      skill_type: step.skill_type,
+      selected_knowledge: step.selected_knowledge,
+      knowledge_type: step.knowledge_type,
       evidence_level: step.evidence_level,
-      formal_skill_status: step.formal_skill_status,
+      formal_knowledge_status: step.formal_knowledge_status,
       visual_protocol_status: step.visual_protocol_status,
     };
   }
@@ -4692,13 +5522,13 @@ function renderAlignmentAuditSummary(summary) {
   `;
 }
 
-function renderSkillQuality(quality) {
+function renderKnowledgeQuality(quality) {
   if (!Object.keys(quality).length) {
     return '<div class="trace-empty">-</div>';
   }
   return `
     ${renderMetricGrid({
-      formal_skill_status: quality.formal_skill_status,
+      formal_knowledge_status: quality.formal_knowledge_status,
       visual_protocol_status: quality.visual_protocol_status,
       citation_status: quality.citation_status,
       conflict_status: quality.conflict_status,
@@ -4819,7 +5649,7 @@ function renderEvidenceGatewaySnapshot(snapshot) {
     </div>
   `;
   elements.auditView.innerHTML = `
-    <p class="pipeline-note">Candidate gate 默认阻断未验证视觉失败项，不允许自动修改正式 guideline skill 或诊断报告。</p>
+    <p class="pipeline-note">Candidate gate 默认阻断未验证视觉失败项，不允许自动修改正式 guideline knowledge 或诊断报告。</p>
     ${renderMetricGrid({
       candidate_count: gate.candidate_count,
       non_reference_metric_review_count: gate.non_reference_metric_review_count,
@@ -4827,7 +5657,7 @@ function renderEvidenceGatewaySnapshot(snapshot) {
       promotion_status: gate.promotion_status,
       formal_update_allowed: gate.formal_update_allowed,
       candidate_only: gate.candidate_only,
-      formal_skill_updated: gate.formal_skill_updated,
+      formal_knowledge_updated: gate.formal_knowledge_updated,
       formal_guideline_updated: gate.formal_guideline_updated,
       diagnosis_report_updated: gate.diagnosis_report_updated,
     })}
@@ -4854,6 +5684,7 @@ function renderPayload(payload) {
   if (state.caseId && !payload.memory_replay) {
     refreshMemoryReplay(state.caseId);
   }
+  loadKnowledgeList();
   updateQaControls();
 }
 
@@ -4995,9 +5826,12 @@ function renderStructuredErrorPanel(error, fallbackMessage = "病例分析失败
   if (!body.error_type && !body.medsam2_configuration && !body.routing_decision) {
     return "";
   }
-  const title = body.error_type === "medsam2_not_ready"
-    ? "部署检查未通过"
-    : fallbackMessage;
+  let title = fallbackMessage;
+  if (body.error_type === "medsam2_not_ready") {
+    title = "部署检查未通过";
+  } else if (body.error_type === "vlm_api_unavailable") {
+    title = "VLM/API 临时不可用";
+  }
   const actionItems = Array.isArray(body.action_items) ? body.action_items : [];
   const medsam2 = body.medsam2_configuration || {};
   const routing = body.routing_decision || {};
@@ -5013,7 +5847,7 @@ function renderStructuredErrorPanel(error, fallbackMessage = "病例分析失败
       ${Object.keys(routing).length ? `
         <h4>本次分析路径</h4>
         ${renderMetricGrid({
-          selected_skill: routing.selected_skill,
+          selected_knowledge: routing.selected_knowledge,
           primary_hypothesis: routing.primary_hypothesis,
           routing_evidence_status: routing.routing_evidence_status || routing.initial_evidence_status,
         })}
@@ -5330,48 +6164,105 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function setSkillSelectionMode(mode = "primary_only", manualSecondarySkills = []) {
-  state.sampleSkillSelectionMode = mode;
-  state.sampleManualSecondarySkills = Array.isArray(manualSecondarySkills)
-    ? manualSecondarySkills
+function setKnowledgeSelectionMode(mode = "primary_only", manualSecondaryKnowledges = []) {
+  state.sampleKnowledgeSelectionMode = mode;
+  state.sampleManualSecondaryKnowledges = Array.isArray(manualSecondaryKnowledges)
+    ? manualSecondaryKnowledges
     : [];
-  elements.skillSelectionMode.value = mode;
-  elements.manualSecondarySkills.value = state.sampleManualSecondarySkills.join(", ");
-  renderManualSecondarySkillSelection();
+  elements.knowledgeSelectionMode.value = mode;
+  elements.manualSecondaryKnowledges.value = state.sampleManualSecondaryKnowledges.join(", ");
+  renderManualSecondaryKnowledgeSelection();
 }
 
-function selectedManualSecondarySkills() {
-  return splitList(elements.manualSecondarySkills.value);
+function setEvidenceProtocolMode(mode = "finding_list_baseline") {
+  const normalized = mode === "quantitative_optional"
+    ? "quantitative_optional"
+    : "finding_list_baseline";
+  state.sampleEvidenceProtocolMode = normalized;
+  elements.evidenceProtocolMode.value = normalized;
 }
 
-function selectManualSecondarySkill(skillKey) {
-  const normalized = String(skillKey || "").trim();
+function selectedManualSecondaryKnowledges() {
+  return splitList(elements.manualSecondaryKnowledges.value);
+}
+
+function clearManualSecondaryKnowledges() {
+  state.sampleManualSecondaryKnowledges = [];
+  elements.manualSecondaryKnowledges.value = "";
+  syncManualSecondarySelectionToPayload([]);
+  renderManualSecondaryKnowledgeSelection();
+}
+
+function syncManualSecondarySelectionToPayload(selected) {
+  const normalized = Array.isArray(selected) ? selected : [];
+  state.sampleManualSecondaryKnowledges = normalized;
+  if (!state.lastPayload || !Object.keys(state.lastPayload).length) {
+    return;
+  }
+  state.lastPayload.manual_secondary_knowledge_candidates = normalized;
+  state.lastPayload.knowledge_selection_mode = normalized.length ? "manual_secondary" : "primary_only";
+  const routing = state.lastPayload.routing_decision || {};
+  routing.manual_secondary_knowledge_candidates = normalized;
+  routing.knowledge_selection_mode = state.lastPayload.knowledge_selection_mode;
+  state.lastPayload.routing_decision = routing;
+}
+
+function selectManualSecondaryKnowledge(knowledgeKey) {
+  const normalized = String(knowledgeKey || "").trim();
   if (!normalized) {
     return;
   }
-  const selected = selectedManualSecondarySkills();
+  const selected = selectedManualSecondaryKnowledges();
   if (!selected.includes(normalized)) {
     selected.push(normalized);
   }
-  elements.manualSecondarySkills.value = selected.slice(0, 2).join(", ");
-  elements.skillSelectionMode.value = "manual_secondary";
-  renderManualSecondarySkillSelection();
+  elements.manualSecondaryKnowledges.value = selected.slice(0, 3).join(", ");
+  elements.knowledgeSelectionMode.value = "manual_secondary";
+  syncManualSecondarySelectionToPayload(selectedManualSecondaryKnowledges());
+  renderManualSecondaryKnowledgeSelection();
   renderReport(state.lastPayload);
-  setStatus("已加入备用复查，点击“运行分析”会按人工备用 Skill 模式重新分析", "ok");
+  setStatus("已加入备用复查，点击“运行分析”会按人工备用 Knowledge 模式重新分析", "ok");
 }
 
-function renderManualSecondarySkillSelection() {
-  const selected = selectedManualSecondarySkills();
-  const target = document.getElementById("manualSecondarySkillSelection");
+function removeManualSecondaryKnowledge(knowledgeKey) {
+  const normalized = String(knowledgeKey || "").trim();
+  if (!normalized) {
+    return;
+  }
+  const selected = selectedManualSecondaryKnowledges().filter((item) => item !== normalized);
+  elements.manualSecondaryKnowledges.value = selected.join(", ");
+  if (!selected.length && elements.knowledgeSelectionMode.value === "manual_secondary") {
+    elements.knowledgeSelectionMode.value = "primary_only";
+  }
+  syncManualSecondarySelectionToPayload(selected);
+  renderManualSecondaryKnowledgeSelection();
+  renderReport(state.lastPayload);
+  setStatus("已取消备用复查", "ok");
+}
+
+function renderManualSecondaryKnowledgeSelection() {
+  const selected = selectedManualSecondaryKnowledges();
+  const target = document.getElementById("manualSecondaryKnowledgeSelection");
   if (!target) {
     return;
   }
   target.innerHTML = `
-    <strong>已选择备用复查</strong>
+    <strong>当前备用复查 Knowledge</strong>
     ${selected.length ? `
-      <span>${selected.map(humanDiseaseName).map(escapeHtml).join("、")}</span>
+      <div class="manual-secondary-selection-list">
+        ${selected.map((knowledgeKey) => `
+          <span class="manual-secondary-selection-item">
+            <b>${escapeHtml(humanDiseaseName(knowledgeKey))}</b>
+            <button
+              type="button"
+              aria-label="取消 ${escapeHtml(humanDiseaseName(knowledgeKey))} 备用复查"
+              data-secondary-knowledge-remove-key="${escapeHtml(knowledgeKey)}"
+            >取消</button>
+          </span>
+        `).join("")}
+      </div>
     ` : `
-      <span>先运行主 Skill 分析；系统给出候选假设后，可在报告中点击“加入备用复查”。</span>
+      <span>先运行主 Knowledge 分析；系统给出候选假设后，可在报告中点击“加入备用复查”。</span>
     `}
   `;
 }
@@ -5384,7 +6275,8 @@ function loadStandardSample() {
   state.useSampleMask = true;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
-  setSkillSelectionMode("primary_only");
+  setKnowledgeSelectionMode("primary_only");
+  setEvidenceProtocolMode("finding_list_baseline");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -5400,7 +6292,8 @@ function loadRealVlmMedSAM2Sample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "diffuse_glioma_brats";
   state.sampleVisionMode = "medsam2";
-  setSkillSelectionMode("primary_only");
+  setKnowledgeSelectionMode("primary_only");
+  setEvidenceProtocolMode("finding_list_baseline");
   state.demoCaseSlug = "";
   state.realDemoMode = true;
   state.publicSafeDemoMode = false;
@@ -5416,7 +6309,8 @@ function loadXrayInsufficientSample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
-  setSkillSelectionMode("primary_only");
+  setKnowledgeSelectionMode("primary_only");
+  setEvidenceProtocolMode("finding_list_baseline");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -5425,14 +6319,15 @@ function loadXrayInsufficientSample() {
 }
 
 function loadFhnNoMaskSample() {
-  elements.patientMessage.value = "右髋疼痛，上传 X 光，请根据股骨头坏死 skill 自动圈出候选征象";
+  elements.patientMessage.value = "右髋疼痛，上传 X 光，请根据股骨头坏死 knowledge 自动圈出候选征象";
   elements.imagePath.value = "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png";
   state.uploadedImagePaths = [];
   state.uploadedImageNames = [];
   state.useSampleMask = false;
   state.sampleDiseaseKey = "femoral_head_necrosis";
-  state.sampleVisionMode = "no_mask_skill";
-  setSkillSelectionMode("primary_only");
+  state.sampleVisionMode = "no_mask_knowledge";
+  setKnowledgeSelectionMode("primary_only");
+  setEvidenceProtocolMode("finding_list_baseline");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -5448,23 +6343,25 @@ function loadAutoRoutingRiskCompareSample() {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "real_vlm_validation";
-  setSkillSelectionMode("agent_auto_secondary");
+  clearManualSecondaryKnowledges();
+  setKnowledgeSelectionMode("agent_auto_secondary", []);
+  setEvidenceProtocolMode("finding_list_baseline");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
   elements.symptoms.value = "髋关节疼痛";
-  elements.uploadStatus.textContent = "已载入自动路由+不良习惯对比样例；不预设 disease_key，系统会根据症状、风险因素和髋关节 X 光自动生成候选假设并选择 skill。视觉部分使用安全候选验证模式，不调用 no-mask 分割链。";
+  elements.uploadStatus.textContent = "已载入自动路由+不良习惯对比样例；不预设 disease_key，系统会根据症状、风险因素和髋关节 X 光自动生成候选假设并选择 knowledge。当前为 Agent 自动多 Knowledge 模式，不沿用人工备用复查选择。";
 }
 
 function loadPublicSafeDemoInputs() {
-  elements.patientMessage.value = "public-safe MVP 演示：髋部疼痛，展示自动 skill 路由、视觉候选证据、诊断报告、evidence bundle 和 memory audit";
+  elements.patientMessage.value = "public-safe MVP 演示：髋部疼痛，展示自动 knowledge 路由、视觉候选证据、诊断报告、evidence bundle 和 memory audit";
   elements.imagePath.value = "";
   state.uploadedImagePaths = [];
   state.uploadedImageNames = [];
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
-  setSkillSelectionMode("primary_only");
+  setKnowledgeSelectionMode("primary_only");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -5497,7 +6394,7 @@ async function runPublicSafeDemo() {
   showCaseThinking("Public-safe MVP 样例运行中");
   startCaseProgress("运行 Public-safe MVP 样例", [
     {after: 0, text: "正在生成合成非患者影像和病例输入"},
-    {after: 2, text: "正在执行自动 skill 路由和视觉候选证据链"},
+    {after: 2, text: "正在执行自动 knowledge 路由和视觉候选证据链"},
     {after: 4, text: "正在写出 response、evidence bundle、memory audit 和 QA artifact"},
   ]);
   setStatus("Public-safe MVP 样例运行中...");
@@ -5611,10 +6508,17 @@ elements.evidenceGatewaySnapshotButton.addEventListener("click", runEvidenceGate
 elements.xrayInsufficientButton.addEventListener("click", runXrayInsufficientSample);
 elements.fhnNoMaskButton.addEventListener("click", runFhnNoMaskSample);
 elements.autoRoutingRiskCompareButton.addEventListener("click", runAutoRoutingRiskCompareSample);
-elements.refreshSkillsButton.addEventListener("click", loadSkillList);
-elements.saveSkillDraftButton.addEventListener("click", async () => {
+elements.refreshKnowledgesButton.addEventListener("click", loadKnowledgeList);
+elements.saveKnowledgeDraftButton.addEventListener("click", async () => {
   try {
-    await saveSkillReviewDraft();
+    await saveKnowledgeReviewDraft();
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+elements.promoteKnowledgeButton.addEventListener("click", async () => {
+  try {
+    await promoteKnowledgeToFormalLibrary();
   } catch (error) {
     setStatus(error.message, "error");
   }
@@ -5653,17 +6557,22 @@ elements.dropZone.addEventListener("drop", async (event) => {
 document.addEventListener("click", (event) => {
   const architectureModuleButton = event.target.closest("[data-architecture-module]");
   if (architectureModuleButton) {
-    selectArchitectureModule(architectureModuleButton.dataset.architectureModule);
+    selectArchitectureModule(architectureModuleButton.dataset.architectureModule, {scroll: true});
     return;
   }
   const optimizationDirectionButton = event.target.closest("[data-optimization-direction]");
   if (optimizationDirectionButton) {
-    selectOptimizationDirection(optimizationDirectionButton.dataset.optimizationDirection);
+    selectOptimizationDirection(optimizationDirectionButton.dataset.optimizationDirection, {scroll: true});
     return;
   }
-  const secondarySkillButton = event.target.closest("[data-secondary-skill-key]");
-  if (secondarySkillButton) {
-    selectManualSecondarySkill(secondarySkillButton.dataset.secondarySkillKey);
+  const secondaryKnowledgeRemoveButton = event.target.closest("[data-secondary-knowledge-remove-key]");
+  if (secondaryKnowledgeRemoveButton) {
+    removeManualSecondaryKnowledge(secondaryKnowledgeRemoveButton.dataset.secondaryKnowledgeRemoveKey);
+    return;
+  }
+  const secondaryKnowledgeButton = event.target.closest("[data-secondary-knowledge-key]");
+  if (secondaryKnowledgeButton) {
+    selectManualSecondaryKnowledge(secondaryKnowledgeButton.dataset.secondaryKnowledgeKey);
     return;
   }
   const card = event.target.closest("[data-lightbox-src]");
@@ -5701,15 +6610,11 @@ elements.caseForm.addEventListener("submit", async (event) => {
   elements.qaLog.innerHTML = "";
   setCasePending(true);
   showCaseThinking("病例分析中");
-  startCaseProgress("实时病例分析", [
-    {after: 0, text: "正在选择 skill 和检查影像输入"},
-    {after: 8, text: "正在调用 VLM/API 定位候选影像征象"},
-    {after: 25, text: "正在运行或跳过分割候选区域"},
-    {after: 45, text: "正在生成 evidence bundle 和诊断报告"},
-  ]);
+  const requestPayload = buildCasePayload();
+  startCaseProgress("实时病例分析", caseProgressStagesForPayload(requestPayload));
   setStatus("分析中...");
   try {
-    const payload = await postMedScope(buildCasePayload());
+    const payload = await postMedScope(requestPayload);
     renderPayload(payload);
     setStatus("分析完成", "ok");
   } catch (error) {
@@ -5774,7 +6679,7 @@ elements.resetButton.addEventListener("click", () => {
   state.useSampleMask = false;
   state.sampleDiseaseKey = "";
   state.sampleVisionMode = "";
-  setSkillSelectionMode("primary_only");
+  setKnowledgeSelectionMode("primary_only");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
@@ -5790,5 +6695,5 @@ renderArchitectureRoadmap();
 setWorkspaceView(window.location.hash === "#architecture-roadmap" ? "architecture" : "clinical");
 checkHealth();
 loadResearchEvidenceReview();
-loadSkillProtocolComparison();
-loadSkillList();
+loadKnowledgeProtocolComparison();
+loadKnowledgeList();

@@ -42,6 +42,22 @@ class ApiRouteLog:
                     continue
                 key, value = line.split(":", 1)
                 route_data[key.strip()] = value.strip()
+        env_overrides = {
+            "active_route": os.environ.get("MEDSCOPE_ACTIVE_ROUTE"),
+            "dmx_model": os.environ.get("DMX_MODEL"),
+            "ky_model": os.environ.get("KY_MODEL"),
+            "dmx_vision_model": os.environ.get("DMX_VISION_MODEL"),
+            "ky_vision_model": os.environ.get("KY_VISION_MODEL"),
+            "dmx_base_url": os.environ.get("DMX_BASE_URL"),
+            "ky_base_url": os.environ.get("KY_BASE_URL"),
+        }
+        route_data.update(
+            {
+                key: value
+                for key, value in env_overrides.items()
+                if value is not None and value.strip()
+            }
+        )
         return cls(
             active_route=route_data.get("active_route", "dmx"),
             dmx_model=route_data.get("dmx_model", cls.dmx_model),

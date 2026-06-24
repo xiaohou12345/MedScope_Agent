@@ -249,7 +249,7 @@ result = vision_agent.analyze_brats_with_segmentation_model(
     prompt={"boxes": [[1, 1, 5, 5]]},
     mask_path="output/real/case_medsam2_mask.png",
     overlay_path="output/real/case_medsam2_overlay.png",
-    disease_skill={"disease_name": "成人弥漫性胶质瘤"},
+    disease_knowledge={"disease_name": "成人弥漫性胶质瘤"},
 )
 ```
 

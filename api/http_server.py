@@ -12,17 +12,17 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
-from api.service import MedScopeReadinessError, MedScopeService
+from api.service import MedScopeReadinessError, MedScopeService, normalize_guideline_knowledge_draft
 from llm.connectivity import ApiConnectivityChecker
 from memory.memory_manager import MemoryManager
-from scripts.image_prompt_skill_baseline import run_image_prompt_skill_baseline
+from scripts.image_prompt_knowledge_baseline import run_image_prompt_knowledge_baseline
 from scripts.prepare_public_demo_fixture import run_public_safe_demo_suite
 from scripts.research_evidence_builder import build_research_evidence_review_package
-from skill_editor.backend import (
-    dispatch_skill_editor_api_request,
-    dispatch_skill_editor_static_request,
+from knowledge_editor.backend import (
+    dispatch_knowledge_editor_api_request,
+    dispatch_knowledge_editor_static_request,
 )
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 from tools.medsam2_segmentation_tool import inspect_medsam2_configuration
 
 
@@ -49,27 +49,27 @@ REAL_VLM_MEDSAM2_ARTIFACTS = {
 }
 REQUIRED_TRACE_AGENTS = [
     "GaoDoctorAgent",
-    "SkillBuilderAgent",
+    "KnowledgeBuilderAgent",
     "VisionAgent",
     "DiagnosisDoctorAgent",
     "MemoryManager",
 ]
 REQUIRED_REPLAY_EVENTS = [
     "patient_intake",
-    "skill_routing",
-    "skill_loading",
+    "knowledge_routing",
+    "knowledge_loading",
     "visual_evidence",
     "diagnosis_report",
     "memory_audit",
 ]
 REPLAY_MEMORY_SCOPE_BY_EVENT = {
     "patient_intake": "patient_memory",
-    "skill_routing": "skill_memory",
-    "skill_loading": "skill_memory",
+    "knowledge_routing": "knowledge_memory",
+    "knowledge_loading": "knowledge_memory",
     "vlm_prompt_generation": "image_memory",
     "visual_evidence": "image_memory",
     "diagnosis_report": "reasoning_memory",
-    "memory_audit": "patient_memory,image_memory,skill_memory,reasoning_memory",
+    "memory_audit": "patient_memory,image_memory,knowledge_memory,reasoning_memory",
     "follow_up_qa": "patient_memory.qa_history",
 }
 STATIC_ROUTES = {
@@ -254,50 +254,139 @@ def _safe_upload_filename(filename: str) -> str:
     return name or "upload.bin"
 
 
-def dispatch_skill_request(
+def dispatch_knowledge_request(
     method: str,
     path: str,
     body: bytes = b"",
-    skills_dir: Path | str = PROJECT_ROOT / "skills",
+    knowledges_dir: Path | str = PROJECT_ROOT / "knowledge",
     output_root: Path | str = DEFAULT_OUTPUT_ROOT,
 ) -> tuple[int | None, dict]:
-    route_path = urlparse(path).path
-    if route_path != "/v1/skills" and not route_path.startswith("/v1/skills/"):
+    route_path = unquote(urlparse(path).path)
+    if route_path != "/v1/knowledge" and not route_path.startswith("/v1/knowledge/"):
         return None, {}
-    skills_root = Path(skills_dir)
+    knowledges_root = Path(knowledges_dir)
     output = Path(output_root)
-    if method == "GET" and route_path == "/v1/skills":
-        skills = [
-            _doctor_skill_summary(skill_key=skill_path.stem, skill=skill, output_root=output)
-            for skill_path, skill in _iter_skill_files(skills_root)
+    if method == "GET" and route_path == "/v1/knowledge":
+        formal_knowledge_keys = {
+            knowledge_path.stem
+            for knowledge_path, _knowledge in _iter_knowledge_files(knowledges_root)
+        }
+        knowledge = [
+            _doctor_knowledge_summary(knowledge_key=knowledge_path.stem, knowledge=knowledge, output_root=output)
+            for knowledge_path, knowledge in _iter_knowledge_files(knowledges_root)
         ]
-        skills.sort(key=lambda item: item["disease_name"])
-        return 200, {"skills": skills, "count": len(skills)}
+        knowledge.extend(
+            _doctor_secondary_knowledge_proposal_summary(
+                artifact_path=artifact_path,
+                artifact=artifact,
+            )
+            for artifact_path, artifact in _iter_secondary_knowledge_proposal_files(output)
+            if str(artifact.get("candidate_key") or artifact_path.stem) not in formal_knowledge_keys
+        )
+        knowledge.sort(key=lambda item: item["disease_name"])
+        return 200, {"knowledge": knowledge, "count": len(knowledge)}
 
-    prefix = "/v1/skills/"
+    prefix = "/v1/knowledge/"
     remainder = _remove_prefix(route_path, prefix).strip("/")
     parts = remainder.split("/") if remainder else []
-    if not parts or not _is_safe_skill_key(parts[0]):
+    if not parts:
         return 404, {"error": "not found"}
-    skill_key = parts[0]
+    knowledge_key = parts[0]
+    if knowledge_key.startswith("proposal:"):
+        candidate_key = _remove_prefix(knowledge_key, "proposal:")
+        if not _is_safe_knowledge_key(candidate_key):
+            return 404, {"error": "not found"}
+        if method == "GET" and len(parts) == 1:
+            try:
+                artifact_path, artifact = _load_secondary_knowledge_proposal(
+                    candidate_key=candidate_key,
+                    output_root=output,
+                )
+            except FileNotFoundError as exc:
+                return 404, {"error": str(exc)}
+            proposal_knowledge = artifact.get("proposal_knowledge") or {}
+            if not isinstance(proposal_knowledge, dict) or not proposal_knowledge:
+                return 404, {"error": f"proposal knowledge not found: {candidate_key}"}
+            proposal_knowledge = json.loads(json.dumps(proposal_knowledge, ensure_ascii=False))
+            proposal_knowledge.setdefault("disease_name", artifact.get("disease_name") or candidate_key)
+            return 200, {
+                "knowledge_key": f"proposal:{candidate_key}",
+                "candidate_key": candidate_key,
+                "proposal_artifact_path": str(artifact_path),
+                "doctor_view": _doctor_knowledge_view(proposal_knowledge),
+                "draft": _latest_knowledge_review_draft(
+                    knowledge_key=f"proposal_{candidate_key}",
+                    output_root=output,
+                ),
+                "raw_knowledge_available": True,
+                "proposal_status": artifact.get("proposal_status") or "proposal_only",
+                "review_queue_status": artifact.get("review_queue_status"),
+                "formal_knowledge_updated": artifact.get("formal_knowledge_updated") is True,
+            }
+        if method == "POST" and len(parts) == 2 and parts[1] == "review-draft":
+            try:
+                payload = json.loads(body.decode("utf-8")) if body else {}
+            except json.JSONDecodeError as exc:
+                return 400, {"error": f"invalid json: {exc}"}
+            try:
+                _artifact_path, artifact = _load_secondary_knowledge_proposal(
+                    candidate_key=candidate_key,
+                    output_root=output,
+                )
+            except FileNotFoundError as exc:
+                return 404, {"error": str(exc)}
+            proposal_knowledge = artifact.get("proposal_knowledge") or {}
+            if not isinstance(proposal_knowledge, dict) or not proposal_knowledge:
+                return 404, {"error": f"proposal knowledge not found: {candidate_key}"}
+            proposal_knowledge = json.loads(json.dumps(proposal_knowledge, ensure_ascii=False))
+            proposal_knowledge.setdefault("disease_name", artifact.get("disease_name") or candidate_key)
+            draft = _save_knowledge_review_draft(
+                knowledge_key=f"proposal_{candidate_key}",
+                knowledge=proposal_knowledge,
+                payload=payload,
+                output_root=output,
+            )
+            draft["knowledge_key"] = f"proposal:{candidate_key}"
+            return 200, draft
+        if method == "POST" and len(parts) == 2 and parts[1] == "promote":
+            try:
+                payload = json.loads(body.decode("utf-8")) if body else {}
+            except json.JSONDecodeError as exc:
+                return 400, {"error": f"invalid json: {exc}"}
+            try:
+                return 200, _promote_secondary_knowledge_proposal(
+                    candidate_key=candidate_key,
+                    payload=payload,
+                    knowledges_dir=knowledges_root,
+                    output_root=output,
+                )
+            except FileNotFoundError as exc:
+                return 404, {"error": str(exc)}
+            except FileExistsError as exc:
+                return 409, {"error": str(exc)}
+            except ValueError as exc:
+                return 400, {"error": str(exc)}
+        return 404, {"error": "not found"}
+    if not _is_safe_knowledge_key(knowledge_key):
+        return 404, {"error": "not found"}
     try:
-        skill_path, skill = _load_skill_file(skill_key=skill_key, skills_dir=skills_root)
+        knowledge_path, knowledge = _load_knowledge_file(knowledge_key=knowledge_key, knowledges_dir=knowledges_root)
     except FileNotFoundError:
-        return 404, {"error": f"skill not found: {skill_key}"}
+        return 404, {"error": f"knowledge not found: {knowledge_key}"}
 
     if method == "GET" and len(parts) == 1:
         return 200, {
-            "skill_key": skill_key,
-            "skill_path": str(skill_path),
-            "doctor_view": _doctor_skill_view(skill),
-            "draft": _latest_skill_review_draft(skill_key=skill_key, output_root=output),
-            "raw_skill_available": True,
+            "knowledge_key": knowledge_key,
+            "knowledge_path": str(knowledge_path),
+            "doctor_view": _doctor_knowledge_view(knowledge),
+            "draft": _latest_knowledge_review_draft(knowledge_key=knowledge_key, output_root=output),
+            "raw_knowledge_available": True,
         }
     if method == "GET" and len(parts) == 2 and parts[1] == "comparison":
-        return 200, _skill_protocol_comparison(
-            skill_key=skill_key,
-            current_skill=skill,
-            skills_dir=skills_root,
+        return 200, _knowledge_protocol_comparison(
+            knowledge_key=knowledge_key,
+            current_knowledge=knowledge,
+            knowledges_dir=knowledges_root,
             output_root=output,
         )
     if method == "POST" and len(parts) == 2 and parts[1] == "review-draft":
@@ -305,71 +394,140 @@ def dispatch_skill_request(
             payload = json.loads(body.decode("utf-8")) if body else {}
         except json.JSONDecodeError as exc:
             return 400, {"error": f"invalid json: {exc}"}
-        return 200, _save_skill_review_draft(
-            skill_key=skill_key,
-            skill=skill,
+        return 200, _save_knowledge_review_draft(
+            knowledge_key=knowledge_key,
+            knowledge=knowledge,
             payload=payload,
             output_root=output,
         )
     return 404, {"error": "not found"}
 
 
-def _iter_skill_files(skills_dir: Path) -> list[tuple[Path, dict]]:
-    if not skills_dir.exists():
+def _iter_knowledge_files(knowledges_dir: Path) -> list[tuple[Path, dict]]:
+    if not knowledges_dir.exists():
         return []
     loaded: list[tuple[Path, dict]] = []
-    for skill_path in sorted(skills_dir.glob("*.yaml")):
+    for knowledge_path in sorted(knowledges_dir.glob("*.yaml")):
         try:
-            loaded.append((skill_path, json.loads(skill_path.read_text(encoding="utf-8"))))
+            loaded.append((knowledge_path, json.loads(knowledge_path.read_text(encoding="utf-8"))))
         except json.JSONDecodeError:
             continue
     return loaded
 
 
-def _load_skill_file(*, skill_key: str, skills_dir: Path) -> tuple[Path, dict]:
-    skill_path = skills_dir / f"{skill_key}.yaml"
-    if not skill_path.exists():
-        raise FileNotFoundError(skill_path)
-    return skill_path, json.loads(skill_path.read_text(encoding="utf-8"))
+def _iter_secondary_knowledge_proposal_files(output_root: Path) -> list[tuple[Path, dict]]:
+    proposal_dir = output_root / "fake" / "secondary_knowledge_proposals"
+    if not proposal_dir.exists():
+        return []
+    loaded: list[tuple[Path, dict]] = []
+    for proposal_path in sorted(proposal_dir.glob("*.json")):
+        try:
+            artifact = json.loads(proposal_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if artifact.get("schema_version") != "secondary_knowledge_proposal.v1":
+            continue
+        loaded.append((proposal_path, artifact))
+    return loaded
 
 
-def _is_safe_skill_key(skill_key: str) -> bool:
-    return bool(re.fullmatch(r"[A-Za-z0-9_-]+", skill_key or ""))
+def _load_secondary_knowledge_proposal(*, candidate_key: str, output_root: Path) -> tuple[Path, dict]:
+    proposal_path = output_root / "fake" / "secondary_knowledge_proposals" / f"{candidate_key}.json"
+    if not proposal_path.exists():
+        raise FileNotFoundError(f"proposal not found: {candidate_key}")
+    artifact = json.loads(proposal_path.read_text(encoding="utf-8"))
+    if artifact.get("schema_version") != "secondary_knowledge_proposal.v1":
+        raise FileNotFoundError(f"proposal not found: {candidate_key}")
+    return proposal_path, artifact
 
 
-def _doctor_skill_summary(*, skill_key: str, skill: dict, output_root: Path) -> dict:
-    clinical = skill.get("clinical_features") or {}
-    protocol = skill.get("visual_protocol") or {}
+def _load_knowledge_file(*, knowledge_key: str, knowledges_dir: Path) -> tuple[Path, dict]:
+    knowledge_path = knowledges_dir / f"{knowledge_key}.yaml"
+    if not knowledge_path.exists():
+        raise FileNotFoundError(knowledge_path)
+    return knowledge_path, json.loads(knowledge_path.read_text(encoding="utf-8"))
+
+
+def _is_safe_knowledge_key(knowledge_key: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]+", knowledge_key or ""))
+
+
+def _doctor_knowledge_summary(*, knowledge_key: str, knowledge: dict, output_root: Path) -> dict:
+    clinical = knowledge.get("clinical_features") or {}
+    protocol = knowledge.get("visual_protocol") or {}
     return {
-        "skill_key": skill_key,
-        "disease_name": skill.get("disease_name") or skill_key,
-        "skill_id": skill.get("skill_id"),
-        "skill_type": skill.get("skill_type"),
-        "evidence_level": skill.get("evidence_level"),
-        "source": skill.get("source"),
+        "knowledge_key": knowledge_key,
+        "disease_name": knowledge.get("disease_name") or knowledge_key,
+        "knowledge_id": knowledge.get("knowledge_id"),
+        "knowledge_type": knowledge.get("knowledge_type"),
+        "evidence_level": knowledge.get("evidence_level"),
+        "source": knowledge.get("source"),
         "doctor_summary": {
             "symptom_count": len(clinical.get("common_symptoms") or []),
             "risk_factor_count": len(clinical.get("risk_factors") or []),
-            "image_requirement_count": len(skill.get("required_image_views") or []),
+            "image_requirement_count": len(knowledge.get("required_image_views") or []),
             "visual_finding_count": len(protocol.get("finding_targets") or []),
-            "source_count": len(skill.get("source_documents") or []),
+            "source_count": len(knowledge.get("source_documents") or []),
         },
         "review_status": "draft_saved"
-        if _latest_skill_review_draft(skill_key=skill_key, output_root=output_root)["exists"]
+        if _latest_knowledge_review_draft(knowledge_key=knowledge_key, output_root=output_root)["exists"]
         else "no_draft",
     }
 
 
-def _doctor_skill_view(skill: dict) -> dict:
-    clinical = skill.get("clinical_features") or {}
-    protocol = skill.get("visual_protocol") or {}
+def _doctor_secondary_knowledge_proposal_summary(
+    *,
+    artifact_path: Path,
+    artifact: dict,
+) -> dict:
+    candidate_key = str(artifact.get("candidate_key") or artifact_path.stem)
+    proposal_knowledge = artifact.get("proposal_knowledge") or {}
+    clinical = proposal_knowledge.get("clinical_features") or {}
+    protocol = proposal_knowledge.get("visual_protocol") or {}
+    observation_rules = protocol.get("observation_rules") or []
+    finding_targets = protocol.get("finding_targets") or []
+    image_requirements = proposal_knowledge.get("required_image_views") or []
+    detail = dict(artifact.get("knowledge_builder_proposal_detail") or {})
+    detail.setdefault("proposal_artifact_path", str(artifact_path))
+    detail.setdefault("review_queue_status", artifact.get("review_queue_status"))
+    return {
+        "knowledge_key": f"proposal:{candidate_key}",
+        "candidate_key": candidate_key,
+        "disease_name": artifact.get("disease_name") or candidate_key,
+        "knowledge_id": proposal_knowledge.get("knowledge_id") or detail.get("knowledge_id"),
+        "knowledge_type": proposal_knowledge.get("knowledge_type") or artifact.get("knowledge_type") or "guideline_based",
+        "evidence_level": proposal_knowledge.get("evidence_level") or artifact.get("evidence_level") or "high",
+        "source": proposal_knowledge.get("source") or "current_case_knowledgebuilder_proposal",
+        "doctor_summary": {
+            "symptom_count": len(clinical.get("common_symptoms") or []),
+            "risk_factor_count": len(clinical.get("risk_factors") or []),
+            "image_requirement_count": len(image_requirements),
+            "visual_finding_count": len(finding_targets) or len(observation_rules),
+            "source_count": len(proposal_knowledge.get("source_documents") or []),
+        },
+        "review_status": "proposal_only",
+        "proposal_status": artifact.get("proposal_status") or "proposal_only",
+        "candidate_status": artifact.get("candidate_status") or "selected_for_knowledgebuilder",
+        "knowledge_builder_status": artifact.get("knowledge_builder_status") or "proposal_prepared",
+        "review_queue_status": artifact.get("review_queue_status") or "entered_knowledge_review_queue",
+        "selected_by_user": True,
+        "diagnosis_allowed": artifact.get("diagnosis_allowed") is True,
+        "formal_knowledge_updated": artifact.get("formal_knowledge_updated") is True,
+        "knowledge_builder_progress": list(artifact.get("knowledge_builder_progress") or []),
+        "knowledge_builder_proposal_detail": detail,
+    }
+
+
+def _doctor_knowledge_view(knowledge: dict) -> dict:
+    clinical = knowledge.get("clinical_features") or {}
+    protocol = knowledge.get("visual_protocol") or {}
     return {
         "identity": {
-            "disease_name": skill.get("disease_name"),
-            "skill_id": skill.get("skill_id"),
-            "skill_type": _skill_type_label(skill.get("skill_type")),
-            "evidence_level": _evidence_level_label(skill.get("evidence_level")),
-            "source": skill.get("source"),
+            "disease_name": knowledge.get("disease_name"),
+            "knowledge_id": knowledge.get("knowledge_id"),
+            "knowledge_type": _knowledge_type_label(knowledge.get("knowledge_type")),
+            "evidence_level": _evidence_level_label(knowledge.get("evidence_level")),
+            "source": knowledge.get("source"),
         },
         "clinical_profile": {
             "common_symptoms": list(clinical.get("common_symptoms") or []),
@@ -377,12 +535,12 @@ def _doctor_skill_view(skill: dict) -> dict:
         },
         "imaging_requirements": [
             {"label": str(item), "review_prompt": "这个检查是否是诊断该病必须或推荐的影像？"}
-            for item in skill.get("required_image_views") or []
+            for item in knowledge.get("required_image_views") or []
         ],
         "visual_findings": _doctor_visual_findings(protocol),
-        "staging_rules": _doctor_staging_rules(skill.get("staging_rules") or {}),
+        "staging_rules": _doctor_staging_rules(knowledge.get("staging_rules") or {}),
         "safety_notes": _doctor_safety_notes(protocol),
-        "report_requirements": list((skill.get("report_requirements") or {}).get("include") or []),
+        "report_requirements": list((knowledge.get("report_requirements") or {}).get("include") or []),
         "source_documents": [
             {
                 "title": document.get("title") or document.get("source_id") or "未命名来源",
@@ -390,27 +548,27 @@ def _doctor_skill_view(skill: dict) -> dict:
                 "url": document.get("url"),
                 "evidence_note": document.get("evidence_note"),
             }
-            for document in skill.get("source_documents") or []
+            for document in knowledge.get("source_documents") or []
             if isinstance(document, dict)
         ],
     }
 
 
-def _skill_protocol_comparison(
+def _knowledge_protocol_comparison(
     *,
-    skill_key: str,
-    current_skill: dict,
-    skills_dir: Path,
+    knowledge_key: str,
+    current_knowledge: dict,
+    knowledges_dir: Path,
     output_root: Path,
 ) -> dict:
-    baseline_skill = _load_finding_list_baseline(skill_key=skill_key, skills_dir=skills_dir)
-    disease_name = current_skill.get("disease_name") or baseline_skill.get("disease_name") or skill_key
-    current_summary = _evidence_protocol_version_summary(current_skill)
-    evaluation_summary = _skill_comparison_evaluation_summary(output_root)
+    baseline_knowledge = _load_finding_list_baseline(knowledge_key=knowledge_key, knowledges_dir=knowledges_dir)
+    disease_name = current_knowledge.get("disease_name") or baseline_knowledge.get("disease_name") or knowledge_key
+    current_summary = _evidence_protocol_version_summary(current_knowledge)
+    evaluation_summary = _knowledge_comparison_evaluation_summary(output_root)
     return {
-        "schema_version": "skill_protocol_comparison.v1",
-        "skill_key": skill_key,
-        "title": f"{disease_name} Skill 版本对比",
+        "schema_version": "knowledge_protocol_comparison.v1",
+        "knowledge_key": knowledge_key,
+        "title": f"{disease_name} Knowledge 版本对比",
         "display_policy": {
             "collapsed_by_default": True,
             "audience": "doctor_or_research_review",
@@ -418,19 +576,19 @@ def _skill_protocol_comparison(
             "diagnosis_accuracy_claim_allowed": False,
         },
         "versions": [
-            _finding_list_version_summary(baseline_skill),
+            _finding_list_version_summary(baseline_knowledge),
             current_summary,
         ],
-        "comparison_takeaway": _skill_comparison_takeaway(current_summary, evaluation_summary),
+        "comparison_takeaway": _knowledge_comparison_takeaway(current_summary, evaluation_summary),
         "evaluation_summary": evaluation_summary,
         "safety_note": "该对比只说明 protocol coverage，不等同于诊断准确率；正式诊断仍需完整 evidence bundle 和医生审核。",
     }
 
 
-def _load_finding_list_baseline(*, skill_key: str, skills_dir: Path) -> dict:
-    baseline_dir = skills_dir / "baselines"
+def _load_finding_list_baseline(*, knowledge_key: str, knowledges_dir: Path) -> dict:
+    baseline_dir = knowledges_dir / "baselines"
     candidates = [
-        baseline_dir / f"{skill_key}_finding_list_baseline_20260604.yaml",
+        baseline_dir / f"{knowledge_key}_finding_list_baseline_20260604.yaml",
         baseline_dir / "femoral_head_necrosis_finding_list_baseline_20260604.yaml",
     ]
     for candidate in candidates:
@@ -442,8 +600,8 @@ def _load_finding_list_baseline(*, skill_key: str, skills_dir: Path) -> dict:
     return {}
 
 
-def _finding_list_version_summary(skill: dict) -> dict:
-    visual_targets = skill.get("visual_targets") or {}
+def _finding_list_version_summary(knowledge: dict) -> dict:
+    visual_targets = knowledge.get("visual_targets") or {}
     finding_names = [
         str(item)
         for item in visual_targets.get("lesion_features") or []
@@ -452,14 +610,14 @@ def _finding_list_version_summary(skill: dict) -> dict:
     if not finding_names:
         finding_names = [
             str(target.get("display_name") or target.get("target"))
-            for target in (skill.get("visual_protocol") or {}).get("finding_targets") or []
+            for target in (knowledge.get("visual_protocol") or {}).get("finding_targets") or []
             if isinstance(target, dict)
         ]
     return {
         "version_key": "finding_list_baseline",
         "label": "版本 1：历史 finding-list baseline",
         "summary": "以影像表现清单为主，适合保留历史判断口径；但没有完整区分候选观察、候选分割、量化测量和证据不足边界。",
-        "skill_id": skill.get("skill_id") or "finding_list_baseline",
+        "knowledge_id": knowledge.get("knowledge_id") or "finding_list_baseline",
         "finding_names": finding_names,
         "finding_count": len(finding_names),
         "has_evidence_protocol": False,
@@ -471,9 +629,9 @@ def _finding_list_version_summary(skill: dict) -> dict:
     }
 
 
-def _evidence_protocol_version_summary(skill: dict) -> dict:
-    protocol = skill.get("visual_protocol") or {}
-    quantitative = skill.get("quantitative_evidence_protocol") or {}
+def _evidence_protocol_version_summary(knowledge: dict) -> dict:
+    protocol = knowledge.get("visual_protocol") or {}
+    quantitative = knowledge.get("quantitative_evidence_protocol") or {}
     target_name_by_key = {
         str(target.get("target")): str(target.get("display_name") or target.get("target"))
         for target in protocol.get("finding_targets") or []
@@ -512,7 +670,7 @@ def _evidence_protocol_version_summary(skill: dict) -> dict:
         "version_key": "evidence_protocol_v1",
         "label": "版本 2：Evidence protocol + quantitative protocol",
         "summary": "在 finding list 基础上补充证据获取协议：哪些征象可作为候选分割、哪些仅能 VLM 观察、哪些需要几何或形态测量，以及证据不足时不能下诊断结论。",
-        "skill_id": skill.get("skill_id") or "evidence_protocol_v1",
+        "knowledge_id": knowledge.get("knowledge_id") or "evidence_protocol_v1",
         "finding_names": finding_names,
         "finding_count": len(finding_names),
         "evidence_targets": findings,
@@ -627,7 +785,7 @@ def _quantification_reason(target: dict, has_quantitative_target: bool) -> str:
     return "当前主要作为候选观察或候选分割证据。"
 
 
-def _skill_comparison_takeaway(current_summary: dict, evaluation_summary: dict) -> dict:
+def _knowledge_comparison_takeaway(current_summary: dict, evaluation_summary: dict) -> dict:
     missing = evaluation_summary.get("baseline_missing_labels") or []
     coverage_text = ""
     if evaluation_summary.get("status") == "available":
@@ -656,7 +814,7 @@ def _diagnosis_usable_label(value: str | None) -> str:
     return labels.get(value or "", value or "未标注")
 
 
-def _skill_comparison_evaluation_summary(output_root: Path) -> dict:
+def _knowledge_comparison_evaluation_summary(output_root: Path) -> dict:
     evaluation_path = (
         output_root
         / "real"
@@ -769,10 +927,10 @@ def _doctor_safety_notes(protocol: dict) -> list[dict]:
     return notes
 
 
-def _skill_type_label(value: object) -> str:
+def _knowledge_type_label(value: object) -> str:
     labels = {
-        "guideline_based": "正式指南 Skill",
-        "data_mined_hypothesis": "数据挖掘假设 Skill",
+        "guideline_based": "正式指南 Knowledge",
+        "data_mined_hypothesis": "数据挖掘假设 Knowledge",
     }
     return labels.get(str(value), str(value or "未标注"))
 
@@ -793,47 +951,108 @@ def _execution_mode_label(value: object) -> str:
     return labels.get(str(value), "按当前工具计划处理")
 
 
-def _latest_skill_review_draft(*, skill_key: str, output_root: Path) -> dict:
-    draft_dir = output_root / "fake" / "skill_review_drafts"
-    drafts = sorted(draft_dir.glob(f"{skill_key}_*.json")) if draft_dir.exists() else []
+def _latest_knowledge_review_draft(*, knowledge_key: str, output_root: Path) -> dict:
+    draft_dir = output_root / "fake" / "knowledge_review_drafts"
+    drafts = sorted(draft_dir.glob(f"{knowledge_key}_*.json")) if draft_dir.exists() else []
     if not drafts:
         return {"exists": False}
     latest = drafts[-1]
-    return {"exists": True, "draft_path": str(latest), "updated_at": _remove_prefix(latest.stem, f"{skill_key}_")}
+    return {"exists": True, "draft_path": str(latest), "updated_at": _remove_prefix(latest.stem, f"{knowledge_key}_")}
 
 
-def _save_skill_review_draft(
+def _save_knowledge_review_draft(
     *,
-    skill_key: str,
-    skill: dict,
+    knowledge_key: str,
+    knowledge: dict,
     payload: dict,
     output_root: Path,
 ) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("review draft payload must be an object")
-    draft_dir = output_root / "fake" / "skill_review_drafts"
+    draft_dir = output_root / "fake" / "knowledge_review_drafts"
     draft_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    draft_path = draft_dir / f"{skill_key}_{timestamp}.json"
+    draft_path = draft_dir / f"{knowledge_key}_{timestamp}.json"
     draft = {
-        "schema_version": "skill_review_draft.v1",
+        "schema_version": "knowledge_review_draft.v1",
         "status": "draft_saved",
-        "skill_key": skill_key,
-        "skill_id": skill.get("skill_id"),
-        "disease_name": skill.get("disease_name"),
+        "knowledge_key": knowledge_key,
+        "knowledge_id": knowledge.get("knowledge_id"),
+        "disease_name": knowledge.get("disease_name"),
         "reviewer_name": str(payload.get("reviewer_name") or ""),
         "sections": dict(payload.get("sections") or {}),
         "created_at": timestamp,
-        "formal_skill_updated": False,
-        "safety_note": "Draft only. Formal skills/*.yaml files are not modified by this route.",
+        "formal_knowledge_updated": False,
+        "safety_note": "Draft only. Formal knowledge/*.yaml files are not modified by this route.",
     }
     draft_path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
     return {
         "status": "draft_saved",
-        "skill_key": skill_key,
+        "knowledge_key": knowledge_key,
         "draft_path": str(draft_path),
-        "formal_skill_updated": False,
-        "next_step": "Human review gate must approve before updating formal skill files.",
+        "formal_knowledge_updated": False,
+        "next_step": "Human review gate must approve before updating formal knowledge files.",
+    }
+
+
+def _promote_secondary_knowledge_proposal(
+    *,
+    candidate_key: str,
+    payload: dict,
+    knowledges_dir: Path,
+    output_root: Path,
+) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("promotion payload must be an object")
+    proposal_path = output_root / "fake" / "secondary_knowledge_proposals" / f"{candidate_key}.json"
+    if not proposal_path.exists():
+        raise FileNotFoundError(f"proposal not found: {candidate_key}")
+    artifact = json.loads(proposal_path.read_text(encoding="utf-8"))
+    if artifact.get("schema_version") != "secondary_knowledge_proposal.v1":
+        raise ValueError("proposal artifact schema is not secondary_knowledge_proposal.v1")
+    proposal_knowledge = artifact.get("proposal_knowledge")
+    if not isinstance(proposal_knowledge, dict) or not proposal_knowledge:
+        raise ValueError("proposal artifact has no proposal_knowledge")
+    knowledge_path = knowledges_dir / f"{candidate_key}.yaml"
+    if knowledge_path.exists() and payload.get("overwrite") is not True:
+        raise FileExistsError(f"formal knowledge already exists: {candidate_key}")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    reviewer_name = str(payload.get("reviewer_name") or "")
+    draft_knowledge = json.loads(json.dumps(proposal_knowledge, ensure_ascii=False))
+    draft_knowledge.setdefault("disease_name", artifact.get("disease_name") or candidate_key)
+    draft_knowledge.setdefault(
+        "knowledge_id",
+        artifact.get("knowledge_builder_proposal_detail", {}).get("knowledge_id")
+        or f"{candidate_key}_v0.1",
+    )
+    formal_knowledge = normalize_guideline_knowledge_draft(
+        knowledge=draft_knowledge,
+        disease_key=candidate_key,
+        promoted_from=str(proposal_path),
+        promoted_by=reviewer_name,
+        promoted_at=timestamp,
+    )
+    diagnosis_rules = dict(formal_knowledge.get("diagnosis_rules") or {})
+    diagnosis_rules.setdefault("diagnosis_allowed_without_review", False)
+    formal_knowledge["diagnosis_rules"] = diagnosis_rules
+    formal_knowledge["promotion_record"] = {
+        "schema_version": "knowledge_promotion_record.v1",
+        "source_artifact": str(proposal_path),
+        "reviewer_name": reviewer_name,
+        "created_at": timestamp,
+        "note": str(payload.get("review_note") or "Promoted from KnowledgeBuilder proposal for reusable formal knowledge review."),
+    }
+
+    knowledges_dir.mkdir(parents=True, exist_ok=True)
+    knowledge_path.write_text(json.dumps(formal_knowledge, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "status": "formal_knowledge_saved",
+        "knowledge_key": candidate_key,
+        "knowledge_path": str(knowledge_path),
+        "formal_knowledge_updated": True,
+        "review_status": "needs_review",
+        "next_step": "Formal knowledge file is reusable but remains needs_review until doctor validation.",
     }
 
 
@@ -845,7 +1064,7 @@ def dispatch_http_request(
     memory_factory: Callable[[], MemoryManager] | None = None,
 ) -> tuple[int, dict]:
     factory = service_factory or MedScopeService
-    editor_status, editor_payload = dispatch_skill_editor_api_request(
+    editor_status, editor_payload = dispatch_knowledge_editor_api_request(
         method=method,
         path=path,
         body=body,
@@ -855,9 +1074,9 @@ def dispatch_http_request(
     demo_status, demo_payload = dispatch_demo_request(method=method, path=path, body=body)
     if demo_status is not None:
         return demo_status, demo_payload
-    skill_status, skill_payload = dispatch_skill_request(method=method, path=path, body=body)
-    if skill_status is not None:
-        return skill_status, skill_payload
+    knowledge_status, knowledge_payload = dispatch_knowledge_request(method=method, path=path, body=body)
+    if knowledge_status is not None:
+        return knowledge_status, knowledge_payload
     memory_status, memory_payload = dispatch_memory_request(
         method=method,
         path=path,
@@ -883,6 +1102,20 @@ def dispatch_http_request(
         except ValueError as exc:
             return 400, {"error": str(exc)}
         except Exception as exc:
+            if _is_transient_vlm_api_error(exc):
+                return 503, {
+                    "error": (
+                        "VLM/API 临时不可用：实时视觉证据获取时 HTTPS 连接被远端中断。"
+                        "请稍后重试，或先使用预生成/安全样例继续演示。"
+                    ),
+                    "error_type": "vlm_api_unavailable",
+                    "technical_detail": str(exc),
+                    "action_items": [
+                        "稍后重试实时分析，SSL EOF 通常是上游 API 或网络连接短暂中断。",
+                        "检查当前 VLM/API route、API key、代理和网络是否可用。",
+                        "演示时可先切换到预生成样例或安全候选验证模式，避免实时 VLM 调用中断流程。",
+                    ],
+                }
             return 500, {
                 "error": str(exc),
                 "error_type": "analysis_runtime_error",
@@ -897,7 +1130,7 @@ def dispatch_http_request(
         if parsed.query.startswith("filename="):
             filename = unquote(_remove_prefix(parsed.query, "filename="))
         return handle_file_upload(filename=filename, body=body)
-    if method == "POST" and route_path == "/v1/baseline/image-prompt-skill":
+    if method == "POST" and route_path == "/v1/baseline/image-prompt-knowledge":
         try:
             payload = json.loads(body.decode("utf-8")) if body else {}
             return 200, _run_image_baseline_from_payload(payload)
@@ -910,7 +1143,7 @@ def dispatch_http_request(
                 "action_items": [
                     "确认 docs/API_ROUTE_LOG.md 中 active_route 指向可用模型路由。",
                     "配置对应 API key 环境变量，例如 DMX_API_KEY 或 KY_API_KEY。",
-                    "如果只想离线测试，请运行 scripts.image_prompt_skill_baseline 的单元测试或注入 fake client。",
+                    "如果只想离线测试，请运行 scripts.image_prompt_knowledge_baseline 的单元测试或注入 fake client。",
                 ],
             }
         except ValueError as exc:
@@ -918,6 +1151,22 @@ def dispatch_http_request(
         except json.JSONDecodeError as exc:
             return 400, {"error": f"invalid json: {exc}"}
     return 404, {"error": "not found"}
+
+
+def _is_transient_vlm_api_error(exc: Exception) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    markers = [
+        "urlopen error",
+        "unexpected_eof_while_reading",
+        "eof occurred in violation of protocol",
+        "ssl:",
+        "connection reset",
+        "connection aborted",
+        "remote end closed connection",
+        "temporarily unavailable",
+        "timed out",
+    ]
+    return any(marker in text for marker in markers)
 
 
 def dispatch_research_evidence_review_request(
@@ -936,13 +1185,13 @@ def dispatch_research_evidence_review_request(
             return 400, {"error": f"invalid json: {exc}"}
     package = build_research_evidence_review_package(
         disease_key=request.get("disease_key") or "femoral_head_necrosis",
-        target_skill_id=request.get("target_skill_id") or "femoral_head_necrosis_v0.1",
+        target_knowledge_id=request.get("target_knowledge_id") or "femoral_head_necrosis_v0.1",
         modality=request.get("modality") or "MRI",
         research_question=request.get("research_question")
         or "MRI quantitative feature proposal for femoral head osteonecrosis",
         supplied_metadata=list(request.get("supplied_metadata") or []),
         supplied_texts=list(request.get("supplied_texts") or []),
-        guideline_skill=dict(request.get("guideline_skill") or {}),
+        guideline_knowledge=dict(request.get("guideline_knowledge") or {}),
         pubmed_enabled=bool(request.get("pubmed_enabled", False)),
         pubmed_limit=int(request.get("pubmed_limit") or 10),
         human_review_decisions=list(request.get("human_review_decisions") or []),
@@ -958,7 +1207,7 @@ def dispatch_research_evidence_review_request(
     package["runtime_safety"].update(
         {
             "proposal_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "diagnosis_rules_modified": False,
             "registry_updated": False,
             "promotion_requires_human_approval": True,
@@ -970,7 +1219,7 @@ def dispatch_research_evidence_review_request(
 def _default_research_evidence_review_request() -> dict:
     return {
         "disease_key": "femoral_head_necrosis",
-        "target_skill_id": "femoral_head_necrosis_v0.1",
+        "target_knowledge_id": "femoral_head_necrosis_v0.1",
         "modality": "MRI",
         "research_question": "MRI texture disorder and necrotic area ratio as proposal-only supplemental evidence",
         "supplied_metadata": [
@@ -990,8 +1239,8 @@ def _default_research_evidence_review_request() -> dict:
                 "abstract": "Demo metadata for review UI; not a guideline recommendation.",
             }
         ],
-        "guideline_skill": {
-            "skill_id": "femoral_head_necrosis_v0.1",
+        "guideline_knowledge": {
+            "knowledge_id": "femoral_head_necrosis_v0.1",
             "supported_modalities": ["X-ray"],
             "evidence_protocol_sections": [
                 "quantitative_evidence_protocol.image_feature_quantification"
@@ -1007,16 +1256,16 @@ def _run_image_baseline_from_payload(payload: dict) -> dict:
         raise ValueError("image_path is required")
     if not patient_prompt:
         raise ValueError("patient_prompt is required")
-    disease_skill = payload.get("skill")
+    disease_knowledge = payload.get("knowledge")
     disease_key = payload.get("disease_key")
-    if disease_skill is None and disease_key:
-        disease_skill = SkillBuilderTool().load_guideline_skill(str(disease_key))
-    return run_image_prompt_skill_baseline(
+    if disease_knowledge is None and disease_key:
+        disease_knowledge = KnowledgeBuilderTool().load_guideline_knowledge(str(disease_key))
+    return run_image_prompt_knowledge_baseline(
         image_path=Path(str(image_path)),
         patient_prompt=str(patient_prompt),
-        disease_skill=disease_skill,
+        disease_knowledge=disease_knowledge,
         disease_key=str(disease_key) if disease_key else None,
-        output_dir=Path(DEFAULT_OUTPUT_ROOT) / "fake" / "image_prompt_skill_baseline",
+        output_dir=Path(DEFAULT_OUTPUT_ROOT) / "fake" / "image_prompt_knowledge_baseline",
     )
 
 
@@ -1419,7 +1668,7 @@ def _build_real_vlm_medsam2_demo_memory_audit(
     }
     agents_traced = [
         "GaoDoctorAgent",
-        "SkillBuilderAgent",
+        "KnowledgeBuilderAgent",
         "VisionAgent",
         "DiagnosisDoctorAgent",
         "MemoryManager",
@@ -1429,15 +1678,15 @@ def _build_real_vlm_medsam2_demo_memory_audit(
             "input": summary.get("symptoms") or [],
             "output": "diagnosis",
             "routing_decision": {
-                "selected_skill": disease_key,
+                "selected_knowledge": disease_key,
                 "selected_vision_mode": "medsam2",
                 "source": "auto",
                 "agent_scope": "orchestrator_api",
-                "skill_builder_action": "load_existing_skill",
+                "knowledge_builder_action": "load_existing_knowledge",
             },
         },
-        "SkillBuilderAgent": {
-            "input": {"selected_skill": disease_key},
+        "KnowledgeBuilderAgent": {
+            "input": {"selected_knowledge": disease_key},
             "output": disease_key,
         },
         "VisionAgent": {
@@ -1458,7 +1707,7 @@ def _build_real_vlm_medsam2_demo_memory_audit(
         "MemoryManager": {
             "input": {
                 "case_id": case_id,
-                "memory_types": ["patient_memory", "image_memory", "skill_memory", "reasoning_memory"],
+                "memory_types": ["patient_memory", "image_memory", "knowledge_memory", "reasoning_memory"],
             },
             "output": {
                 "audit_status": "available",
@@ -1484,7 +1733,7 @@ def _build_real_vlm_medsam2_demo_memory_audit(
         "memory_completeness": {
             "patient_memory": {"status": "demo_artifact"},
             "image_memory": {"status": "supported"},
-            "skill_memory": {"status": "supported"},
+            "knowledge_memory": {"status": "supported"},
             "reasoning_memory": {"status": "supported"},
         },
         "memory_type_details": {
@@ -1502,10 +1751,10 @@ def _build_real_vlm_medsam2_demo_memory_audit(
                 "mask_preview_path": image_outputs.get("mask_preview_path"),
                 "segmentation_quality": visual_evidence.get("segmentation_quality") or "medsam2",
             },
-            "skill_memory": {
-                "selected_skill": disease_key,
-                "used_skill": disease_key,
-                "skill_type": report.get("used_skill", {}).get("skill_type") or "guideline_based",
+            "knowledge_memory": {
+                "selected_knowledge": disease_key,
+                "used_knowledge": disease_key,
+                "knowledge_type": report.get("used_knowledge", {}).get("knowledge_type") or "guideline_based",
                 "analysis_status": alignment_plan.get("analysis_status"),
                 "required_next_images": alignment_plan.get("required_next_images", []),
                 "visual_protocol_status": "used_by_demo",
@@ -1546,7 +1795,7 @@ def _backfill_standard_demo_response(case_slug: str, payload: dict) -> dict:
     if case_slug != "fhn_no_mask_multifinding":
         return payload
     routing = payload.get("routing_decision")
-    if not isinstance(routing, dict) or routing.get("selected_skill") != "femoral_head_necrosis":
+    if not isinstance(routing, dict) or routing.get("selected_knowledge") != "femoral_head_necrosis":
         return payload
     report = payload.get("report")
     if not isinstance(report, dict):
@@ -1561,7 +1810,7 @@ def _backfill_standard_demo_response(case_slug: str, payload: dict) -> dict:
     normalized_routing.setdefault("initial_evidence_status", "nonspecific")
     normalized_routing.setdefault("routing_evidence_status", "nonspecific")
     normalized_routing.setdefault(
-        "skill_search_reason",
+        "knowledge_search_reason",
         "Loaded legacy FHN no-mask demo as a bounded clinical hypothesis artifact.",
     )
     normalized.setdefault("routing_decision", normalized_routing)
@@ -1857,7 +2106,7 @@ def _build_real_vlm_medsam2_demo_alignment_plan(summary: dict, bundle: dict) -> 
     return {
         "analysis_status": "partial_evidence",
         "clinical_focus": "adult diffuse glioma imaging evidence",
-        "selected_skill": disease_key,
+        "selected_knowledge": disease_key,
         "image_context": {
             "modality": visual_result.get("modality") or "MRI",
             "body_part": visual_result.get("body_part") or "brain",
@@ -1919,31 +2168,31 @@ def _build_real_vlm_medsam2_demo_memory_replay(
         },
         {
             "agent": "GaoDoctorAgent",
-            "event": "skill_routing",
-            "memory_scope": "skill_memory",
+            "event": "knowledge_routing",
+            "memory_scope": "knowledge_memory",
             "decision_owner": "orchestrator_api",
             "routing_decision": {
-                "selected_skill": disease_key,
+                "selected_knowledge": disease_key,
                 "selected_vision_mode": "medsam2",
                 "source": "auto",
                 "agent_scope": "orchestrator_api",
-                "skill_builder_action": "load_existing_skill",
+                "knowledge_builder_action": "load_existing_knowledge",
             },
-            "selected_skill": disease_key,
+            "selected_knowledge": disease_key,
             "selected_vision_mode": "medsam2",
-            "skill_type": report.get("used_skill", {}).get("skill_type"),
-            "skill_builder_action": "load_existing_skill",
+            "knowledge_type": report.get("used_knowledge", {}).get("knowledge_type"),
+            "knowledge_builder_action": "load_existing_knowledge",
         },
         {
-            "agent": "SkillBuilderAgent",
-            "event": "skill_loading",
-            "memory_scope": "skill_memory",
-            "action": "load_existing_skill",
-            "selected_skill": disease_key,
-            "used_skill": disease_key,
-            "skill_type": report.get("used_skill", {}).get("skill_type"),
-            "evidence_level": report.get("used_skill", {}).get("evidence_level"),
-            "formal_skill_status": "loaded",
+            "agent": "KnowledgeBuilderAgent",
+            "event": "knowledge_loading",
+            "memory_scope": "knowledge_memory",
+            "action": "load_existing_knowledge",
+            "selected_knowledge": disease_key,
+            "used_knowledge": disease_key,
+            "knowledge_type": report.get("used_knowledge", {}).get("knowledge_type"),
+            "evidence_level": report.get("used_knowledge", {}).get("evidence_level"),
+            "formal_knowledge_status": "loaded",
             "visual_protocol_status": "used_by_demo",
         },
         {
@@ -1993,7 +2242,7 @@ def _build_real_vlm_medsam2_demo_memory_replay(
         {
             "agent": "MemoryManager",
             "event": "memory_audit",
-            "memory_scope": "patient_memory,image_memory,skill_memory,reasoning_memory",
+            "memory_scope": "patient_memory,image_memory,knowledge_memory,reasoning_memory",
             "evidence_bundle_status": "available",
             "audit_status": "available",
             "quality_warnings": list(bundle.get("quality_warnings") or []),
@@ -2075,12 +2324,12 @@ def _normalize_real_vlm_medsam2_evidence_bundle(
             "segmentation_results": segmentation_results,
             "visual_tool_plan": visual_tool_plan,
         },
-        "skill_evidence": {
-            "selected_skill": bundle.get("disease_key") or summary.get("disease_key"),
+        "knowledge_evidence": {
+            "selected_knowledge": bundle.get("disease_key") or summary.get("disease_key"),
             "selected_vision_mode": "medsam2",
-            "skill_type": report.get("used_skill", {}).get("skill_type"),
+            "knowledge_type": report.get("used_knowledge", {}).get("knowledge_type"),
             "guideline_evidence": {
-                "citations": report.get("used_skill", {}).get("source_documents", []),
+                "citations": report.get("used_knowledge", {}).get("source_documents", []),
             },
         },
         "reasoning_evidence": {
@@ -2462,7 +2711,7 @@ def create_handler(service_factory: Callable[[], MedScopeService] | None = None)
 
     class MedScopeHttpHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            editor_status, editor_body, editor_content_type = dispatch_skill_editor_static_request(self.path)
+            editor_status, editor_body, editor_content_type = dispatch_knowledge_editor_static_request(self.path)
             if editor_status is not None:
                 self._write_bytes(editor_status, editor_body, editor_content_type)
                 return

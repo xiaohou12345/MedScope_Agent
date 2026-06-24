@@ -562,7 +562,7 @@ def _attach_overlap_quality_control(
                     "overlap_with_target": previous_finding.get("target"),
                     "mask_iou": round(mask_iou, 6),
                     "message": (
-                        "Two skill findings were segmented to highly overlapping masks; "
+                        "Two knowledge findings were segmented to highly overlapping masks; "
                         "the later finding is marked as non-independent evidence."
                     ),
                 }

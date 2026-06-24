@@ -6,39 +6,39 @@ from contracts.medical_contracts import AlignmentPlan
 
 
 class AlignmentPlanner:
-    """Builds image-symptom-skill alignment plans from skill visual_protocol."""
+    """Builds image-symptom-knowledge alignment plans from knowledge visual_protocol."""
 
     def build_plan(
         self,
         payload: dict[str, Any],
         routing_decision: dict[str, Any],
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
     ) -> dict[str, Any]:
-        selected_skill = routing_decision.get("selected_skill")
+        selected_knowledge = routing_decision.get("selected_knowledge")
         image_context = self.infer_image_context(payload)
-        if not selected_skill:
+        if not selected_knowledge:
             return AlignmentPlan(
-                selected_skill=None,
+                selected_knowledge=None,
                 analysis_status="partial_evidence",
                 clinical_focus="general medical image triage",
                 image_context=image_context,
                 visual_tasks=[],
                 diagnosis_scope={
-                    "allowed": ["提示当前尚未匹配到疾病专用 skill"],
+                    "allowed": ["提示当前尚未匹配到疾病专用 knowledge"],
                     "blocked": ["不得输出疾病特异性诊断结论"],
                 },
             ).to_dict()
 
-        visual_protocol = disease_skill.get("visual_protocol") or {}
+        visual_protocol = disease_knowledge.get("visual_protocol") or {}
         if not visual_protocol:
             return AlignmentPlan(
-                selected_skill=str(selected_skill),
+                selected_knowledge=str(selected_knowledge),
                 analysis_status="partial_evidence",
-                clinical_focus=str(disease_skill.get("disease_name") or selected_skill),
+                clinical_focus=str(disease_knowledge.get("disease_name") or selected_knowledge),
                 image_context=image_context,
                 visual_tasks=[],
                 diagnosis_scope={
-                    "allowed": ["按已选 skill 的可用证据进行有限分析"],
+                    "allowed": ["按已选 knowledge 的可用证据进行有限分析"],
                     "blocked": ["不得把缺失影像证据解释为阴性"],
                 },
             ).to_dict()
@@ -61,17 +61,17 @@ class AlignmentPlanner:
             visual_protocol=visual_protocol,
         )
         return AlignmentPlan(
-            selected_skill=str(selected_skill),
+            selected_knowledge=str(selected_knowledge),
             analysis_status=analysis_status,
             clinical_focus=str(
                 visual_protocol.get("clinical_focus")
-                or f"{disease_skill.get('disease_name', selected_skill)}影像评估"
+                or f"{disease_knowledge.get('disease_name', selected_knowledge)}影像评估"
             ),
             image_context=image_context,
             visual_tasks=visual_tasks,
             diagnosis_scope=self._diagnosis_scope(visual_protocol),
             suspected_conditions=self._suspected_conditions(
-                disease_skill=disease_skill,
+                disease_knowledge=disease_knowledge,
                 visual_protocol=visual_protocol,
             ),
             required_next_images=required_next_images,
@@ -216,7 +216,7 @@ class AlignmentPlanner:
         ]
         if missing_reasons:
             return missing_reasons
-        return ["当前上传图像不满足该 skill 的关键影像证据要求。"]
+        return ["当前上传图像不满足该 knowledge 的关键影像证据要求。"]
 
     def _diagnosis_scope(self, visual_protocol: dict[str, Any]) -> dict[str, Any]:
         configured = visual_protocol.get("diagnosis_scope")
@@ -226,25 +226,25 @@ class AlignmentPlanner:
                 "blocked": list(configured.get("blocked") or []),
             }
         return {
-            "allowed": ["只分析当前图像和 skill 支持的视觉证据"],
+            "allowed": ["只分析当前图像和 knowledge 支持的视觉证据"],
             "blocked": ["不得把缺失影像证据解释为阴性", "不得从 missing_input 推断正常"],
         }
 
     def _suspected_conditions(
         self,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         visual_protocol: dict[str, Any],
     ) -> list[dict[str, Any]]:
         configured = visual_protocol.get("suspected_conditions")
         if isinstance(configured, list) and configured:
             return [dict(item) for item in configured if isinstance(item, dict)]
-        disease_name = disease_skill.get("disease_name")
+        disease_name = disease_knowledge.get("disease_name")
         if not disease_name:
             return []
         return [
             {
                 "disease": disease_name,
-                "reason": "患者描述或图像线索匹配当前 disease skill。",
+                "reason": "患者描述或图像线索匹配当前 disease knowledge。",
             }
         ]
 

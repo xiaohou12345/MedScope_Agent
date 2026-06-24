@@ -8,8 +8,8 @@ from contracts.medical_contracts import (
     PatientCaseInput,
     PatientIntent,
     SegmentationResult,
-    SkillDescriptor,
-    SkillRoutingDecision,
+    KnowledgeDescriptor,
+    KnowledgeRoutingDecision,
     VisualTask,
     VisualToolCapability,
     VisualAnalysisResult,
@@ -18,9 +18,9 @@ from contracts.medical_contracts import (
 
 
 class ContractBoundaryTest(unittest.TestCase):
-    def test_alignment_plan_contract_marks_image_skill_insufficiency(self):
+    def test_alignment_plan_contract_marks_image_knowledge_insufficiency(self):
         plan = AlignmentPlan(
-            selected_skill="femoral_head_necrosis",
+            selected_knowledge="femoral_head_necrosis",
             analysis_status="insufficient_evidence",
             clinical_focus="股骨头坏死早期评估",
             image_context={
@@ -70,7 +70,7 @@ class ContractBoundaryTest(unittest.TestCase):
     def test_alignment_plan_rejects_unsupported_status(self):
         with self.assertRaisesRegex(ValueError, "unsupported alignment status"):
             AlignmentPlan(
-                selected_skill="femoral_head_necrosis",
+                selected_knowledge="femoral_head_necrosis",
                 analysis_status="unclear",
                 clinical_focus="股骨头坏死",
                 image_context={"modality": "xray"},
@@ -127,9 +127,9 @@ class ContractBoundaryTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             PatientIntent(intent_type="diagnosis", patient_message="帮我看看片子")
 
-    def test_skill_routing_decision_contract_marks_orchestrator_scope(self):
-        decision = SkillRoutingDecision(
-            selected_skill="diffuse_glioma_brats",
+    def test_knowledge_routing_decision_contract_marks_orchestrator_scope(self):
+        decision = KnowledgeRoutingDecision(
+            selected_knowledge="diffuse_glioma_brats",
             selected_vision_mode="medsam2",
             source="auto",
             reason="matched brain imaging clues",
@@ -140,41 +140,41 @@ class ContractBoundaryTest(unittest.TestCase):
         payload = decision.to_dict()
 
         self.assertEqual(payload["agent_scope"], "orchestrator_api")
-        self.assertEqual(payload["skill_builder_action"], "load_existing_skill")
-        self.assertEqual(payload["selected_skill"], "diffuse_glioma_brats")
+        self.assertEqual(payload["knowledge_builder_action"], "load_existing_knowledge")
+        self.assertEqual(payload["selected_knowledge"], "diffuse_glioma_brats")
         self.assertEqual(payload["matched_clues"], ["胶质瘤", "flair"])
-        self.assertNotIn("generated_skill", payload)
+        self.assertNotIn("generated_knowledge", payload)
 
         with self.assertRaises(ValueError):
-            SkillRoutingDecision(
-                selected_skill=None,
+            KnowledgeRoutingDecision(
+                selected_knowledge=None,
                 selected_vision_mode=None,
-                source="skill_builder",
+                source="knowledge_builder",
                 reason="invalid owner",
                 confidence=0.5,
                 matched_clues=[],
             )
 
-    def test_skill_routing_decision_contract_preserves_hypothesis_and_initial_evidence_status(self):
-        decision = SkillRoutingDecision(
-            selected_skill="femoral_head_necrosis",
-            selected_vision_mode="no_mask_skill",
+    def test_knowledge_routing_decision_contract_preserves_hypothesis_and_initial_evidence_status(self):
+        decision = KnowledgeRoutingDecision(
+            selected_knowledge="femoral_head_necrosis",
+            selected_vision_mode="no_mask_knowledge",
             source="auto",
             reason="matched hip xray clues",
             confidence=0.75,
             matched_clues=["髋", "xray"],
-            skill_selection_mode="agent_auto_secondary",
-            manual_secondary_skill_candidates=[],
+            knowledge_selection_mode="agent_auto_secondary",
+            manual_secondary_knowledge_candidates=[],
             primary_hypothesis="femoral_head_necrosis",
-            differential_skill_candidates=["osteoarthritis_or_degenerative_hip_disease"],
-            secondary_skill_run_plan={
+            differential_knowledge_candidates=["osteoarthritis_or_degenerative_hip_disease"],
+            secondary_knowledge_run_plan={
                 "status": "secondary_hypothesis_validation_ready",
                 "triggered": True,
                 "reason": "Primary evidence is insufficient and the top differential can run as unreviewed hypothesis validation.",
                 "candidates": [
                     {
                         "disease_key": "osteoarthritis_or_degenerative_hip_disease",
-                        "action": "run_unreviewed_skill_hypothesis_validation",
+                        "action": "run_unreviewed_knowledge_hypothesis_validation",
                         "analysis_allowed": True,
                         "diagnosis_allowed": False,
                     }
@@ -194,7 +194,7 @@ class ContractBoundaryTest(unittest.TestCase):
                     "reason": "hip pain can have degenerative alternatives",
                 },
             ],
-            skill_search_reason="Selected primary disease skill as a clinical hypothesis.",
+            knowledge_search_reason="Selected primary disease knowledge as a clinical hypothesis.",
             initial_evidence_status="requires_evidence_acquisition",
             routing_evidence_status="requires_evidence_acquisition",
         )
@@ -202,22 +202,28 @@ class ContractBoundaryTest(unittest.TestCase):
         payload = decision.to_dict()
 
         self.assertEqual(payload["primary_hypothesis"], "femoral_head_necrosis")
-        self.assertEqual(payload["skill_selection_mode"], "agent_auto_secondary")
-        self.assertEqual(payload["manual_secondary_skill_candidates"], [])
+        self.assertEqual(payload["knowledge_selection_mode"], "agent_auto_secondary")
+        self.assertEqual(payload["evidence_protocol_mode"], "finding_list_baseline")
+        self.assertFalse(payload["quantitative_protocol_requested"])
         self.assertEqual(
-            payload["differential_skill_candidates"],
+            payload["quantitative_protocol_status"],
+            "not_requested_default_finding_list_only",
+        )
+        self.assertEqual(payload["manual_secondary_knowledge_candidates"], [])
+        self.assertEqual(
+            payload["differential_knowledge_candidates"],
             ["osteoarthritis_or_degenerative_hip_disease"],
         )
         self.assertEqual(
-            payload["secondary_skill_run_plan"]["status"],
+            payload["secondary_knowledge_run_plan"]["status"],
             "secondary_hypothesis_validation_ready",
         )
-        self.assertTrue(payload["secondary_skill_run_plan"]["triggered"])
+        self.assertTrue(payload["secondary_knowledge_run_plan"]["triggered"])
         self.assertTrue(
-            payload["secondary_skill_run_plan"]["candidates"][0]["analysis_allowed"]
+            payload["secondary_knowledge_run_plan"]["candidates"][0]["analysis_allowed"]
         )
         self.assertFalse(
-            payload["secondary_skill_run_plan"]["candidates"][0]["diagnosis_allowed"]
+            payload["secondary_knowledge_run_plan"]["candidates"][0]["diagnosis_allowed"]
         )
         self.assertEqual(payload["clinical_hypotheses"][0]["role"], "primary")
         self.assertEqual(payload["clinical_hypotheses"][0]["disease_key"], "femoral_head_necrosis")
@@ -226,9 +232,9 @@ class ContractBoundaryTest(unittest.TestCase):
         self.assertEqual(payload["routing_evidence_status"], "requires_evidence_acquisition")
 
         with self.assertRaises(ValueError):
-            SkillRoutingDecision(
-                selected_skill="femoral_head_necrosis",
-                selected_vision_mode="no_mask_skill",
+            KnowledgeRoutingDecision(
+                selected_knowledge="femoral_head_necrosis",
+                selected_vision_mode="no_mask_knowledge",
                 source="auto",
                 reason="invalid evidence status",
                 confidence=0.75,
@@ -238,9 +244,9 @@ class ContractBoundaryTest(unittest.TestCase):
         for diagnostic_status in ("supported", "not_supported"):
             with self.subTest(diagnostic_status=diagnostic_status):
                 with self.assertRaises(ValueError):
-                    SkillRoutingDecision(
-                        selected_skill="femoral_head_necrosis",
-                        selected_vision_mode="no_mask_skill",
+                    KnowledgeRoutingDecision(
+                        selected_knowledge="femoral_head_necrosis",
+                        selected_vision_mode="no_mask_knowledge",
                         source="auto",
                         reason="routing must not encode diagnostic conclusions",
                         confidence=0.75,
@@ -554,7 +560,7 @@ class ContractBoundaryTest(unittest.TestCase):
         self.assertEqual(visual_input["segmentation_quality"], "medsam2")
         self.assertNotIn("diagnosis", visual_input)
 
-    def test_visual_task_contract_is_derived_from_skill_protocol_task(self):
+    def test_visual_task_contract_is_derived_from_knowledge_protocol_task(self):
         task = VisualTask.from_protocol_task(
             {
                 "task": "segment_whole_tumor",
@@ -623,19 +629,19 @@ class ContractBoundaryTest(unittest.TestCase):
                 overlay_path="not_generated",
             )
 
-    def test_skill_descriptor_enforces_guideline_vs_hypothesis_boundary(self):
-        guideline = SkillDescriptor(
+    def test_knowledge_descriptor_enforces_guideline_vs_hypothesis_boundary(self):
+        guideline = KnowledgeDescriptor(
             disease="股骨头坏死",
-            skill_id="femoral_head_necrosis_v0.1",
-            skill_type="guideline_based",
+            knowledge_id="femoral_head_necrosis_v0.1",
+            knowledge_type="guideline_based",
             evidence_level="high",
             source="ARCO 分期相关公开医学知识整理",
             path_type="guideline_aware",
         )
-        hypothesis = SkillDescriptor(
+        hypothesis = KnowledgeDescriptor(
             disease="罕见病示例",
-            skill_id="rare_disease_demo_hypothesis_v0.1",
-            skill_type="data_mined_hypothesis",
+            knowledge_id="rare_disease_demo_hypothesis_v0.1",
+            knowledge_type="data_mined_hypothesis",
             evidence_level="low",
             source="internal dataset statistical summary",
             warning="该规则来自数据总结，不等同于正式医学指南，只能作为辅助提示",
@@ -653,20 +659,20 @@ class ContractBoundaryTest(unittest.TestCase):
         )
         self.assertEqual(hypothesis.to_dict()["discovery_metadata"]["sample_size"], 12)
         with self.assertRaises(ValueError):
-            SkillDescriptor(
+            KnowledgeDescriptor(
                 disease="错误示例",
-                skill_id="bad_v0.1",
-                skill_type="data_mined_hypothesis",
+                knowledge_id="bad_v0.1",
+                knowledge_type="data_mined_hypothesis",
                 evidence_level="high",
                 source="internal dataset statistical summary",
             )
 
-    def test_skill_descriptor_preserves_guideline_citations(self):
-        descriptor = SkillDescriptor.from_skill(
+    def test_knowledge_descriptor_preserves_guideline_citations(self):
+        descriptor = KnowledgeDescriptor.from_knowledge(
             {
                 "disease_name": "成人弥漫性胶质瘤",
-                "skill_id": "diffuse_glioma_guideline_v0.1",
-                "skill_type": "guideline_based",
+                "knowledge_id": "diffuse_glioma_guideline_v0.1",
+                "knowledge_type": "guideline_based",
                 "evidence_level": "high",
                 "source": "EANO guideline",
                 "path_type": "guideline_aware",

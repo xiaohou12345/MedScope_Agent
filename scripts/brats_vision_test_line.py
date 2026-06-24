@@ -18,7 +18,7 @@ from tools.medsam2_segmentation_tool import (
 from tools.nifti_mask_reader_tool import NibabelLoader, NiftiMaskReaderTool
 from tools.nifti_overlay_generation_tool import NiftiOverlayGenerationTool
 from tools.segmentation_tool import SegmentationTool
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 
 
 DEFAULT_IMAGE = Path("data/external/brats2021_00030/BraTS2021_00030_flair.nii.gz")
@@ -97,13 +97,13 @@ def run_brats_vision_test_line(
             )
         segmentation_prompt.update(generate_brats_prompt_from_reference_mask(reference_mask_path))
 
-    disease_skill = _load_brats_disease_skill(disease_name)
+    disease_knowledge = _load_brats_disease_knowledge(disease_name)
     if mode == "ground_truth":
         result = VisionAgent().analyze_brats_nifti_ground_truth(
             image_path=str(image),
             mask_path=str(ground_truth_mask),
             overlay_path=str(overlay_path),
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
         )
         payload_mode = "brats_nifti_ground_truth"
     else:
@@ -118,7 +118,7 @@ def run_brats_vision_test_line(
             prompt=segmentation_prompt,
             mask_path=str(model_mask_path),
             overlay_path=str(overlay_path),
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
         )
         payload_mode = "brats_medsam2_model"
     payload: dict[str, Any] = {
@@ -441,11 +441,11 @@ def _case_name_from_image(image_path: Path) -> str:
     return image_path.stem
 
 
-def _load_brats_disease_skill(disease_name: str) -> dict[str, Any]:
+def _load_brats_disease_knowledge(disease_name: str) -> dict[str, Any]:
     if disease_name != "成人弥漫性胶质瘤":
         return {"disease_name": disease_name}
     try:
-        return SkillBuilderTool().load_guideline_skill("diffuse_glioma_brats")
+        return KnowledgeBuilderTool().load_guideline_knowledge("diffuse_glioma_brats")
     except FileNotFoundError:
         return {"disease_name": disease_name}
 

@@ -1,6 +1,6 @@
 # MedScope Agent
 
-MedScope Agent is an experimental medical AI agent framework for guideline-aware, multimodal clinical evidence workflows. It is built around one principle: image analysis, guideline skill loading, diagnostic reasoning, and audit memory should be separated by explicit contracts, so that the system can explain what evidence was used, what evidence was missing, and what must not be inferred.
+MedScope Agent is an experimental medical AI agent framework for guideline-aware, multimodal clinical evidence workflows. It is built around one principle: image analysis, guideline knowledge loading, diagnostic reasoning, and audit memory should be separated by explicit contracts, so that the system can explain what evidence was used, what evidence was missing, and what must not be inferred.
 
 This repository is a research prototype. It is not a medical device and must not be used for real clinical diagnosis or treatment decisions.
 
@@ -13,7 +13,7 @@ MedScope turns a patient message plus medical image input into a traceable evide
 ```text
 Patient / frontend
   -> Clinical Orchestrator
-  -> Skill Gateway / Skill Builder
+  -> Knowledge Gateway / Knowledge Builder
   -> Vision Evidence Agent
   -> Diagnosis Reasoning Agent
   -> Memory / Audit Layer
@@ -22,11 +22,11 @@ Patient / frontend
 
 The current MVP supports:
 
-- Guideline-based disease skills in `skills/`.
-- Automatic skill routing from patient text, symptoms, and image path clues.
+- Guideline-based disease knowledge in `knowledge/`.
+- Automatic knowledge routing from patient text, symptoms, and image path clues.
 - Visual evidence generation from either reference masks, VLM-localized regions, or MedSAM2-compatible segmentation runners.
 - Evidence-bounded diagnosis reports that consume structured visual evidence instead of raw pixels.
-- Four memory scopes: `patient_memory`, `image_memory`, `skill_memory`, and `reasoning_memory`.
+- Four memory scopes: `patient_memory`, `image_memory`, `knowledge_memory`, and `reasoning_memory`.
 - Follow-up QA constrained by the saved evidence bundle.
 - A lightweight web UI with upload, thinking state, visual evidence, diagnosis report, evidence bundle, and memory/audit views.
 - Baseline prompt workflows for comparing direct LLM/Codex-style reasoning against the evidence-bounded pipeline.
@@ -37,22 +37,22 @@ The project is best described as a two-layer architecture rather than a flat lis
 
 ### Clinical Evidence Pipeline
 
-- `Clinical Orchestrator`: implemented by `agents/gaodoctor_agent.py`. It is the single patient-facing entry point and coordinates routing, skill selection, visual evidence, diagnosis, and QA.
+- `Clinical Orchestrator`: implemented by `agents/gaodoctor_agent.py`. It is the single patient-facing entry point and coordinates routing, knowledge selection, visual evidence, diagnosis, and QA.
 - `Vision Evidence Agent`: implemented by `agents/vision_agent.py` plus visual tools. It localizes, segments, measures, and returns structured visual evidence. It does not produce the final diagnosis.
-- `Diagnosis Reasoning Agent`: implemented by `agents/diagnosis_agent.py`. It consumes guideline skills and evidence bundles, then generates a diagnosis report with safety checks.
-- `Skill Builder / Guideline Component`: implemented mainly under `tools/skill_builder_tool.py` and guideline tools. It loads existing skills or builds candidate guideline/hypothesis skills.
+- `Diagnosis Reasoning Agent`: implemented by `agents/diagnosis_agent.py`. It consumes guideline knowledge and evidence bundles, then generates a diagnosis report with safety checks.
+- `Knowledge Builder / Guideline Component`: implemented mainly under `tools/knowledge_builder_tool.py` and guideline tools. It loads existing knowledge or builds candidate guideline/hypothesis knowledge.
 - `Memory / Audit Layer`: implemented by `memory/memory_manager.py`. It persists evidence, reports, runtime traces, replay data, and QA history.
 
 ### Agentic Runtime / Evidence Gateway
 
 The lower layer behaves like a controlled runtime for medical evidence tasks:
 
-- `Skill Gateway`: distributes guideline skills, visual protocols, and skill metadata.
+- `Knowledge Gateway`: distributes guideline knowledge, visual protocols, and knowledge metadata.
 - `Shared Artifact Workspace`: stores uploaded images, masks, overlays, comparison images, evidence bundles, and audit files.
 - `Contract Guards`: enforce schema and policy boundaries in `contracts/medical_contracts.py`.
-- `Tool Router`: maps skill visual protocols to VLM localization, MedSAM2, mask readers, measurement tools, or guideline collectors.
-- `Stop Hooks / Reflection Hooks`: produce read-only warnings, next actions, candidate memories, and candidate skill patches.
-- `Candidate Validation Gate`: blocks unreviewed candidate rules from becoming formal medical skills.
+- `Tool Router`: maps knowledge visual protocols to VLM localization, MedSAM2, mask readers, measurement tools, or guideline collectors.
+- `Stop Hooks / Reflection Hooks`: produce read-only warnings, next actions, candidate memories, and candidate knowledge patches.
+- `Candidate Validation Gate`: blocks unreviewed candidate rules from becoming formal medical knowledge.
 
 See:
 
@@ -76,7 +76,7 @@ llm/          OpenAI-compatible model client and prompt runner
 memory/       JSON memory store, evidence bundles, audit and runtime traces
 prompts/      Diagnosis, orchestrator, and baseline prompt templates
 scripts/      Demos, evaluation scripts, dataset probes, MedSAM2 wrappers
-skills/       Disease skills with guideline sources and visual protocols
+knowledge/       Disease knowledge with guideline sources and visual protocols
 tests/        Unit and integration tests
 tools/        Guideline, visual, segmentation, measurement, and routing tools
 web/          Static frontend
@@ -89,16 +89,16 @@ Generated outputs and local medical data are intentionally ignored by git:
 - DICOM/NIfTI files and model weights
 - `.env*` local secret files
 
-## Supported Skills
+## Supported Knowledge
 
-Current formal skill files:
+Current formal knowledge files:
 
-- `skills/femoral_head_necrosis.yaml`
-- `skills/diffuse_glioma_brats.yaml`
-- `skills/idiopathic_pulmonary_fibrosis_hrct.yaml`
-- `skills/pneumonia_chest_xray.yaml`
+- `knowledge/femoral_head_necrosis.yaml`
+- `knowledge/diffuse_glioma_brats.yaml`
+- `knowledge/idiopathic_pulmonary_fibrosis_hrct.yaml`
+- `knowledge/pneumonia_chest_xray.yaml`
 
-The `.yaml` extension is used for skill files, but the current files are JSON-compatible payloads loaded by the standard `json` module.
+The `.yaml` extension is used for knowledge files, but the current files are JSON-compatible payloads loaded by the standard `json` module.
 
 ## Requirements
 
@@ -198,7 +198,7 @@ python app.py \
   --risk-factor "alcohol use"
 ```
 
-For an explicit disease skill:
+For an explicit disease knowledge:
 
 ```bash
 python app.py \
@@ -230,9 +230,9 @@ Other useful routes:
 - `GET /health`
 - `GET /v1/readiness`
 - `POST /v1/upload?filename=image.png`
-- `GET /v1/skills`
-- `GET /v1/skills/{skill_key}`
-- `POST /v1/skills/{skill_key}/review-draft`
+- `GET /v1/knowledge`
+- `GET /v1/knowledge/{knowledge_key}`
+- `POST /v1/knowledge/{knowledge_key}/review-draft`
 - `GET /v1/memory/cases`
 - `GET /v1/memory/cases/{case_id}`
 - `GET /v1/memory/cases/{case_id}/evidence-bundle`
@@ -240,7 +240,7 @@ Other useful routes:
 - `GET /v1/demo/public-safe`
 - `POST /v1/demo/public-safe/qa`
 - `GET /v1/demo/standard`
-- `POST /v1/baseline/image-prompt-skill`
+- `POST /v1/baseline/image-prompt-knowledge`
 
 ## Useful Demos and Evaluations
 
@@ -268,10 +268,10 @@ Baseline prompt evaluation:
 python -m scripts.baseline_reasoning_eval
 ```
 
-Image + prompt + skill baseline:
+Image + prompt + knowledge baseline:
 
 ```bash
-python -m scripts.image_prompt_skill_baseline \
+python -m scripts.image_prompt_knowledge_baseline \
   --image /path/to/image.png \
   --message "evaluate this image" \
   --disease-key femoral_head_necrosis \
@@ -280,10 +280,10 @@ python -m scripts.image_prompt_skill_baseline \
 
 This is the reusable three-level Codex/VLM workflow. It runs `simple_prompt`,
 `workflow_prompt`, and `fewshot_prompt` on the same image, prompt, and disease
-skill, then writes:
+knowledge, then writes:
 
-- `image_prompt_skill_baseline.json`: raw three-level outputs and metrics.
-- `image_prompt_skill_baseline.md`: compact comparison table.
+- `image_prompt_knowledge_baseline.json`: raw three-level outputs and metrics.
+- `image_prompt_knowledge_baseline.md`: compact comparison table.
 - `中文结论.md`: Chinese conclusion, level explanations, and boundary versus
   the MedScope Agent pipeline.
 
@@ -303,7 +303,7 @@ python -m scripts.prepare_public_demo_fixture \
 
 The suite writes a synthetic, non-patient hip X-ray-like PNG and deterministic
 service artifacts for response, evidence bundle, memory audit, and follow-up QA.
-Use it to test upload, routing, and the FHN skill path without private
+Use it to test upload, routing, and the FHN knowledge path without private
 DICOM/NIfTI files. It is not a clinical image or a segmentation benchmark.
 It does not prove lesion detection quality.
 After starting the HTTP server, the same suite is available at
@@ -316,7 +316,7 @@ bounded to the generated demo artifact instead of live case memory.
 No-mask visual pipeline:
 
 ```bash
-python -m scripts.no_mask_skill_visual_pipeline_demo \
+python -m scripts.no_mask_knowledge_visual_pipeline_demo \
   --image /path/to/xray.png \
   --message "evaluate femoral head necrosis"
 ```
@@ -363,7 +363,7 @@ node --check web/app.js
 Strengths:
 
 - The core clinical boundary is clear: the diagnosis agent consumes structured evidence and does not inspect raw pixels.
-- The skill contract explicitly separates `guideline_based` skills from `data_mined_hypothesis` skills.
+- The knowledge contract explicitly separates `guideline_based` knowledge from `data_mined_hypothesis` knowledge.
 - The memory layer is useful for replay, QA, audit, and evidence-bundle inspection.
 - The visual pipeline already supports multiple modes: reference masks, VLM-only observations, VLM-plus-segmenter candidates, and MedSAM2-compatible runners.
 - Visual backends declare interface contracts for VLM-only observation, VLM-plus-segmenter candidate masks, and specialist segmenters.
@@ -375,8 +375,8 @@ Important limitations:
 - Real segmentation quality is not solved by the framework itself. MedSAM2 and VLM localization are routed and audited, but disease-specific segmentation quality still needs model validation.
 - Several demos depend on ignored local artifacts under `output/` or `data/external/`.
 - Dependency groups are now declared in `pyproject.toml`; there is still no lockfile, so exact reproducibility across machines is not pinned.
-- Skill review and candidate promotion are intentionally blocked from updating formal skills automatically.
-- Benchmark results do not update clinical diagnosis or formal skills; they only report validation metrics and quality-gate status.
+- Knowledge review and candidate promotion are intentionally blocked from updating formal knowledge automatically.
+- Benchmark results do not update clinical diagnosis or formal knowledge; they only report validation metrics and quality-gate status.
 - The project is a research prototype, not a clinically validated diagnostic system.
 - Current goal closure explicitly defers real FHN data, real masks, and a metric-ready real benchmark until those data are available. See [docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md](docs/CURRENT_GOAL_CLOSURE_SCOPE_20260605.md).
 

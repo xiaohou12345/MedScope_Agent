@@ -7,9 +7,9 @@ The requirement-to-evidence audit is tracked in
 ## Included In This Goal
 
 - Keep the five-agent clinical evidence pipeline understandable and demonstrable.
-- Keep the FHN evidence-protocol sample path working from skill schema to visual execution strategy, structured evidence bundle, bounded diagnosis report, QA, and memory audit.
+- Keep the FHN evidence-protocol sample path working from knowledge schema to visual execution strategy, structured evidence bundle, bounded diagnosis report, QA, and memory audit.
 - Keep segmentation benchmark infrastructure available as a public-safe, manifest-driven readiness and metric-gate framework.
-- Keep benchmark results blocked from clinical diagnosis, formal skill promotion, or self-evolving guideline updates.
+- Keep benchmark results blocked from clinical diagnosis, formal knowledge promotion, or self-evolving guideline updates.
 - Keep README and Chinese README aligned with the current MVP status and limitations.
 
 ## Deferred From This Goal
@@ -55,7 +55,7 @@ accidentally turn deferred real-data validation into a current-goal requirement.
 Safe to say:
 
 - The MedScope Agent MVP has a working evidence-bounded architecture.
-- The FHN skill path has a structured evidence protocol and visual execution strategy.
+- The FHN knowledge path has a structured evidence protocol and visual execution strategy.
 - The benchmark framework can evaluate real binary lesion masks when they are added.
 - The current public fixture is only a smoke/readiness artifact.
 

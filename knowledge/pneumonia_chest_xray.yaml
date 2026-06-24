@@ -1,9 +1,9 @@
 {
   "disease_name": "成人社区获得性肺炎胸片评估",
-  "skill_id": "pneumonia_chest_xray_v0.1",
+  "knowledge_id": "pneumonia_chest_xray_v0.1",
   "version": "0.1",
   "source_type": "medical_guideline",
-  "skill_type": "guideline_based",
+  "knowledge_type": "guideline_based",
   "evidence_level": "high",
   "source": "2019 ATS/IDSA adult CAP guideline; ACR Appropriateness Criteria Acute Respiratory Illness in Immunocompetent Patients",
   "source_documents": [
@@ -56,7 +56,7 @@
     "source_catalog_path": "data/guidelines/guideline_sources.json"
   },
   "guideline_extraction": {
-    "tool": "static_skill_catalog_sync",
+    "tool": "static_knowledge_catalog_sync",
     "citations": [
       {
         "source_id": "ats_idsa_cap_adults_2019",
@@ -82,8 +82,8 @@
     "missing_url_count": 0,
     "visual_protocol_status": "valid",
     "visual_protocol_errors": [],
-    "formal_skill_status": "formal_ready",
-    "can_enter_formal_guideline_skill": true
+    "formal_knowledge_status": "formal_ready",
+    "can_enter_formal_guideline_knowledge": true
   },
   "clinical_features": {
     "common_symptoms": ["咳嗽", "发热", "咳痰", "呼吸困难", "胸痛"],
@@ -171,7 +171,7 @@
     "suspected_conditions": [
       {
         "disease": "成人社区获得性肺炎",
-        "reason": "患者主诉咳嗽、发热或胸部影像出现浸润影/实变影候选区域时进入该 skill。"
+        "reason": "患者主诉咳嗽、发热或胸部影像出现浸润影/实变影候选区域时进入该 knowledge。"
       }
     ],
     "required_next_images": [

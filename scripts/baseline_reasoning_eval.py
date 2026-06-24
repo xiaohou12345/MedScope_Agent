@@ -42,7 +42,7 @@ DEFAULT_BASELINE_CASE: dict[str, Any] = {
         "patient_message": "右髋疼痛三个月，上传髋关节 X 光，想判断是不是股骨头坏死。",
         "symptoms": ["右髋疼痛", "活动受限"],
     },
-    "disease_skill_summary": {
+    "disease_knowledge_summary": {
         "disease_name": "股骨头坏死",
         "guideline_boundary": [
             "X 光可以观察硬化带、囊性变、塌陷等晚期或二期以后征象。",

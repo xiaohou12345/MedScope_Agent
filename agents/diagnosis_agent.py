@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from agents.report_agent import ReportAgent
-from contracts.medical_contracts import AlignmentPlan, DiagnosisVisualInput, SkillDescriptor, VisualAnalysisResult
+from contracts.medical_contracts import AlignmentPlan, DiagnosisVisualInput, KnowledgeDescriptor, VisualAnalysisResult
 from llm.prompt_runner import PromptRunner
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 
 
 REQUIRED_REPORT_FIELDS = [
@@ -22,30 +22,30 @@ REQUIRED_REPORT_FIELDS = [
 
 
 class DiagnosisDoctorAgent:
-    """Combines disease skills, visual evidence, and symptoms into reports."""
+    """Combines disease knowledge, visual evidence, and symptoms into reports."""
 
     def __init__(
         self,
-        skill_tool: SkillBuilderTool | None = None,
+        knowledge_tool: KnowledgeBuilderTool | None = None,
         report_agent: ReportAgent | None = None,
         prompt_runner: PromptRunner | None = None,
         hypothesis_validation_mode: bool = False,
     ) -> None:
-        self.skill_tool = skill_tool or SkillBuilderTool()
+        self.knowledge_tool = knowledge_tool or KnowledgeBuilderTool()
         self.report_agent = report_agent or ReportAgent()
         self.prompt_runner = prompt_runner
         self.hypothesis_validation_mode = hypothesis_validation_mode
 
-    def load_disease_skill(self, disease_key: str = "femoral_head_necrosis") -> dict[str, Any]:
-        return self.skill_tool.load_guideline_skill(disease_key)
+    def load_disease_knowledge(self, disease_key: str = "femoral_head_necrosis") -> dict[str, Any]:
+        return self.knowledge_tool.load_guideline_knowledge(disease_key)
 
-    def prepare_skill(
+    def prepare_knowledge(
         self,
         disease_key: str,
         disease_name: str,
         observations: list[str],
     ) -> dict[str, Any]:
-        return self.skill_tool.prepare_skill(
+        return self.knowledge_tool.prepare_knowledge(
             disease_key=disease_key,
             disease_name=disease_name,
             observations=observations,
@@ -56,19 +56,19 @@ class DiagnosisDoctorAgent:
         case_id: str,
         patient_info: dict[str, Any],
         visual_result: dict[str, Any],
-        disease_skill: dict[str, Any] | None = None,
+        disease_knowledge: dict[str, Any] | None = None,
         hypothesis_validation_mode: bool | None = None,
         alignment_plan: dict[str, Any] | None = None,
         routing_decision: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        skill = disease_skill or self.load_disease_skill()
+        knowledge = disease_knowledge or self.load_disease_knowledge()
         checked_visual_result = VisualAnalysisResult.from_dict(visual_result).to_dict()
         self._apply_segmentation_usability_gate(checked_visual_result)
         visual_input_contract = DiagnosisVisualInput.from_visual_result(
             checked_visual_result
         ).to_dict()
         evidence = checked_visual_result["visual_evidence"]
-        skill_descriptor = SkillDescriptor.from_skill(skill).to_dict()
+        knowledge_descriptor = KnowledgeDescriptor.from_knowledge(knowledge).to_dict()
         checked_alignment_plan = self._checked_alignment_plan(alignment_plan)
 
         effective_hypothesis_mode = (
@@ -80,30 +80,30 @@ class DiagnosisDoctorAgent:
             report = self._generate_alignment_constrained_report(
                 case_id=case_id,
                 visual_result=checked_visual_result,
-                skill_descriptor=skill_descriptor,
+                knowledge_descriptor=knowledge_descriptor,
                 alignment_plan=checked_alignment_plan,
             )
             self._attach_visual_fact_usage(report, evidence)
-            self._attach_guideline_evidence(report, skill_descriptor)
-            self._attach_clinical_context_bundle(report, patient_info, skill_descriptor)
+            self._attach_guideline_evidence(report, knowledge_descriptor)
+            self._attach_clinical_context_bundle(report, patient_info, knowledge_descriptor)
             self._attach_clinical_hypotheses_assessment(report, routing_decision)
             report["visual_input_contract"] = visual_input_contract
             return report
 
-        if skill_descriptor.get("skill_type") == "data_mined_hypothesis":
+        if knowledge_descriptor.get("knowledge_type") == "data_mined_hypothesis":
             if not effective_hypothesis_mode:
                 raise ValueError(
                     "hypothesis_validation_mode is disabled; "
-                    "data_mined_hypothesis skills cannot run in clinical diagnosis mode"
+                    "data_mined_hypothesis knowledge cannot run in clinical diagnosis mode"
                 )
             report = self._generate_hypothesis_validation_report(
                 case_id=case_id,
                 evidence=evidence,
-                skill=skill,
-                skill_descriptor=skill_descriptor,
+                knowledge=knowledge,
+                knowledge_descriptor=knowledge_descriptor,
             )
             self._attach_visual_fact_usage(report, evidence)
-            self._attach_clinical_context_bundle(report, patient_info, skill_descriptor)
+            self._attach_clinical_context_bundle(report, patient_info, knowledge_descriptor)
             self._attach_clinical_hypotheses_assessment(report, routing_decision)
             report["visual_input_contract"] = visual_input_contract
             return report
@@ -113,15 +113,15 @@ class DiagnosisDoctorAgent:
                 case_id=case_id,
                 patient_info=patient_info,
                 visual_result=checked_visual_result,
-                disease_skill=skill,
-                skill_descriptor=skill_descriptor,
+                disease_knowledge=knowledge,
+                knowledge_descriptor=knowledge_descriptor,
                 alignment_plan=checked_alignment_plan,
             )
             if llm_report:
                 self._apply_alignment_constraints(llm_report, checked_alignment_plan)
                 self._attach_visual_fact_usage(llm_report, evidence)
-                self._attach_guideline_evidence(llm_report, skill_descriptor)
-                self._attach_clinical_context_bundle(llm_report, patient_info, skill_descriptor)
+                self._attach_guideline_evidence(llm_report, knowledge_descriptor)
+                self._attach_clinical_context_bundle(llm_report, patient_info, knowledge_descriptor)
                 self._attach_clinical_hypotheses_assessment(llm_report, routing_decision)
                 llm_report["visual_input_contract"] = visual_input_contract
                 return llm_report
@@ -132,14 +132,14 @@ class DiagnosisDoctorAgent:
             case_id=case_id,
             patient_info=patient_info,
             evidence=evidence,
-            skill_descriptor=skill_descriptor,
+            knowledge_descriptor=knowledge_descriptor,
         )
         if fallback_reason:
             report["llm_fallback_reason"] = fallback_reason
         self._apply_alignment_constraints(report, checked_alignment_plan)
         self._attach_visual_fact_usage(report, evidence)
-        self._attach_guideline_evidence(report, skill_descriptor)
-        self._attach_clinical_context_bundle(report, patient_info, skill_descriptor)
+        self._attach_guideline_evidence(report, knowledge_descriptor)
+        self._attach_clinical_context_bundle(report, patient_info, knowledge_descriptor)
         self._attach_clinical_hypotheses_assessment(report, routing_decision)
         report["visual_input_contract"] = visual_input_contract
         return report
@@ -148,9 +148,9 @@ class DiagnosisDoctorAgent:
         self,
         report: dict[str, Any],
         patient_info: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
     ) -> None:
-        bundle = self._build_clinical_context_bundle(patient_info, skill_descriptor)
+        bundle = self._build_clinical_context_bundle(patient_info, knowledge_descriptor)
         report["clinical_context_bundle"] = bundle
         assessment = report.get("clinical_context_assessment")
         if isinstance(assessment, dict):
@@ -159,33 +159,33 @@ class DiagnosisDoctorAgent:
     def _attach_guideline_evidence(
         self,
         report: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
     ) -> None:
-        if skill_descriptor.get("skill_type") != "guideline_based":
+        if knowledge_descriptor.get("knowledge_type") != "guideline_based":
             return
-        evidence = self._build_guideline_evidence(skill_descriptor)
+        evidence = self._build_guideline_evidence(knowledge_descriptor)
         if not evidence["citations"] and not evidence["source_documents"]:
             return
         report["guideline_evidence"] = evidence
         report["指南依据"] = evidence["citations"] or evidence["source_documents"]
 
-    def _build_guideline_evidence(self, skill_descriptor: dict[str, Any]) -> dict[str, Any]:
-        extraction = skill_descriptor.get("guideline_extraction") or {}
-        source = skill_descriptor.get("guideline_source") or {}
+    def _build_guideline_evidence(self, knowledge_descriptor: dict[str, Any]) -> dict[str, Any]:
+        extraction = knowledge_descriptor.get("guideline_extraction") or {}
+        source = knowledge_descriptor.get("guideline_source") or {}
         citations = self._dedupe_citations(list(extraction.get("citations") or []))
         source_documents = [
             dict(document)
-            for document in skill_descriptor.get("source_documents") or []
+            for document in knowledge_descriptor.get("source_documents") or []
             if isinstance(document, dict)
         ]
         source_priority = [
             dict(source_entry)
-            for source_entry in skill_descriptor.get("source_priority") or []
+            for source_entry in knowledge_descriptor.get("source_priority") or []
             if isinstance(source_entry, dict)
         ]
         conflicts = [
             dict(conflict)
-            for conflict in skill_descriptor.get("guideline_conflicts") or []
+            for conflict in knowledge_descriptor.get("guideline_conflicts") or []
             if isinstance(conflict, dict)
         ]
         return {
@@ -194,7 +194,7 @@ class DiagnosisDoctorAgent:
             "source_priority": source_priority,
             "conflicts": conflicts,
             "source_catalog_path": source.get("source_catalog_path"),
-            "quality_control": dict(skill_descriptor.get("quality_control") or {}),
+            "quality_control": dict(knowledge_descriptor.get("quality_control") or {}),
         }
 
     def _attach_visual_fact_usage(
@@ -227,7 +227,7 @@ class DiagnosisDoctorAgent:
                     "status": routing_decision.get("routing_evidence_status")
                     or routing_decision.get("initial_evidence_status")
                     or "requires_evidence_acquisition",
-                    "reason": routing_decision.get("skill_search_reason")
+                    "reason": routing_decision.get("knowledge_search_reason")
                     or routing_decision.get("reason")
                     or "Primary hypothesis selected by orchestrator.",
                 }
@@ -246,7 +246,7 @@ class DiagnosisDoctorAgent:
             "differential_retained": differentials,
             "hypotheses_are_diagnosis": False,
             "role": (
-                "Clinical hypotheses guide skill routing and evidence acquisition; "
+                "Clinical hypotheses guide knowledge routing and evidence acquisition; "
                 "they are not diagnostic evidence by themselves."
             ),
         }
@@ -324,14 +324,14 @@ class DiagnosisDoctorAgent:
         self,
         case_id: str,
         evidence: dict[str, Any],
-        skill: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        knowledge: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
     ) -> dict[str, Any]:
-        rules = list(skill.get("candidate_observation_rules", []))
+        rules = list(knowledge.get("candidate_observation_rules", []))
         visual_findings = list(evidence.get("suspected_visual_findings", []))
         if rules:
             visual_findings.extend(f"候选假设特征：{rule}" for rule in rules)
-        warning = skill.get(
+        warning = knowledge.get(
             "warning",
             "该规则来自数据总结，不等同于正式医学指南，只能作为辅助提示",
         )
@@ -339,7 +339,7 @@ class DiagnosisDoctorAgent:
         visual_payload["suspected_visual_findings"] = visual_findings
         report = self.report_agent.build_report(
             case_id=case_id,
-            diagnostic_tendency=f"科研假设风险提示：{skill['disease_name']} 需要进一步验证",
+            diagnostic_tendency=f"科研假设风险提示：{knowledge['disease_name']} 需要进一步验证",
             staging="该输出不是临床分期；仅用于 hypothesis validation 模式下的科研预警。",
             visual_evidence=visual_payload,
             uncertainty=[
@@ -356,9 +356,9 @@ class DiagnosisDoctorAgent:
                 "如症状持续或进展，应按常规临床路径线下就医。",
             ],
         )
-        report["used_skill"] = skill_descriptor
+        report["used_knowledge"] = knowledge_descriptor
         report["hypothesis_validation_mode"] = "enabled"
-        report["safety_gate"] = dict(skill.get("safety_gate", {}))
+        report["safety_gate"] = dict(knowledge.get("safety_gate", {}))
         return report
 
     def _generate_rule_based_report(
@@ -366,13 +366,13 @@ class DiagnosisDoctorAgent:
         case_id: str,
         patient_info: dict[str, Any],
         evidence: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
     ) -> dict[str, Any]:
-        if skill_descriptor.get("skill_id") == "diffuse_glioma_brats_v0.1":
+        if knowledge_descriptor.get("knowledge_id") == "diffuse_glioma_brats_v0.1":
             return self._generate_glioma_rule_based_report(
                 case_id=case_id,
                 evidence=evidence,
-                skill_descriptor=skill_descriptor,
+                knowledge_descriptor=knowledge_descriptor,
             )
 
         symptoms = patient_info.get("symptoms", [])
@@ -382,7 +382,7 @@ class DiagnosisDoctorAgent:
         bounded_assessment = self._build_bounded_fhn_assessment(
             patient_info=patient_info,
             evidence=evidence,
-            skill_descriptor=skill_descriptor,
+            knowledge_descriptor=knowledge_descriptor,
         )
         fhn_xray_support = [
             finding
@@ -459,7 +459,7 @@ class DiagnosisDoctorAgent:
                 "如疼痛明显或活动受限加重，应尽快线下就医",
             ],
         )
-        report["used_skill"] = skill_descriptor
+        report["used_knowledge"] = knowledge_descriptor
         report.update(bounded_assessment)
         return report
 
@@ -468,7 +468,7 @@ class DiagnosisDoctorAgent:
         *,
         patient_info: dict[str, Any],
         evidence: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
     ) -> dict[str, Any]:
         evidence_items = [
             dict(item)
@@ -493,9 +493,9 @@ class DiagnosisDoctorAgent:
             if missing or nonspecific
             else "legacy_observation"
         )
-        risk_factors = self._clinical_risk_factors(patient_info, skill_descriptor)
+        risk_factors = self._clinical_risk_factors(patient_info, knowledge_descriptor)
         differential = self._bounded_differential_considerations(
-            skill_descriptor=skill_descriptor,
+            knowledge_descriptor=knowledge_descriptor,
             nonspecific=nonspecific,
             missing=missing,
         )
@@ -522,7 +522,7 @@ class DiagnosisDoctorAgent:
         quantitative_summary = self._quantitative_evidence_summary(evidence_items)
         clinical_context = {
             "provided_risk_factors": risk_factors,
-            "missing_clinical_context": self._missing_clinical_context(patient_info, skill_descriptor),
+            "missing_clinical_context": self._missing_clinical_context(patient_info, knowledge_descriptor),
             "can_confirm_without_imaging": False,
             "role": "clinical risk changes suspicion level only; it cannot confirm ONFH without imaging evidence.",
             "structured_context": self._structured_clinical_context(patient_info),
@@ -530,7 +530,7 @@ class DiagnosisDoctorAgent:
         }
         clinical_context_bundle = self._build_clinical_context_bundle(
             patient_info,
-            skill_descriptor,
+            knowledge_descriptor,
         )
         missing_evidence = [
             item.get("visual_observation", {}).get("reason") or item.get("target")
@@ -755,7 +755,7 @@ class DiagnosisDoctorAgent:
     def _build_clinical_context_bundle(
         self,
         patient_info: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
     ) -> dict[str, Any]:
         raw_values: list[str] = []
         source_fields: list[str] = []
@@ -783,8 +783,8 @@ class DiagnosisDoctorAgent:
             source = "structured_patient_info"
         else:
             source = "missing"
-        provided = self._clinical_risk_factors(patient_info, skill_descriptor)
-        missing = self._missing_clinical_context(patient_info, skill_descriptor)
+        provided = self._clinical_risk_factors(patient_info, knowledge_descriptor)
+        missing = self._missing_clinical_context(patient_info, knowledge_descriptor)
         source_trace = {
             "source_fields": source_fields,
             "structured_context_source": structured.get("source") if structured else "missing",
@@ -818,7 +818,7 @@ class DiagnosisDoctorAgent:
     def _clinical_risk_factors(
         self,
         patient_info: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
     ) -> list[str]:
         provided = []
         structured = self._structured_clinical_context(patient_info)
@@ -843,7 +843,7 @@ class DiagnosisDoctorAgent:
             "hematologic_disease": ["血液", "sickle", "镰状"],
             "autoimmune_disease": ["自身免疫", "autoimmune"],
         }
-        protocol = skill_descriptor.get("clinical_context_protocol") or {}
+        protocol = knowledge_descriptor.get("clinical_context_protocol") or {}
         for factor in protocol.get("risk_factors") or []:
             factor = str(factor)
             if factor in structured_absent:
@@ -858,10 +858,10 @@ class DiagnosisDoctorAgent:
     def _missing_clinical_context(
         self,
         patient_info: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
     ) -> list[str]:
-        protocol = skill_descriptor.get("clinical_context_protocol") or {}
-        provided = set(self._clinical_risk_factors(patient_info, skill_descriptor))
+        protocol = knowledge_descriptor.get("clinical_context_protocol") or {}
+        provided = set(self._clinical_risk_factors(patient_info, knowledge_descriptor))
         known_absent = set(self._absent_structured_risk_factors(patient_info))
         return [
             str(factor)
@@ -895,11 +895,11 @@ class DiagnosisDoctorAgent:
     def _bounded_differential_considerations(
         self,
         *,
-        skill_descriptor: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
         nonspecific: list[dict[str, Any]],
         missing: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        protocol = skill_descriptor.get("differential_diagnosis_protocol") or {}
+        protocol = knowledge_descriptor.get("differential_diagnosis_protocol") or {}
         considerations = []
         for candidate in protocol.get("candidates") or []:
             if not isinstance(candidate, dict):
@@ -1151,7 +1151,7 @@ class DiagnosisDoctorAgent:
         self,
         case_id: str,
         visual_result: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
         alignment_plan: dict[str, Any],
     ) -> dict[str, Any]:
         image_context = alignment_plan.get("image_context") or {}
@@ -1179,7 +1179,7 @@ class DiagnosisDoctorAgent:
             f"当前上传图像识别为 {image_context.get('modality', visual_result.get('modality', 'unknown'))} / {image_context.get('body_part', visual_result.get('body_part', 'unknown'))}",
             suspected_text or "症状和图像线索提示存在疑似疾病方向，但证据不足。",
         ]
-        report["used_skill"] = skill_descriptor
+        report["used_knowledge"] = knowledge_descriptor
         report["alignment_plan"] = alignment_plan
         return report
 
@@ -1226,7 +1226,7 @@ class DiagnosisDoctorAgent:
         self,
         case_id: str,
         evidence: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
     ) -> dict[str, Any]:
         measurements = evidence.get("measurements") or {}
         whole_tumor_volume = measurements.get("whole_tumor_volume_ml")
@@ -1260,7 +1260,7 @@ class DiagnosisDoctorAgent:
                 "如出现进行性头痛、癫痫或神经功能缺损，应尽快线下就医",
             ],
         )
-        report["used_skill"] = skill_descriptor
+        report["used_knowledge"] = knowledge_descriptor
         return report
 
     def _visual_protocol_uncertainty(self, evidence: dict[str, Any]) -> list[str]:
@@ -1330,8 +1330,8 @@ class DiagnosisDoctorAgent:
         case_id: str,
         patient_info: dict[str, Any],
         visual_result: dict[str, Any],
-        disease_skill: dict[str, Any],
-        skill_descriptor: dict[str, Any],
+        disease_knowledge: dict[str, Any],
+        knowledge_descriptor: dict[str, Any],
         alignment_plan: dict[str, Any],
     ) -> tuple[dict[str, Any] | None, str | None]:
         try:
@@ -1341,7 +1341,7 @@ class DiagnosisDoctorAgent:
                 user_payload={
                     "case_id": case_id,
                     "patient_info": patient_info,
-                    "disease_skill": disease_skill,
+                    "disease_knowledge": disease_knowledge,
                     "visual_result": visual_result,
                     "alignment_plan": alignment_plan,
                     "required_report_fields": REQUIRED_REPORT_FIELDS,
@@ -1356,7 +1356,7 @@ class DiagnosisDoctorAgent:
             self._validate_llm_against_alignment_plan(report, alignment_plan)
             report["case_id"] = case_id
             report["diagnostic_tendency"] = report["诊断倾向"]
-            report["used_skill"] = skill_descriptor
+            report["used_knowledge"] = knowledge_descriptor
             return report, None
         except (JSONDecodeError, TypeError) as exc:
             return None, f"invalid llm json: {exc}"

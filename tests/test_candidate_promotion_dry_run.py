@@ -107,9 +107,9 @@ class CandidatePromotionDryRunTest(unittest.TestCase):
             )
             self.assertEqual(
                 dry_run["promotion_proposals"][0]["proposed_artifact"],
-                "candidate_skill_patch",
+                "candidate_knowledge_patch",
             )
-            self.assertFalse(dry_run["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(dry_run["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(dry_run["runtime_safety"]["formal_guideline_updated"])
             self.assertFalse(dry_run["runtime_safety"]["diagnosis_report_updated"])
             self.assertTrue((root / "out" / "candidate_promotion_dry_run.json").exists())
@@ -117,7 +117,7 @@ class CandidatePromotionDryRunTest(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn("proposal_only", markdown)
-            self.assertIn("formal_skill_updated=false", markdown)
+            self.assertIn("formal_knowledge_updated=false", markdown)
 
 
 if __name__ == "__main__":

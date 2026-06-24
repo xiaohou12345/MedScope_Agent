@@ -1,9 +1,9 @@
 {
   "disease_name": "成人弥漫性胶质瘤",
-  "skill_id": "diffuse_glioma_brats_v0.1",
+  "knowledge_id": "diffuse_glioma_brats_v0.1",
   "version": "0.1",
   "source_type": "medical_guideline",
-  "skill_type": "guideline_based",
+  "knowledge_type": "guideline_based",
   "evidence_level": "high",
   "source": "EANO adult diffuse glioma guideline; ESTRO-EANO glioblastoma target delineation guideline; BraTS annotation convention",
   "source_documents": [
@@ -28,7 +28,7 @@
     "source_catalog_path": "data/guidelines/guideline_sources.json"
   },
   "guideline_extraction": {
-    "tool": "static_skill_catalog_sync",
+    "tool": "static_knowledge_catalog_sync",
     "citations": [
       {
         "source_id": "eano_diffuse_glioma_2021",
@@ -131,7 +131,7 @@
     "suspected_conditions": [
       {
         "disease": "成人弥漫性胶质瘤",
-        "reason": "患者描述或图像路径匹配胶质瘤 skill。"
+        "reason": "患者描述或图像路径匹配胶质瘤 knowledge。"
       }
     ],
     "required_next_images": [

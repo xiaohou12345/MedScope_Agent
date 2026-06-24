@@ -9,7 +9,7 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 from tools.nifti_mask_reader_tool import NibabelLoader
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 from tools.vision_prompt_generator import OpenAICompatibleVisionClient, VisionPromptGenerator
 
 
@@ -40,14 +40,14 @@ def run_brats_vlm_prompt_demo(
         slice_index=selected_slice,
         output_path=slice_png_path,
     )
-    skill = SkillBuilderTool().load_guideline_skill("diffuse_glioma_brats")
+    knowledge = KnowledgeBuilderTool().load_guideline_knowledge("diffuse_glioma_brats")
     using_default_client = client is None
     try:
         prompt_result = VisionPromptGenerator(
             client=client or OpenAICompatibleVisionClient()
         ).generate(
             image_path=slice_png_path,
-            disease_skill=_prompt_skill(skill),
+            disease_knowledge=_prompt_knowledge(knowledge),
             patient_message=patient_message,
         )
         real_call_attempted = using_default_client
@@ -170,9 +170,9 @@ def _write_nifti_slice_png(
     return output_path
 
 
-def _prompt_skill(skill: dict[str, Any]) -> dict[str, Any]:
-    prompt_skill = dict(skill)
-    visual_protocol = dict(skill.get("visual_protocol") or {})
+def _prompt_knowledge(knowledge: dict[str, Any]) -> dict[str, Any]:
+    prompt_knowledge = dict(knowledge)
+    visual_protocol = dict(knowledge.get("visual_protocol") or {})
     visual_protocol["finding_targets"] = [
         {
             "target": "whole_tumor",
@@ -180,8 +180,8 @@ def _prompt_skill(skill: dict[str, Any]) -> dict[str, Any]:
             "measurements": ["whole_tumor_volume_ml"],
         }
     ]
-    prompt_skill["visual_protocol"] = visual_protocol
-    return prompt_skill
+    prompt_knowledge["visual_protocol"] = visual_protocol
+    return prompt_knowledge
 
 
 def _build_medsam2_prompt(

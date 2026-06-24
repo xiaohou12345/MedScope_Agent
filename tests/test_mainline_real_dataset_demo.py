@@ -31,7 +31,7 @@ class MainlineRealDatasetDemoTest(unittest.TestCase):
             self.assertEqual(result["manifest_validation"]["status"], "ok")
             self.assertEqual(result["prompt_generation"]["status"], "ok")
             self.assertEqual(result["vision_ground_truth"]["status"], "ok")
-            self.assertEqual(result["end_to_end"]["routing_decision"]["selected_skill"], "diffuse_glioma_brats")
+            self.assertEqual(result["end_to_end"]["routing_decision"]["selected_knowledge"], "diffuse_glioma_brats")
             self.assertEqual(result["end_to_end"]["routing_decision"]["selected_vision_mode"], "ground_truth")
             self.assertTrue(Path(result["summary_path"]).exists())
             self.assertTrue(Path(result["run_markdown_path"]).exists())

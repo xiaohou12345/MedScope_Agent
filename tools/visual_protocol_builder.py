@@ -5,19 +5,19 @@ from typing import Any
 
 
 class VisualProtocolBuilder:
-    """Builds missing visual_protocol fields from extracted guideline skill fields."""
+    """Builds missing visual_protocol fields from extracted guideline knowledge fields."""
 
-    def build(self, skill: dict[str, Any]) -> dict[str, Any]:
-        protocol = dict(skill.get("visual_protocol") or {})
-        required_image_views = self._as_list(skill.get("required_image_views"))
-        vision_agent_tasks = skill.get("vision_agent_tasks") or {}
+    def build(self, knowledge: dict[str, Any]) -> dict[str, Any]:
+        protocol = dict(knowledge.get("visual_protocol") or {})
+        required_image_views = self._as_list(knowledge.get("required_image_views"))
+        vision_agent_tasks = knowledge.get("vision_agent_tasks") or {}
         measurements = self._as_list(
             protocol.get("measurements")
             or vision_agent_tasks.get("quantitative_features")
         )
 
-        protocol.setdefault("disease_target", self._disease_target(skill))
-        protocol.setdefault("clinical_focus", f"{skill.get('disease_name', '目标疾病')}影像评估")
+        protocol.setdefault("disease_target", self._disease_target(knowledge))
+        protocol.setdefault("clinical_focus", f"{knowledge.get('disease_name', '目标疾病')}影像评估")
 
         imaging_modalities = self._imaging_modalities(
             required_image_views=required_image_views,
@@ -43,11 +43,11 @@ class VisualProtocolBuilder:
             protocol["alignment_tasks"] = self._alignment_tasks(required_modalities)
 
         if not protocol.get("suspected_conditions"):
-            disease_name = str(skill.get("disease_name") or protocol["disease_target"])
+            disease_name = str(knowledge.get("disease_name") or protocol["disease_target"])
             protocol["suspected_conditions"] = [
                 {
                     "disease": disease_name,
-                    "reason": "患者描述或图像线索匹配当前 guideline skill。",
+                    "reason": "患者描述或图像线索匹配当前 guideline knowledge。",
                 }
             ]
 
@@ -55,7 +55,7 @@ class VisualProtocolBuilder:
             protocol["required_next_images"] = [
                 {
                     "modality": self._next_image_modality(required_image_views, required_modalities),
-                    "region": self._region(skill),
+                    "region": self._region(knowledge),
                     "reason": "补充满足当前 visual_protocol 的关键影像后，才能完成缺失视觉证据评估。",
                 }
             ]
@@ -64,30 +64,30 @@ class VisualProtocolBuilder:
         diagnosis_scope.setdefault(
             "allowed",
             [
-                "只分析当前图像和 skill 支持的视觉证据",
+                "只分析当前图像和 knowledge 支持的视觉证据",
                 "说明缺失影像导致的不确定性",
                 "给出下一步所需影像检查",
             ],
         )
         diagnosis_scope.setdefault(
             "blocked",
-            self._blocked_scope(skill, required_image_views),
+            self._blocked_scope(knowledge, required_image_views),
         )
         protocol["diagnosis_scope"] = diagnosis_scope
 
         if not protocol.get("insufficiency_rules"):
-            rules = self._insufficiency_rules(skill, required_image_views)
+            rules = self._insufficiency_rules(knowledge, required_image_views)
             if rules:
                 protocol["insufficiency_rules"] = rules
 
         return protocol
 
-    def _disease_target(self, skill: dict[str, Any]) -> str:
-        extraction = skill.get("guideline_extraction") or {}
+    def _disease_target(self, knowledge: dict[str, Any]) -> str:
+        extraction = knowledge.get("guideline_extraction") or {}
         if extraction.get("disease_key"):
             return str(extraction["disease_key"])
-        skill_id = str(skill.get("skill_id") or "guideline_skill")
-        return re.sub(r"_guideline_v[\d.]+$", "", skill_id)
+        knowledge_id = str(knowledge.get("knowledge_id") or "guideline_knowledge")
+        return re.sub(r"_guideline_v[\d.]+$", "", knowledge_id)
 
     def _imaging_modalities(
         self,
@@ -169,12 +169,12 @@ class VisualProtocolBuilder:
                 return broad
         return "medical image"
 
-    def _region(self, skill: dict[str, Any]) -> str:
+    def _region(self, knowledge: dict[str, Any]) -> str:
         text = " ".join(
             [
-                str(skill.get("disease_name") or ""),
-                " ".join(self._as_list((skill.get("visual_targets") or {}).get("anatomy"))),
-                " ".join(self._as_list(skill.get("required_image_views"))),
+                str(knowledge.get("disease_name") or ""),
+                " ".join(self._as_list((knowledge.get("visual_targets") or {}).get("anatomy"))),
+                " ".join(self._as_list(knowledge.get("required_image_views"))),
             ]
         ).lower()
         if any(marker in text for marker in ["股骨头", "髋", "hip", "femoral"]):
@@ -183,12 +183,12 @@ class VisualProtocolBuilder:
             return "brain"
         return "target region"
 
-    def _blocked_scope(self, skill: dict[str, Any], required_image_views: list[str]) -> list[str]:
+    def _blocked_scope(self, knowledge: dict[str, Any], required_image_views: list[str]) -> list[str]:
         blocked = [
             "不得把缺失影像证据解释为阴性",
             "不得从 missing_input 推断正常",
         ]
-        text = self._skill_text(skill)
+        text = self._knowledge_text(knowledge)
         if "x 光可无明显异常" in text or ("x" in text.lower() and "mri" in text.lower()):
             blocked.append("不能将 X 光未见异常解释为无病")
         if "分子" in text or "组织" in text or "histomolecular" in text.lower():
@@ -199,10 +199,10 @@ class VisualProtocolBuilder:
 
     def _insufficiency_rules(
         self,
-        skill: dict[str, Any],
+        knowledge: dict[str, Any],
         required_image_views: list[str],
     ) -> list[dict[str, str]]:
-        text = self._skill_text(skill)
+        text = self._knowledge_text(knowledge)
         has_xray = any(self._broad_modality(view) == "X-ray" for view in required_image_views)
         has_mri = any(self._broad_modality(view) == "MRI" for view in required_image_views)
         if has_xray and has_mri and ("早期" in text or "x 光可无明显异常" in text):
@@ -242,8 +242,8 @@ class VisualProtocolBuilder:
         normalized = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "_", text).strip("_")
         return normalized.lower() or "target"
 
-    def _skill_text(self, skill: dict[str, Any]) -> str:
-        return str(skill)
+    def _knowledge_text(self, knowledge: dict[str, Any]) -> str:
+        return str(knowledge)
 
     def _as_list(self, value: Any) -> list[str]:
         if value is None:

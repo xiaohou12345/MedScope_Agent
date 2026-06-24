@@ -7,7 +7,7 @@ from typing import Any
 
 from tools.guideline_search_tool import GuidelineSearchTool
 from tools.guideline_source_import_tool import GuidelineSourceImportTool
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 
 
 DEFAULT_OUTPUT_DIR = Path("output/fake/guideline_import_demo")
@@ -53,49 +53,49 @@ def ensure_default_raw_guideline(raw_path: Path, overwrite: bool = False) -> Pat
     return raw_path
 
 
-def run_guideline_import_to_skill(
+def run_guideline_import_to_knowledge(
     raw_path: Path | str,
     catalog_path: Path | str,
-    skill_output_path: Path | str,
+    knowledge_output_path: Path | str,
     disease_key: str,
     disease_name: str,
 ) -> dict[str, Any]:
     raw_file = Path(raw_path)
     catalog_file = Path(catalog_path)
-    skill_file = Path(skill_output_path)
+    knowledge_file = Path(knowledge_output_path)
 
     import_result = GuidelineSourceImportTool().import_file(
         raw_path=raw_file,
         catalog_path=catalog_file,
     )
     search_tool = GuidelineSearchTool(source_catalog_path=catalog_file)
-    skill = SkillBuilderTool(
-        skills_dir=skill_file.parent / "_no_existing_skills",
+    knowledge = KnowledgeBuilderTool(
+        knowledges_dir=knowledge_file.parent / "_no_existing_knowledges",
         guideline_search_tool=search_tool,
-    ).prepare_skill(
+    ).prepare_knowledge(
         disease_key=disease_key,
         disease_name=disease_name,
         observations=[],
     )
-    skill_file.parent.mkdir(parents=True, exist_ok=True)
-    skill_file.write_text(
-        json.dumps(skill, ensure_ascii=False, indent=2),
+    knowledge_file.parent.mkdir(parents=True, exist_ok=True)
+    knowledge_file.write_text(
+        json.dumps(knowledge, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     return {
         "raw_path": str(raw_file),
         "catalog_path": str(catalog_file),
-        "skill_output_path": str(skill_file),
+        "knowledge_output_path": str(knowledge_file),
         "disease_key": disease_key,
-        "skill_type": skill["skill_type"],
-        "skill_id": skill["skill_id"],
+        "knowledge_type": knowledge["knowledge_type"],
+        "knowledge_id": knowledge["knowledge_id"],
         "imported_source_id": import_result["catalog_entry"]["sources"][0]["source_id"],
     }
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run raw guideline text -> source catalog -> guideline skill demo."
+        description="Run raw guideline text -> source catalog -> guideline knowledge demo."
     )
     parser.add_argument(
         "--raw-path",
@@ -108,9 +108,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output source catalog JSON path.",
     )
     parser.add_argument(
-        "--skill-output-path",
-        default=str(DEFAULT_OUTPUT_DIR / "demo_glioma_guideline_skill.json"),
-        help="Output generated guideline skill JSON path.",
+        "--knowledge-output-path",
+        default=str(DEFAULT_OUTPUT_DIR / "demo_glioma_guideline_knowledge.json"),
+        help="Output generated guideline knowledge JSON path.",
     )
     parser.add_argument("--disease-key", default="demo_glioma_guideline")
     parser.add_argument("--disease-name", default="演示胶质瘤指南")
@@ -128,10 +128,10 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.raw_path),
         overwrite=args.overwrite_raw,
     )
-    result = run_guideline_import_to_skill(
+    result = run_guideline_import_to_knowledge(
         raw_path=raw_path,
         catalog_path=Path(args.catalog_path),
-        skill_output_path=Path(args.skill_output_path),
+        knowledge_output_path=Path(args.knowledge_output_path),
         disease_key=args.disease_key,
         disease_name=args.disease_name,
     )

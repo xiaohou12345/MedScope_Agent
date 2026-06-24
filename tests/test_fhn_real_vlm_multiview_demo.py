@@ -20,7 +20,7 @@ class FakeService:
             "case_id": "case_real_vlm_demo",
             "reply_to_patient": "候选视觉证据已生成。",
             "routing_decision": {
-                "selected_skill": "femoral_head_necrosis",
+                "selected_knowledge": "femoral_head_necrosis",
                 "selected_vision_mode": "real_vlm_validation",
             },
             "visual_evidence_bundle": {

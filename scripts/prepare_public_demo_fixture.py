@@ -19,7 +19,7 @@ def prepare_public_demo_fixture(output_dir: Path | str = DEFAULT_OUTPUT_DIR) -> 
     """Create a deterministic, public-safe demo fixture for fresh clones.
 
     The generated image is synthetic and intentionally not a medical record. It is
-    only meant to exercise upload, routing, skill selection, and bounded evidence
+    only meant to exercise upload, routing, knowledge selection, and bounded evidence
     flow without depending on local private datasets.
     """
 
@@ -34,7 +34,7 @@ def prepare_public_demo_fixture(output_dir: Path | str = DEFAULT_OUTPUT_DIR) -> 
         "patient_message": "右髋疼痛，走路加重，请分析这张髋关节 X 光样例。",
         "image_path": str(image_path),
         "disease_key": "femoral_head_necrosis",
-        "vision_mode": "no_mask_skill",
+        "vision_mode": "no_mask_knowledge",
         "patient_info": {
             "patient_id": "public_demo_patient_001",
             "age": 45,
@@ -144,7 +144,7 @@ def run_public_safe_demo_suite(output_dir: Path | str = DEFAULT_PUBLIC_SUITE_OUT
             },
             "upload_and_routing": {
                 "status": "completed",
-                "selected_skill": response.get("routing_decision", {}).get("selected_skill"),
+                "selected_knowledge": response.get("routing_decision", {}).get("selected_knowledge"),
                 "selected_vision_mode": response.get("routing_decision", {}).get("selected_vision_mode"),
             },
             "visual_evidence": {
@@ -321,7 +321,7 @@ def _render_public_safe_suite_markdown(summary: dict[str, Any]) -> str:
         "",
         f"- status: {summary.get('status')}",
         f"- case_id: `{summary.get('case_id')}`",
-        f"- selected_skill: `{routing.get('selected_skill')}`",
+        f"- selected_knowledge: `{routing.get('selected_knowledge')}`",
         f"- selected_vision_mode: `{routing.get('selected_vision_mode')}`",
         f"- public_safe: {safety.get('public_safe')}",
         f"- not clinical diagnosis: {safety.get('not_clinical_diagnosis')}",

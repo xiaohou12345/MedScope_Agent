@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 
 from PIL import Image
 
-from scripts.no_mask_skill_visual_pipeline_demo import run_no_mask_skill_visual_pipeline_demo
+from scripts.no_mask_knowledge_visual_pipeline_demo import run_no_mask_knowledge_visual_pipeline_demo
 
 
 class SequencedVisionClient:
@@ -304,13 +304,13 @@ class FailingSegmentationTool:
         raise RuntimeError("segmentation backend missing checkpoint")
 
 
-class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
-    def test_pipeline_uses_skill_anatomy_reference_before_finding_segmentation(self):
+class NoMaskKnowledgeVisualPipelineDemoTest(unittest.TestCase):
+    def test_pipeline_uses_knowledge_anatomy_reference_before_finding_segmentation(self):
         with TemporaryDirectory() as tmpdir:
             workdir = Path(tmpdir)
             image_path = workdir / "hip.png"
             Image.new("RGB", (10, 10), "black").save(image_path)
-            skill = {
+            knowledge = {
                 "disease_name": "股骨头坏死",
                 "visual_protocol": {
                     "disease_target": "femoral_head_necrosis",
@@ -340,10 +340,10 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             client = SequencedVisionClient()
             segmentation_tool = FakeSegmentationTool()
 
-            result = run_no_mask_skill_visual_pipeline_demo(
+            result = run_no_mask_knowledge_visual_pipeline_demo(
                 image_path=image_path,
                 output_dir=workdir / "out",
-                disease_skill=skill,
+                disease_knowledge=knowledge,
                 patient_message="髋关节疼痛，上传髋关节X光",
                 client=client,
                 segmentation_tool=segmentation_tool,
@@ -410,7 +410,7 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             workdir = Path(tmpdir)
             image_path = workdir / "hip.png"
             Image.new("RGB", (20, 10), "black").save(image_path)
-            skill = {
+            knowledge = {
                 "disease_name": "股骨头坏死",
                 "visual_protocol": {
                     "disease_target": "femoral_head_necrosis",
@@ -432,10 +432,10 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
                 },
             }
 
-            result = run_no_mask_skill_visual_pipeline_demo(
+            result = run_no_mask_knowledge_visual_pipeline_demo(
                 image_path=image_path,
                 output_dir=workdir / "out",
-                disease_skill=skill,
+                disease_knowledge=knowledge,
                 patient_message="右髋疼痛，上传髋关节X光",
                 client=BilateralVisionClient(),
                 segmentation_tool=PromptBoxSegmentationTool(),
@@ -453,7 +453,7 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             workdir = Path(tmpdir)
             image_path = workdir / "hip.png"
             Image.new("RGB", (20, 10), "black").save(image_path)
-            skill = {
+            knowledge = {
                 "disease_name": "股骨头坏死",
                 "visual_protocol": {
                     "disease_target": "femoral_head_necrosis",
@@ -474,10 +474,10 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
                 },
             }
 
-            result = run_no_mask_skill_visual_pipeline_demo(
+            result = run_no_mask_knowledge_visual_pipeline_demo(
                 image_path=image_path,
                 output_dir=workdir / "out",
-                disease_skill=skill,
+                disease_knowledge=knowledge,
                 patient_message="右髋疼痛，上传髋关节X光",
                 client=SequencedVisionClient(),
                 segmentation_tool=FakeSegmentationTool(),
@@ -499,7 +499,7 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             workdir = Path(tmpdir)
             image_path = workdir / "hip.png"
             Image.new("RGB", (20, 10), "black").save(image_path)
-            skill = {
+            knowledge = {
                 "disease_name": "股骨头坏死",
                 "visual_protocol": {
                     "disease_target": "femoral_head_necrosis",
@@ -514,10 +514,10 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
                 },
             }
 
-            result = run_no_mask_skill_visual_pipeline_demo(
+            result = run_no_mask_knowledge_visual_pipeline_demo(
                 image_path=image_path,
                 output_dir=workdir / "out",
-                disease_skill=skill,
+                disease_knowledge=knowledge,
                 patient_message="右髋疼痛，上传髋关节X光",
                 client=SingleLeftFindingVisionClient(),
                 segmentation_tool=OutsidePromptSegmentationTool(),
@@ -544,7 +544,7 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             workdir = Path(tmpdir)
             image_path = workdir / "hip.png"
             Image.new("RGB", (20, 10), "black").save(image_path)
-            skill = {
+            knowledge = {
                 "disease_name": "股骨头坏死",
                 "visual_protocol": {
                     "disease_target": "femoral_head_necrosis",
@@ -561,10 +561,10 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
                 },
             }
 
-            result = run_no_mask_skill_visual_pipeline_demo(
+            result = run_no_mask_knowledge_visual_pipeline_demo(
                 image_path=image_path,
                 output_dir=workdir / "out",
-                disease_skill=skill,
+                disease_knowledge=knowledge,
                 patient_message="右髋疼痛，上传髋关节X光",
                 client=SingleLeftFindingVisionClient(),
                 segmentation_tool=FailingSegmentationTool(),
@@ -590,7 +590,7 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             workdir = Path(tmpdir)
             image_path = workdir / "hip.png"
             Image.new("RGB", (20, 10), "black").save(image_path)
-            skill = {
+            knowledge = {
                 "disease_name": "股骨头坏死",
                 "visual_protocol": {
                     "disease_target": "femoral_head_necrosis",
@@ -618,10 +618,10 @@ class NoMaskSkillVisualPipelineDemoTest(unittest.TestCase):
             client = MixedExecutionModeVisionClient()
             segmentation_tool = PromptBoxSegmentationTool()
 
-            result = run_no_mask_skill_visual_pipeline_demo(
+            result = run_no_mask_knowledge_visual_pipeline_demo(
                 image_path=image_path,
                 output_dir=workdir / "out",
-                disease_skill=skill,
+                disease_knowledge=knowledge,
                 patient_message="右髋疼痛，上传髋关节X光",
                 client=client,
                 segmentation_tool=segmentation_tool,

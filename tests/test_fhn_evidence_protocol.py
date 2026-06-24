@@ -6,9 +6,9 @@ from tempfile import TemporaryDirectory
 from agents.diagnosis_agent import DiagnosisDoctorAgent
 from agents.gaodoctor_agent import GaoDoctorAgent
 from agents.vision_agent import VisionAgent
-from contracts.medical_contracts import SkillDescriptor
+from contracts.medical_contracts import KnowledgeDescriptor
 from memory.memory_manager import MemoryManager
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 from tools.visual_tool_router import VisualToolRouter
 
 
@@ -75,9 +75,9 @@ class ProtocolTraceVisionAgent:
 
 class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
     def setUp(self):
-        self.skill = SkillBuilderTool().load_guideline_skill("femoral_head_necrosis")
+        self.knowledge = KnowledgeBuilderTool().load_guideline_knowledge("femoral_head_necrosis")
 
-    def test_fhn_skill_exposes_multidimensional_evidence_protocol(self):
+    def test_fhn_knowledge_exposes_multidimensional_evidence_protocol(self):
         for key in [
             "imaging_evidence_protocol",
             "quantitative_evidence_protocol",
@@ -85,9 +85,9 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
             "clinical_context_protocol",
             "integrated_reasoning_protocol",
         ]:
-            self.assertIn(key, self.skill)
+            self.assertIn(key, self.knowledge)
 
-        imaging_protocol = self.skill["imaging_evidence_protocol"]
+        imaging_protocol = self.knowledge["imaging_evidence_protocol"]
         targets = {item["target"]: item for item in imaging_protocol["finding_targets"]}
         self.assertEqual(targets["sclerotic_band"]["execution_mode"], "vlm_plus_segmenter")
         self.assertEqual(targets["cystic_change"]["diagnosis_usable_level"], "candidate_support")
@@ -97,7 +97,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
         self.assertEqual(targets["collapse"]["execution_mode"], "measurement_only")
         self.assertEqual(targets["early_osteonecrosis"]["execution_mode"], "insufficient_input")
 
-        quantitative = self.skill["quantitative_evidence_protocol"]
+        quantitative = self.knowledge["quantitative_evidence_protocol"]
         exploratory = {
             item["feature_name"]: item
             for item in quantitative["image_feature_quantification"]
@@ -105,8 +105,8 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
         self.assertEqual(exploratory["trabecular_irregularity_score"]["validation_status"], "requires_validation")
         self.assertFalse(exploratory["trabecular_irregularity_score"]["diagnosis_usable"])
 
-    def test_skill_descriptor_preserves_fhn_protocols_for_memory_and_diagnosis(self):
-        descriptor = SkillDescriptor.from_skill(self.skill).to_dict()
+    def test_knowledge_descriptor_preserves_fhn_protocols_for_memory_and_diagnosis(self):
+        descriptor = KnowledgeDescriptor.from_knowledge(self.knowledge).to_dict()
 
         for key in [
             "imaging_evidence_protocol",
@@ -128,7 +128,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
         )
 
     def test_visual_router_builds_safe_fhn_execution_strategy(self):
-        plan = VisualToolRouter().plan_from_skill(self.skill)
+        plan = VisualToolRouter().plan_from_knowledge(self.knowledge)
         by_target = {item["task"]["target"]: item for item in plan}
 
         self.assertEqual(by_target["sclerotic_band"]["execution_mode"], "vlm_plus_segmenter")
@@ -156,7 +156,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
     def test_vision_agent_uses_imaging_evidence_protocol_for_fhn_runtime_plan(self):
         result = VisionAgent().analyze_with_visual_protocol(
             image_path="output/real/fhn/fhn_pelvis_xray_panel_b.png",
-            disease_skill=self.skill,
+            disease_knowledge=self.knowledge,
         )
         evidence = result["visual_evidence"]
         by_target = {item["target"]: item for item in evidence["evidence_items"]}
@@ -177,7 +177,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
     def test_vision_agent_default_image_entry_uses_fhn_protocol_not_simulated_evidence(self):
         result = VisionAgent().analyze_image(
             image_path="output/real/fhn/fhn_pelvis_xray_panel_b.png",
-            disease_skill=self.skill,
+            disease_knowledge=self.knowledge,
         )
         evidence = result["visual_evidence"]
         by_target = {item["target"]: item for item in evidence["evidence_items"]}
@@ -235,7 +235,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
                     },
                 },
             },
-            self.skill,
+            self.knowledge,
         )
 
         self.assertEqual(bundle["schema_version"], "visual_evidence_bundle.v2")
@@ -276,7 +276,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
                     ],
                 },
             },
-            self.skill,
+            self.knowledge,
         )
 
         by_target = {item["target"]: item for item in bundle["evidence_items"]}
@@ -313,7 +313,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
             )
 
             result = doctor.handle_patient_case(
-                patient_message="右髋疼痛，上传 X 光，请根据股骨头坏死 skill 分析",
+                patient_message="右髋疼痛，上传 X 光，请根据股骨头坏死 knowledge 分析",
                 image_path="output/real/fhn/fhn_pelvis_xray_panel_b.png",
                 patient_info={"symptoms": ["髋关节疼痛"]},
                 disease_key="femoral_head_necrosis",
@@ -335,7 +335,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
             traced_items = evidence_bundle["image_evidence"]["visual_evidence_bundle"]["evidence_items"]
             self.assertEqual(len(traced_items), len(image_bundle["evidence_items"]))
             self.assertEqual(
-                evidence_bundle["skill_evidence"]["used_skill"],
+                evidence_bundle["knowledge_evidence"]["used_knowledge"],
                 "femoral_head_necrosis_v0.1",
             )
 
@@ -390,7 +390,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
                 "risk_factors": ["激素使用史"],
             },
             visual_result=visual_result,
-            disease_skill=self.skill,
+            disease_knowledge=self.knowledge,
         )
 
         for key in [
@@ -477,7 +477,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
                 "clinical_context": "右髋疼痛，长期激素治疗，偶尔饮酒",
             },
             visual_result=visual_result,
-            disease_skill=self.skill,
+            disease_knowledge=self.knowledge,
         )
 
         summary = report["integrated_reasoning_summary"]
@@ -560,7 +560,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
                 },
             },
             visual_result=visual_result,
-            disease_skill=self.skill,
+            disease_knowledge=self.knowledge,
         )
 
         bundle = report["clinical_context_bundle"]
@@ -640,7 +640,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
                 "clinical_context_source": "patient_message",
             },
             visual_result=visual_result,
-            disease_skill=self.skill,
+            disease_knowledge=self.knowledge,
         )
 
         target = report["target_disease_assessment"]
@@ -711,7 +711,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
             case_id="case_fhn_routing_hypotheses",
             patient_info={"symptoms": ["髋关节疼痛"]},
             visual_result=visual_result,
-            disease_skill=self.skill,
+            disease_knowledge=self.knowledge,
             routing_decision=routing_decision,
         )
 
@@ -793,7 +793,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
             case_id="case_fhn_safety",
             patient_info={"symptoms": ["髋关节疼痛"]},
             visual_result=visual_result,
-            disease_skill=self.skill,
+            disease_knowledge=self.knowledge,
         )
 
         quantitative = report["quantitative_evidence_summary"]
@@ -853,7 +853,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
             case_id="case_fhn_candidate_qc",
             patient_info={"symptoms": ["髋关节疼痛"]},
             visual_result=visual_result,
-            disease_skill=self.skill,
+            disease_knowledge=self.knowledge,
         )
 
         assessment = report["target_disease_assessment"]
@@ -911,7 +911,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
             case_id="case_fhn_measurement_gate",
             patient_info={"symptoms": ["髋关节疼痛"]},
             visual_result=visual_result,
-            disease_skill=self.skill,
+            disease_knowledge=self.knowledge,
         )
 
         assessment = report["target_disease_assessment"]

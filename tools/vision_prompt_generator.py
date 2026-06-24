@@ -110,7 +110,7 @@ class VisionPromptGenerator:
         self,
         *,
         image_path: Path | str,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         patient_message: str,
     ) -> dict[str, Any]:
         image = Path(image_path)
@@ -119,7 +119,7 @@ class VisionPromptGenerator:
             image_path=image,
             width=width,
             height=height,
-            disease_skill=disease_skill,
+            disease_knowledge=disease_knowledge,
             patient_message=patient_message,
         )
         content = self.client.chat_with_image(
@@ -135,7 +135,7 @@ class VisionPromptGenerator:
                 width=width,
                 height=height,
                 model_payload=model_payload,
-                skill_required_next_images=user_payload["skill_required_next_images"],
+                knowledge_required_next_images=user_payload["knowledge_required_next_images"],
             )
         except ValueError as exc:
             return self._invalid_result(image, width, height, str(exc), content)
@@ -146,10 +146,10 @@ class VisionPromptGenerator:
         image_path: Path,
         width: int,
         height: int,
-        disease_skill: dict[str, Any],
+        disease_knowledge: dict[str, Any],
         patient_message: str,
     ) -> dict[str, Any]:
-        visual_protocol = disease_skill.get("visual_protocol") or {}
+        visual_protocol = disease_knowledge.get("visual_protocol") or {}
         finding_targets = [
             dict(item)
             for item in visual_protocol.get("finding_targets") or []
@@ -159,12 +159,12 @@ class VisionPromptGenerator:
             "patient_message": patient_message,
             "image_path": str(image_path),
             "image_size": {"width": width, "height": height},
-            "disease_skill": {
-                "disease_name": disease_skill.get("disease_name"),
+            "disease_knowledge": {
+                "disease_name": disease_knowledge.get("disease_name"),
                 "visual_protocol": visual_protocol,
             },
             "requested_finding_targets": finding_targets,
-            "skill_required_next_images": [
+            "knowledge_required_next_images": [
                 dict(item)
                 for item in visual_protocol.get("required_next_images") or []
                 if isinstance(item, dict)
@@ -177,7 +177,7 @@ class VisionPromptGenerator:
                     {
                         "modality": "MRI|CT|X-ray|ultrasound",
                         "region": "body region",
-                        "reason": "why this image is needed by the skill/guideline",
+                        "reason": "why this image is needed by the knowledge/guideline",
                     }
                 ],
                 "suspected_regions": [
@@ -232,7 +232,7 @@ class VisionPromptGenerator:
         width: int,
         height: int,
         model_payload: dict[str, Any],
-        skill_required_next_images: list[dict[str, Any]] | None = None,
+        knowledge_required_next_images: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         regions = model_payload.get("suspected_regions") or []
         if not isinstance(regions, list):
@@ -258,7 +258,7 @@ class VisionPromptGenerator:
         status = "ok" if boxes else "no_suspected_region"
         required_next_images = self._normalized_required_next_images(
             model_payload=model_payload,
-            skill_required_next_images=skill_required_next_images or [],
+            knowledge_required_next_images=knowledge_required_next_images or [],
         )
         needs_next_imaging = bool(model_payload.get("needs_next_imaging")) or bool(required_next_images)
         return {
@@ -339,12 +339,12 @@ class VisionPromptGenerator:
         self,
         *,
         model_payload: dict[str, Any],
-        skill_required_next_images: list[dict[str, Any]],
+        knowledge_required_next_images: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         raw_items = (
             model_payload.get("required_next_images")
             or model_payload.get("recommended_next_images")
-            or skill_required_next_images
+            or knowledge_required_next_images
             or []
         )
         if not isinstance(raw_items, list):

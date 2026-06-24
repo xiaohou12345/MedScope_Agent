@@ -15,6 +15,28 @@ from memory.memory_manager import MemoryManager
 
 
 class LlmRoutingTest(unittest.TestCase):
+    ROUTE_ENV_KEYS = (
+        "MEDSCOPE_ACTIVE_ROUTE",
+        "DMX_MODEL",
+        "DMX_VISION_MODEL",
+        "DMX_BASE_URL",
+        "KY_MODEL",
+        "KY_VISION_MODEL",
+        "KY_BASE_URL",
+    )
+
+    def setUp(self):
+        self._route_env_snapshot = {key: os.environ.get(key) for key in self.ROUTE_ENV_KEYS}
+        for key in self.ROUTE_ENV_KEYS:
+            os.environ.pop(key, None)
+
+    def tearDown(self):
+        for key, value in self._route_env_snapshot.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
     def _save_fact_usage_case(self, memory: MemoryManager, case_id: str) -> None:
         visual_fact_usage = {
             "used": [
@@ -69,10 +91,10 @@ class LlmRoutingTest(unittest.TestCase):
                     + visual_fact_usage["excluded"],
                 },
             },
-            skill_memory={
-                "skill_id": "femoral_head_necrosis_v0.1",
-                "selected_skill": "femoral_head_necrosis",
-                "skill_type": "guideline_based",
+            knowledge_memory={
+                "knowledge_id": "femoral_head_necrosis_v0.1",
+                "selected_knowledge": "femoral_head_necrosis",
+                "knowledge_type": "guideline_based",
             },
             reasoning_memory={
                 "diagnostic_tendency": "疑似股骨头坏死影像表现",
@@ -127,6 +149,40 @@ class LlmRoutingTest(unittest.TestCase):
 
             self.assertEqual(route_log.model_for_active_route(), "deepseek-v4-pro")
             self.assertEqual(route_log.vision_model_for_active_route(), "gpt-5.5")
+
+    def test_api_route_log_allows_environment_override_after_dotenv_load(self):
+        with TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "API_ROUTE_LOG.md"
+            log_path.write_text(
+                "\n".join(
+                    [
+                        "active_route: dmx",
+                        "dmx_model: stale-doc-model",
+                        "dmx_vision_model: stale-doc-vision",
+                        "dmx_base_url: https://stale.example",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            old_values = {
+                key: os.environ.get(key)
+                for key in ("DMX_MODEL", "DMX_VISION_MODEL", "DMX_BASE_URL")
+            }
+            os.environ["DMX_MODEL"] = "gemini-3.5-flash"
+            os.environ["DMX_VISION_MODEL"] = "gemini-3.5-flash"
+            os.environ["DMX_BASE_URL"] = "https://anyaigc.com"
+            try:
+                route_log = ApiRouteLog.from_file(log_path)
+            finally:
+                for key, value in old_values.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+
+            self.assertEqual(route_log.model_for_active_route(), "gemini-3.5-flash")
+            self.assertEqual(route_log.vision_model_for_active_route(), "gemini-3.5-flash")
+            self.assertEqual(route_log.base_url_for_active_route(), "https://anyaigc.com")
 
     def test_openai_client_normalizes_provider_base_url(self):
         route_log = ApiRouteLog(
@@ -270,10 +326,10 @@ class LlmRoutingTest(unittest.TestCase):
                         "segmentation_quality": "ground_truth_nifti",
                     },
                 },
-                skill_memory={
-                    "skill_id": "diffuse_glioma_brats_v0.1",
-                    "selected_skill": "diffuse_glioma_brats",
-                    "skill_type": "guideline_based",
+                knowledge_memory={
+                    "knowledge_id": "diffuse_glioma_brats_v0.1",
+                    "selected_knowledge": "diffuse_glioma_brats",
+                    "knowledge_type": "guideline_based",
                     "guideline_evidence": {
                         "citations": [{"title": "EANO guideline"}],
                     },
@@ -346,10 +402,10 @@ class LlmRoutingTest(unittest.TestCase):
                         "segmentation_quality": "ground_truth_nifti",
                     },
                 },
-                skill_memory={
-                    "skill_id": "diffuse_glioma_brats_v0.1",
-                    "selected_skill": "diffuse_glioma_brats",
-                    "skill_type": "guideline_based",
+                knowledge_memory={
+                    "knowledge_id": "diffuse_glioma_brats_v0.1",
+                    "selected_knowledge": "diffuse_glioma_brats",
+                    "knowledge_type": "guideline_based",
                     "alignment_plan": {
                         "analysis_status": "partial_evidence",
                         "diagnosis_scope": {
@@ -417,10 +473,10 @@ class LlmRoutingTest(unittest.TestCase):
                         "segmentation_quality": "ground_truth_nifti",
                     },
                 },
-                skill_memory={
-                    "skill_id": "diffuse_glioma_brats_v0.1",
-                    "selected_skill": "diffuse_glioma_brats",
-                    "skill_type": "guideline_based",
+                knowledge_memory={
+                    "knowledge_id": "diffuse_glioma_brats_v0.1",
+                    "selected_knowledge": "diffuse_glioma_brats",
+                    "knowledge_type": "guideline_based",
                     "alignment_plan": {
                         "analysis_status": "partial_evidence",
                         "diagnosis_scope": {
@@ -481,9 +537,9 @@ class LlmRoutingTest(unittest.TestCase):
                     "body_part": "hip",
                     "visual_evidence": {"segmentation_quality": "candidate"},
                 },
-                skill_memory={
-                    "skill_id": "femoral_head_necrosis_v0.1",
-                    "selected_skill": "femoral_head_necrosis",
+                knowledge_memory={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
+                    "selected_knowledge": "femoral_head_necrosis",
                 },
                 reasoning_memory={
                     "diagnostic_tendency": "疑似股骨头坏死候选影像表现",
@@ -530,9 +586,9 @@ class LlmRoutingTest(unittest.TestCase):
                     "body_part": "hip",
                     "visual_evidence": {"segmentation_quality": "candidate"},
                 },
-                skill_memory={
-                    "skill_id": "femoral_head_necrosis_v0.1",
-                    "selected_skill": "femoral_head_necrosis",
+                knowledge_memory={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
+                    "selected_knowledge": "femoral_head_necrosis",
                 },
                 reasoning_memory={
                     "diagnostic_tendency": "疑似股骨头坏死候选影像表现",
@@ -618,7 +674,7 @@ class LlmRoutingTest(unittest.TestCase):
                     "body_part": "hip",
                     "visual_evidence": {"segmentation_quality": "simulated"},
                 },
-                skill_memory={"skill_id": "femoral_head_necrosis_v0.1"},
+                knowledge_memory={"knowledge_id": "femoral_head_necrosis_v0.1"},
                 reasoning_memory={
                     "diagnostic_tendency": "疑似早期股骨头坏死",
                     "key_evidence": ["股骨头负重区纹理异常"],
@@ -670,9 +726,9 @@ class LlmRoutingTest(unittest.TestCase):
                         },
                     },
                 },
-                skill_memory={
-                    "skill_id": "femoral_head_necrosis_v0.1",
-                    "selected_skill": "femoral_head_necrosis",
+                knowledge_memory={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
+                    "selected_knowledge": "femoral_head_necrosis",
                 },
                 reasoning_memory={
                     "diagnostic_tendency": "疑似股骨头坏死候选影像表现",
@@ -726,9 +782,9 @@ class LlmRoutingTest(unittest.TestCase):
                         },
                     },
                 },
-                skill_memory={
-                    "skill_id": "femoral_head_necrosis_v0.1",
-                    "selected_skill": "femoral_head_necrosis",
+                knowledge_memory={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
+                    "selected_knowledge": "femoral_head_necrosis",
                 },
                 reasoning_memory={
                     "diagnostic_tendency": "疑似股骨头坏死候选影像表现",
@@ -771,9 +827,9 @@ class LlmRoutingTest(unittest.TestCase):
                     "body_part": "hip",
                     "visual_evidence": {},
                 },
-                skill_memory={
-                    "skill_id": "femoral_head_necrosis_v0.1",
-                    "selected_skill": "femoral_head_necrosis",
+                knowledge_memory={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
+                    "selected_knowledge": "femoral_head_necrosis",
                 },
                 reasoning_memory={
                     "diagnostic_tendency": "影像证据不足，需进一步评估",
@@ -845,9 +901,9 @@ class LlmRoutingTest(unittest.TestCase):
                     "body_part": "hip",
                     "visual_evidence": {},
                 },
-                skill_memory={
-                    "skill_id": "femoral_head_necrosis_v0.1",
-                    "selected_skill": "femoral_head_necrosis",
+                knowledge_memory={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
+                    "selected_knowledge": "femoral_head_necrosis",
                 },
                 reasoning_memory={
                     "diagnostic_tendency": "影像证据不足，需进一步评估",
@@ -919,7 +975,7 @@ class LlmRoutingTest(unittest.TestCase):
                         },
                     },
                 },
-                skill_memory={"skill_id": "diffuse_glioma_brats_v0.1"},
+                knowledge_memory={"knowledge_id": "diffuse_glioma_brats_v0.1"},
                 reasoning_memory={
                     "diagnostic_tendency": "成人弥漫性胶质瘤影像疑似",
                     "key_evidence": ["whole tumor 体积估计为 117.996 ml"],

@@ -7,7 +7,7 @@ from typing import Any
 
 from scripts.osic_ipf_dataset import DEFAULT_OSIC_MANIFEST, validate_osic_manifest
 from tools.alignment_planner import AlignmentPlanner
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 
 
 DEFAULT_OUTPUT_DIR = Path("output/fake/ipf_visual_demo")
@@ -52,14 +52,14 @@ def run_ipf_visual_demo(
         )
 
     case = _select_valid_case(manifest_validation, case_id)
-    skill = SkillBuilderTool().load_guideline_skill(DISEASE_KEY)
+    knowledge = KnowledgeBuilderTool().load_guideline_knowledge(DISEASE_KEY)
     payload = {
         "patient_message": patient_message,
         "image_path": case["resolved_paths"]["ct_path"],
         "patient_info": {"symptoms": ["dry cough", "dyspnea"]},
     }
     routing_decision = {
-        "selected_skill": DISEASE_KEY,
+        "selected_knowledge": DISEASE_KEY,
         "selected_vision_mode": None,
         "source": "demo_manifest",
         "reason": "OSIC/IPF manifest case selected for visual protocol dry-run.",
@@ -69,11 +69,11 @@ def run_ipf_visual_demo(
     alignment_plan = AlignmentPlanner().build_plan(
         payload=payload,
         routing_decision=routing_decision,
-        disease_skill=skill,
+        disease_knowledge=knowledge,
     )
     bundle = _build_ipf_evidence_bundle(
         case=case,
-        skill=skill,
+        knowledge=knowledge,
         alignment_plan=alignment_plan,
         manifest_validation=manifest_validation,
     )
@@ -145,11 +145,11 @@ def _select_valid_case(
 def _build_ipf_evidence_bundle(
     *,
     case: dict[str, Any],
-    skill: dict[str, Any],
+    knowledge: dict[str, Any],
     alignment_plan: dict[str, Any],
     manifest_validation: dict[str, Any],
 ) -> dict[str, Any]:
-    protocol = skill.get("visual_protocol") or {}
+    protocol = knowledge.get("visual_protocol") or {}
     measurements = {
         measurement: None for measurement in protocol.get("measurements", [])
     }
@@ -170,7 +170,7 @@ def _build_ipf_evidence_bundle(
         "schema_version": "ipf_visual_evidence_bundle.v1",
         "case_id": case["case_id"],
         "disease_target": DISEASE_KEY,
-        "skill_id": skill.get("skill_id"),
+        "knowledge_id": knowledge.get("knowledge_id"),
         "image_context": alignment_plan.get("image_context", {}),
         "visual_tasks": alignment_plan.get("visual_tasks", []),
         "present_findings": [],

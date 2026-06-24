@@ -50,7 +50,7 @@ class VisionPromptGeneratorTest(unittest.TestCase):
 
             result = VisionPromptGenerator(client=client).generate(
                 image_path=image_path,
-                disease_skill={
+                disease_knowledge={
                     "disease_name": "肺炎影像筛查",
                     "visual_protocol": {
                         "disease_target": "pneumonia_opacity",
@@ -103,7 +103,7 @@ class VisionPromptGeneratorTest(unittest.TestCase):
 
             result = VisionPromptGenerator(client=client).generate(
                 image_path=image_path,
-                disease_skill={
+                disease_knowledge={
                     "disease_name": "股骨头坏死",
                     "visual_protocol": {
                         "disease_target": "femoral_head_necrosis",
@@ -140,7 +140,7 @@ class VisionPromptGeneratorTest(unittest.TestCase):
             self.assertIn("polygon", schema["suspected_regions"][0])
             self.assertIn("required_next_images", schema)
 
-    def test_generator_passes_skill_finding_targets_to_vision_model(self):
+    def test_generator_passes_knowledge_finding_targets_to_vision_model(self):
         with TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir) / "hip.jpg"
             Image.new("RGB", (300, 300), "black").save(image_path)
@@ -156,7 +156,7 @@ class VisionPromptGeneratorTest(unittest.TestCase):
 
             VisionPromptGenerator(client=client).generate(
                 image_path=image_path,
-                disease_skill={
+                disease_knowledge={
                     "disease_name": "股骨头坏死",
                     "visual_protocol": {
                         "disease_target": "femoral_head_necrosis",
@@ -207,7 +207,7 @@ class VisionPromptGeneratorTest(unittest.TestCase):
 
             result = VisionPromptGenerator(client=client).generate(
                 image_path=image_path,
-                disease_skill={"disease_name": "肺炎影像筛查"},
+                disease_knowledge={"disease_name": "肺炎影像筛查"},
                 patient_message="咳嗽发热",
             )
 
@@ -244,7 +244,7 @@ class VisionPromptGeneratorTest(unittest.TestCase):
 
             result = VisionPromptGenerator(client=client).generate(
                 image_path=image_path,
-                disease_skill={"disease_name": "股骨头坏死"},
+                disease_knowledge={"disease_name": "股骨头坏死"},
                 patient_message="髋关节疼痛",
             )
 

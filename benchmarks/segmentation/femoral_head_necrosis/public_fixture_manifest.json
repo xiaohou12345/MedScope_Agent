@@ -7,7 +7,7 @@
   "safety": {
     "web_demo_independent": true,
     "not_clinical_diagnosis": true,
-    "formal_skill_update_allowed": false
+    "formal_knowledge_update_allowed": false
   },
   "cases": [
     {

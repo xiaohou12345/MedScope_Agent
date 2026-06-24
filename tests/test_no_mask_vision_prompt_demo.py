@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 from PIL import Image
 
 from scripts.no_mask_vision_prompt_demo import (
-    default_pneumonia_opacity_skill,
+    default_pneumonia_opacity_knowledge,
     run_no_mask_vision_prompt_demo,
     _write_bbox_overlay,
 )
@@ -59,13 +59,13 @@ class MultiFindingVisionClient:
 
 
 class NoMaskVisionPromptDemoTest(unittest.TestCase):
-    def test_default_pneumonia_skill_is_loaded_from_formal_skill_file(self):
-        skill = default_pneumonia_opacity_skill()
+    def test_default_pneumonia_knowledge_is_loaded_from_formal_knowledge_file(self):
+        knowledge = default_pneumonia_opacity_knowledge()
 
-        self.assertEqual(skill["skill_id"], "pneumonia_chest_xray_v0.1")
-        self.assertEqual(skill["skill_type"], "guideline_based")
-        self.assertEqual(skill["visual_protocol"]["disease_target"], "community_acquired_pneumonia")
-        self.assertIn("lung_opacity", skill["visual_protocol"]["segmentation_targets"])
+        self.assertEqual(knowledge["knowledge_id"], "pneumonia_chest_xray_v0.1")
+        self.assertEqual(knowledge["knowledge_type"], "guideline_based")
+        self.assertEqual(knowledge["visual_protocol"]["disease_target"], "community_acquired_pneumonia")
+        self.assertIn("lung_opacity", knowledge["visual_protocol"]["segmentation_targets"])
 
     def test_demo_writes_prompt_json_and_bbox_overlay(self):
         with TemporaryDirectory() as tmpdir:

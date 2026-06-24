@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Patient risk factor. Can be passed multiple times.",
     )
-    parser.add_argument("--disease-key", help="Optional disease skill key, e.g. diffuse_glioma_brats.")
+    parser.add_argument("--disease-key", help="Optional disease knowledge key, e.g. diffuse_glioma_brats.")
     parser.add_argument(
         "--vision-mode",
         choices=["ground_truth", "medsam2"],

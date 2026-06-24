@@ -5,7 +5,7 @@ from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from tests.test_mvp_flow import FakeNoMaskSkillPipeline
+from tests.test_mvp_flow import FakeNoMaskKnowledgePipeline
 
 from scripts.end_to_end_demo import main as end_to_end_demo_main
 from scripts.end_to_end_demo import run_end_to_end_demo, run_standard_demo_suite
@@ -40,7 +40,7 @@ class EndToEndDemoTest(unittest.TestCase):
             self.assertTrue(uploaded_image_path.exists())
             self.assertIn("output/fake", result["demo_output_dir"])
             self.assertIn("case_id", result)
-            self.assertEqual(result["routing_decision"]["selected_skill"], "diffuse_glioma_brats")
+            self.assertEqual(result["routing_decision"]["selected_knowledge"], "diffuse_glioma_brats")
             self.assertEqual(result["routing_decision"]["selected_vision_mode"], "ground_truth")
             self.assertIn("image_outputs", result)
             self.assertIn("overlay_path", result["image_outputs"])
@@ -53,7 +53,7 @@ class EndToEndDemoTest(unittest.TestCase):
 
             self.assertEqual(summary["case_id"], result["case_id"])
             self.assertEqual(summary["steps"]["upload"]["status"], "completed")
-            self.assertEqual(summary["steps"]["auto_skill_routing"]["selected_skill"], "diffuse_glioma_brats")
+            self.assertEqual(summary["steps"]["auto_knowledge_routing"]["selected_knowledge"], "diffuse_glioma_brats")
             self.assertEqual(summary["steps"]["visual_segmentation"]["status"], "completed")
             self.assertTrue(Path(summary["steps"]["visual_segmentation"]["image_outputs"]["overlay_path"]).exists())
             self.assertEqual(summary["steps"]["evidence_bundle"]["path"], str(evidence_bundle_path))
@@ -82,7 +82,7 @@ class EndToEndDemoTest(unittest.TestCase):
             glioma = cases["glioma_ground_truth"]
             glioma_response = json.loads(Path(glioma["response_path"]).read_text(encoding="utf-8"))
             self.assertEqual(glioma["analysis_status"], "partial_evidence")
-            self.assertEqual(glioma["routing_decision"]["selected_skill"], "diffuse_glioma_brats")
+            self.assertEqual(glioma["routing_decision"]["selected_knowledge"], "diffuse_glioma_brats")
             self.assertEqual(glioma["steps"]["visual_segmentation"]["status"], "completed")
             self.assertTrue(Path(glioma["steps"]["visual_segmentation"]["image_outputs"]["overlay_path"]).exists())
             self.assertTrue(Path(glioma["evidence_bundle_path"]).exists())
@@ -92,7 +92,7 @@ class EndToEndDemoTest(unittest.TestCase):
             xray = cases["xray_insufficient_evidence"]
             xray_response = json.loads(Path(xray["response_path"]).read_text(encoding="utf-8"))
             self.assertEqual(xray["analysis_status"], "insufficient_evidence")
-            self.assertEqual(xray["routing_decision"]["selected_skill"], "femoral_head_necrosis")
+            self.assertEqual(xray["routing_decision"]["selected_knowledge"], "femoral_head_necrosis")
             self.assertEqual(xray["steps"]["visual_segmentation"]["status"], "skipped_insufficient_evidence")
             self.assertEqual(xray["image_outputs"]["mask_path"], "not_generated")
             self.assertEqual(xray["required_next_images"][0]["modality"], "MRI")
@@ -109,7 +109,7 @@ class EndToEndDemoTest(unittest.TestCase):
     def test_standard_demo_suite_can_include_fhn_no_mask_multifinding_case(self):
         with TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir) / "standard_demo"
-            no_mask_runner = FakeNoMaskSkillPipeline()
+            no_mask_runner = FakeNoMaskKnowledgePipeline()
 
             result = run_standard_demo_suite(
                 output_dir=output_dir,
@@ -124,8 +124,8 @@ class EndToEndDemoTest(unittest.TestCase):
 
             self.assertEqual(len(no_mask_runner.calls), 1)
             self.assertTrue(str(no_mask_runner.calls[0]["image_path"]).endswith("fhn_pelvis_xray_panel_b.png"))
-            self.assertEqual(fhn["routing_decision"]["selected_skill"], "femoral_head_necrosis")
-            self.assertEqual(fhn["routing_decision"]["selected_vision_mode"], "no_mask_skill")
+            self.assertEqual(fhn["routing_decision"]["selected_knowledge"], "femoral_head_necrosis")
+            self.assertEqual(fhn["routing_decision"]["selected_vision_mode"], "no_mask_knowledge")
             self.assertEqual(fhn["steps"]["visual_segmentation"]["status"], "completed")
             self.assertEqual(
                 response["visual_evidence_bundle"]["present_findings"],

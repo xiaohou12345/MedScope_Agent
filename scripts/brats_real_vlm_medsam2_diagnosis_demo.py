@@ -8,7 +8,7 @@ from typing import Any
 
 from agents.diagnosis_agent import DiagnosisDoctorAgent
 from llm.model_client import ApiRouteLog, ModelClient, OpenAICompatibleModelClient
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 
 
 DEFAULT_AUTO_EVAL_RESULT = Path(
@@ -74,7 +74,7 @@ def run_brats_real_vlm_medsam2_diagnosis_demo(
         return payload
 
     visual_result = dict(auto_eval["result"])
-    skill = SkillBuilderTool().load_guideline_skill(
+    knowledge = KnowledgeBuilderTool().load_guideline_knowledge(
         str(auto_eval.get("disease_key") or "diffuse_glioma_brats")
     )
     selected_model_client = model_client
@@ -97,7 +97,7 @@ def run_brats_real_vlm_medsam2_diagnosis_demo(
             case_id=case_id,
             patient_info=checked_patient_info,
             visual_result=visual_result,
-            disease_skill=skill,
+            disease_knowledge=knowledge,
         )
     except (RuntimeError, OSError) as exc:
         llm_route_error = f"{type(exc).__name__}: {exc}"
@@ -106,7 +106,7 @@ def run_brats_real_vlm_medsam2_diagnosis_demo(
             case_id=case_id,
             patient_info=checked_patient_info,
             visual_result=visual_result,
-            disease_skill=skill,
+            disease_knowledge=knowledge,
         )
         report["llm_fallback_reason"] = llm_route_error
     evidence_bundle = {

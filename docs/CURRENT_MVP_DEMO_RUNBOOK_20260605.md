@@ -9,7 +9,7 @@ Use this runbook to show the current evidence-bounded system flow:
 
 ```text
 patient input + image upload
-  -> automatic skill routing
+  -> automatic knowledge routing
   -> visual evidence
   -> diagnosis report
   -> evidence bundle
@@ -27,7 +27,7 @@ when those data are available.
 ## Public-Safe Fixture
 
 Run the public-safe MVP suite when you want one command that covers upload,
-automatic skill routing, visual evidence, diagnosis report, evidence bundle,
+automatic knowledge routing, visual evidence, diagnosis report, evidence bundle,
 memory audit, and follow-up QA:
 
 ```bash
@@ -62,7 +62,7 @@ Expected purpose:
 
 - Produces a synthetic X-ray-like PNG.
 - Writes a manifest with a `service_payload`.
-- Exercises upload, FHN skill routing, and report/audit plumbing.
+- Exercises upload, FHN knowledge routing, and report/audit plumbing.
 - Does not claim true pathology, true lesion localization, or benchmark quality.
 
 ## Standard End-To-End Demo
@@ -75,7 +75,7 @@ python -m scripts.end_to_end_demo --suite
 
 The suite is designed to show the current MVP path rather than model quality:
 
-- `glioma_ground_truth`: demonstrates image upload, skill routing, visual
+- `glioma_ground_truth`: demonstrates image upload, knowledge routing, visual
   evidence from a reference-mask development path, diagnosis report generation,
   evidence bundle persistence, and memory audit.
 - `xray_insufficient_evidence`: demonstrates that hip X-ray input can route to
@@ -99,7 +99,7 @@ multi-finding case:
 python -m scripts.end_to_end_demo --suite --include-fhn-no-mask
 ```
 
-This path is useful for showing how a selected FHN skill can drive VLM-only or
+This path is useful for showing how a selected FHN knowledge can drive VLM-only or
 VLM-plus-segmenter candidate evidence. It is still candidate evidence, not a
 validated segmentation result.
 
@@ -128,12 +128,12 @@ Recommended demonstration order:
 1. Click `运行 Public-safe MVP 样例` to run the public-safe HTTP suite from the
    frontend.
 2. Confirm the rendered case uses `demo_source=public_safe_demo_suite`.
-3. Inspect automatic skill routing in the audit views.
+3. Inspect automatic knowledge routing in the audit views.
 4. Review the visual evidence panel.
 5. Review the patient-facing diagnosis report.
 6. Open the evidence bundle to inspect structured facts, missing evidence, and
    quality levels.
-7. Open memory audit to show patient memory, image memory, skill memory, and
+7. Open memory audit to show patient memory, image memory, knowledge memory, and
    reasoning memory.
 8. Ask a follow-up QA question only after analysis is complete; it should use
    `POST /v1/demo/public-safe/qa` as an artifact-bound QA route.
@@ -146,7 +146,7 @@ regenerates the demo artifact and keeps QA bound to that artifact.
 
 Safe statements:
 
-- The MVP separates orchestration, vision evidence, guideline skill handling,
+- The MVP separates orchestration, vision evidence, guideline knowledge handling,
   diagnosis reasoning, and memory/audit.
 - The diagnosis agent consumes structured evidence instead of raw pixels.
 - Missing input is preserved as missing input, not converted into a negative

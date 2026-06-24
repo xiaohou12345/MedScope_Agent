@@ -5,7 +5,7 @@
 `BraTS + 成人弥漫性胶质瘤` 适合作为 MedScope Agent 的第一条真实测试线：
 
 - 有公开 MRI 数据和专家分割标注，可验证视觉 Agent 的 mask / overlay 输出。
-- 有 EANO 成人弥漫性胶质瘤指南和 ESTRO-EANO 胶质母细胞瘤放疗靶区勾画指南，可构建 guideline-based skill。
+- 有 EANO 成人弥漫性胶质瘤指南和 ESTRO-EANO 胶质母细胞瘤放疗靶区勾画指南，可构建 guideline-based knowledge。
 - 视觉任务和诊断任务边界清楚：视觉 Agent 负责肿瘤区域分割和影像证据提取；诊断医生 Agent 负责结合指南、症状、影像证据生成辅助报告。
 
 ## 数据集候选

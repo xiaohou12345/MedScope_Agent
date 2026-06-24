@@ -4,14 +4,14 @@
 
 推荐对外表述：
 
-> MedScope 不是为了分 Agent 而分 Agent，而是把医疗图像诊断拆成一条受 guideline skill、visual evidence、evidence bundle 和 memory audit 约束的临床证据流水线。每个 Agent 只负责一个安全边界内的工作，底层 Evidence Gateway 负责 skill、文件、工具、契约、hooks 和 candidate queue 的统一管理。
+> MedScope 不是为了分 Agent 而分 Agent，而是把医疗图像诊断拆成一条受 guideline knowledge、visual evidence、evidence bundle 和 memory audit 约束的临床证据流水线。每个 Agent 只负责一个安全边界内的工作，底层 Evidence Gateway 负责 knowledge、文件、工具、契约、hooks 和 candidate queue 的统一管理。
 
 ## 1. 总体结构
 
 ```text
 患者 / 前端 / API
   -> Clinical Orchestrator
-  -> Skill Gateway / Skill Builder
+  -> Knowledge Gateway / Knowledge Builder
   -> Vision Evidence Agent
   -> Diagnosis Reasoning Agent
   -> Memory / Audit Layer
@@ -28,13 +28,13 @@
 
 第二层：临床证据流水线
   Clinical Orchestrator
-  Skill Gateway / Skill Builder
+  Knowledge Gateway / Knowledge Builder
   Vision Evidence Agent
   Diagnosis Reasoning Agent
   Memory / Audit Layer
 
 第三层：Agentic Runtime / Evidence Gateway
-  Skill Registry
+  Knowledge Registry
   Shared Artifact Workspace
   Tool Router
   Contract Guards
@@ -65,8 +65,8 @@
 - 接收患者描述、图像路径、患者信息、case id。
 - 判断用户意图：新诊断、复查、报告解释、follow-up QA。
 - 根据描述、症状、图像路径和显式参数生成 `routing_decision`。
-- 决定当前病例应该使用哪个 disease skill。
-- 调用 alignment planner 判断“当前图像 + 当前 skill 是否匹配”。
+- 决定当前病例应该使用哪个 disease knowledge。
+- 调用 alignment planner 判断“当前图像 + 当前 knowledge 是否匹配”。
 - 调用 Vision Evidence Agent 生成视觉证据。
 - 调用 Diagnosis Reasoning Agent 生成诊断报告。
 - 调用 Memory / Audit Layer 保存四类 memory 和审计产物。
@@ -77,7 +77,7 @@
 - 不直接读像素、圈病灶或生成 mask。
 - 不直接替代诊断 Agent 下医学结论。
 - 不直接写 provider-specific API 调用。
-- 不直接把候选经验升级成正式医学 skill。
+- 不直接把候选经验升级成正式医学 knowledge。
 
 输入：
 
@@ -112,42 +112,42 @@
 
 > Clinical Orchestrator 是“总控医生”，负责问诊入口、路由、调度和患者解释，但不直接看图、不直接分割、不直接脑补诊断。
 
-### 2.2 Skill Gateway / Skill Builder
+### 2.2 Knowledge Gateway / Knowledge Builder
 
 对应代码：
 
-- `tools/skill_builder_tool.py`
+- `tools/knowledge_builder_tool.py`
 - `tools/guideline_search_tool.py`
 - `tools/guideline_extraction_tool.py`
 - `tools/guideline_source_collector_tool.py`
 - `tools/guideline_source_import_tool.py`
-- `skills/*.yaml`
+- `knowledge/*.yaml`
 
 它负责管理疾病知识，不负责最终诊断。
 
 核心职责：
 
-- 从 `skills/` 加载已有 disease skill。
-- 检查 skill 是 `guideline_based` 还是 `data_mined_hypothesis`。
-- 读取 skill 中的 `visual_protocol`，告诉视觉 Agent 需要观察什么。
-- 读取 skill 中的 `staging_rules`、`required_image_views`、`source_documents`，告诉诊断 Agent 可用的指南依据。
-- 在缺少 skill 时，通过指南来源采集和抽取工具生成新的 guideline skill。
+- 从 `knowledge/` 加载已有 disease knowledge。
+- 检查 knowledge 是 `guideline_based` 还是 `data_mined_hypothesis`。
+- 读取 knowledge 中的 `visual_protocol`，告诉视觉 Agent 需要观察什么。
+- 读取 knowledge 中的 `staging_rules`、`required_image_views`、`source_documents`，告诉诊断 Agent 可用的指南依据。
+- 在缺少 knowledge 时，通过指南来源采集和抽取工具生成新的 guideline knowledge。
 - 当找不到正式指南时，只能生成 `data_mined_hypothesis`，不能伪装成医学指南。
-- 保存医生 review draft，但不自动改正式 skill。
+- 保存医生 review draft，但不自动改正式 knowledge。
 
 它不应该做的事：
 
 - 不直接看原始医学图像。
 - 不直接生成诊断报告。
 - 不把数据挖掘结果伪装成正式指南。
-- 不绕过 validation gate 自动修改正式 skill。
+- 不绕过 validation gate 自动修改正式 knowledge。
 
-Skill 中最关键的字段：
+Knowledge 中最关键的字段：
 
 ```json
 {
   "disease_name": "股骨头坏死",
-  "skill_type": "guideline_based",
+  "knowledge_type": "guideline_based",
   "evidence_level": "high",
   "source_documents": [],
   "clinical_features": {},
@@ -163,7 +163,7 @@ Skill 中最关键的字段：
 
 一句话：
 
-> Skill Gateway 是“指南和技能管理层”，负责把疾病指南变成可执行的 visual protocol 和 reasoning constraints。
+> Knowledge Gateway 是“指南和技能管理层”，负责把疾病指南变成可执行的 visual protocol 和 reasoning constraints。
 
 ### 2.3 Vision Evidence Agent
 
@@ -175,7 +175,7 @@ Skill 中最关键的字段：
 - `tools/medsam2_segmentation_tool.py`
 - `tools/generic_mask_measurement_tool.py`
 - `tools/visual_quality_gate.py`
-- `scripts/no_mask_skill_visual_pipeline_demo.py`
+- `scripts/no_mask_knowledge_visual_pipeline_demo.py`
 - `scripts/no_mask_vision_prompt_demo.py`
 - `scripts/no_mask_medsam2_segmentation_demo.py`
 
@@ -183,8 +183,8 @@ Skill 中最关键的字段：
 
 核心职责：
 
-- 读取 disease skill 的 `visual_protocol`。
-- 判断当前图像模态是否满足该 skill 的要求。
+- 读取 disease knowledge 的 `visual_protocol`。
+- 判断当前图像模态是否满足该 knowledge 的要求。
 - 对每个 finding target 决定执行模式：
   - `vlm_only`：只做视觉观察，不生成 mask。
   - `vlm_plus_segmenter`：VLM 先给候选位置，再用 MedSAM2 等模型分割。
@@ -229,7 +229,7 @@ Vision Agent 的标准输出：
 
 一句话：
 
-> Vision Evidence Agent 的任务不是“诊断有没有病”，而是根据 skill 把图像中可观察、可分割、可测量、可缺失的证据整理成结构化证据包。
+> Vision Evidence Agent 的任务不是“诊断有没有病”，而是根据 knowledge 把图像中可观察、可分割、可测量、可缺失的证据整理成结构化证据包。
 
 ### 2.4 Diagnosis Reasoning Agent
 
@@ -243,7 +243,7 @@ Vision Agent 的标准输出：
 
 核心职责：
 
-- 读取 disease skill。
+- 读取 disease knowledge。
 - 读取 Vision Agent 输出的 `VisualAnalysisResult`。
 - 生成 `visual_input_contract`，明确诊断 Agent 实际收到哪些视觉字段。
 - 区分：
@@ -327,23 +327,23 @@ Vision Agent 的标准输出：
 - 保存 mask、overlay、局部图等 artifact 路径。
 - 让诊断报告可以追溯到具体视觉证据。
 
-#### skill_memory
+#### knowledge_memory
 
-保存本次病例使用的医学 skill：
+保存本次病例使用的医学 knowledge：
 
-- `selected_skill`
+- `selected_knowledge`
 - `selected_vision_mode`
 - `routing_decision`
 - `alignment_plan`
-- `skill_type`
+- `knowledge_type`
 - `guideline_evidence`
 - `source_priority`
 - `quality_control`
 
 作用：
 
-- 解释为什么选这个 skill。
-- 记录该 skill 是正式指南还是数据假设。
+- 解释为什么选这个 knowledge。
+- 记录该 knowledge 是正式指南还是数据假设。
 - 保存指南来源、冲突、质量控制信息。
 
 #### reasoning_memory
@@ -380,11 +380,11 @@ Memory / Audit Layer 还会生成：
 
 一句话：
 
-> Memory 不是简单存报告，而是存“病例输入、图像证据、skill 依据、推理过程、证据使用情况和后续 QA”的完整证据链。
+> Memory 不是简单存报告，而是存“病例输入、图像证据、knowledge 依据、推理过程、证据使用情况和后续 QA”的完整证据链。
 
 ## 3. 一条主线：标准端到端诊断流程
 
-下面是一条最标准的主线，用于演示“上传图片 + 自动选 skill + 分割/视觉证据 + 诊断报告 + evidence bundle + memory audit”。
+下面是一条最标准的主线，用于演示“上传图片 + 自动选 knowledge + 分割/视觉证据 + 诊断报告 + evidence bundle + memory audit”。
 
 ### Step 0：用户输入
 
@@ -419,13 +419,13 @@ Orchestrator 创建或识别 case：
 }
 ```
 
-### Step 2：自动选择 skill
+### Step 2：自动选择 knowledge
 
 Orchestrator 根据文本和图像路径线索选择：
 
 ```json
 {
-  "selected_skill": "femoral_head_necrosis",
+  "selected_knowledge": "femoral_head_necrosis",
   "selected_vision_mode": null,
   "source": "auto",
   "confidence": 0.75,
@@ -433,29 +433,29 @@ Orchestrator 根据文本和图像路径线索选择：
 }
 ```
 
-### Step 3：Skill Gateway 加载 skill
+### Step 3：Knowledge Gateway 加载 knowledge
 
 系统读取：
 
 ```text
-skills/femoral_head_necrosis.yaml
+knowledge/femoral_head_necrosis.yaml
 ```
 
 得到：
 
 - 疾病名称：股骨头坏死。
-- skill 类型：`guideline_based`。
+- knowledge 类型：`guideline_based`。
 - 指南来源：ARCO / ONFH guideline 相关来源。
 - X 光可观察征象：硬化带、囊性变、骨小梁模糊、塌陷、新月征。
 - MRI 需求：早期病变 X 光不足，需要 MRI。
 - visual protocol：每个征象需要什么模态、是否能分割、是否只观察。
 
-### Step 4：Alignment Planner 判断图像和 skill 是否匹配
+### Step 4：Alignment Planner 判断图像和 knowledge 是否匹配
 
 系统检查：
 
 - 当前是 X 光。
-- 股骨头坏死 skill 可以用 X 光评估中晚期征象。
+- 股骨头坏死 knowledge 可以用 X 光评估中晚期征象。
 - 但如果问题是“能不能排除早期股骨头坏死”，X 光不足。
 
 可能输出：
@@ -476,7 +476,7 @@ skills/femoral_head_necrosis.yaml
 
 ### Step 5：Vision Tool Router 生成视觉工具计划
 
-Vision Agent 读取 skill 的 finding targets：
+Vision Agent 读取 knowledge 的 finding targets：
 
 - 硬化带：`vlm_plus_segmenter`
 - 囊性变：`vlm_plus_segmenter`
@@ -516,7 +516,7 @@ Vision Agent 读取 skill 的 finding targets：
 
 #### 6.1 VLM-only
 
-VLM 根据 skill 提示词在图像中寻找候选征象，输出：
+VLM 根据 knowledge 提示词在图像中寻找候选征象，输出：
 
 - 哪些位置可疑。
 - bbox / polygon。
@@ -594,7 +594,7 @@ MedSAM2 根据 box prompt 生成候选 mask。
 
 Diagnosis Agent 不看原图，只读取：
 
-- skill。
+- knowledge。
 - visual evidence。
 - completeness。
 - structured visual facts。
@@ -649,7 +649,7 @@ Diagnosis Agent 不看原图，只读取：
 
 - `patient_memory`
 - `image_memory`
-- `skill_memory`
+- `knowledge_memory`
 - `reasoning_memory`
 
 并生成：
@@ -689,19 +689,19 @@ Diagnosis Agent 不看原图，只读取：
 
 主线之外，系统会根据输入和状态进入不同支线。
 
-### 支线 A：已有 skill，直接进入主流程
+### 支线 A：已有 knowledge，直接进入主流程
 
 触发条件：
 
 - `disease_key` 明确传入。
-- 或 Orchestrator 自动匹配到已有 skill。
+- 或 Orchestrator 自动匹配到已有 knowledge。
 
 流程：
 
 ```text
 输入
-  -> 自动/显式选择 skill
-  -> load skills/{disease_key}.yaml
+  -> 自动/显式选择 knowledge
+  -> load knowledge/{disease_key}.yaml
   -> 检查 visual_protocol
   -> Vision Agent
   -> Diagnosis Agent
@@ -720,25 +720,25 @@ Diagnosis Agent 不看原图，只读取：
 - 最稳定。
 - 最适合作为当前 MVP 演示主线。
 
-### 支线 B：没有合适 skill，调用 Skill Builder
+### 支线 B：没有合适 knowledge，调用 Knowledge Builder
 
 触发条件：
 
-- Orchestrator 没有匹配到已有 skill。
+- Orchestrator 没有匹配到已有 knowledge。
 - 用户显式要求分析一个新病种。
-- 当前 `skills/` 中没有对应 disease key。
+- 当前 `knowledge/` 中没有对应 disease key。
 
 流程：
 
 ```text
 输入新病种
-  -> Skill Gateway 检查本地 skill
+  -> Knowledge Gateway 检查本地 knowledge
   -> 未找到
   -> Guideline Search / Source Collector
   -> Guideline Extraction
   -> Visual Protocol Builder
   -> Quality Gate
-  -> 生成 guideline_based skill 或 data_mined_hypothesis
+  -> 生成 guideline_based knowledge 或 data_mined_hypothesis
 ```
 
 分两种结果：
@@ -749,7 +749,7 @@ Diagnosis Agent 不看原图，只读取：
 
 ```json
 {
-  "skill_type": "guideline_based",
+  "knowledge_type": "guideline_based",
   "evidence_level": "high",
   "source_documents": []
 }
@@ -763,7 +763,7 @@ Diagnosis Agent 不看原图，只读取：
 
 ```json
 {
-  "skill_type": "data_mined_hypothesis",
+  "knowledge_type": "data_mined_hypothesis",
   "evidence_level": "low",
   "warning": "This is not a formal medical guideline."
 }
@@ -771,19 +771,19 @@ Diagnosis Agent 不看原图，只读取：
 
 此时不能用于常规临床诊断，只能进入 hypothesis validation mode。
 
-### 支线 C：图像和 skill 不匹配，停止或部分分析
+### 支线 C：图像和 knowledge 不匹配，停止或部分分析
 
 触发条件：
 
 - 用户上传 X 光，但问题需要 MRI。
-- 用户上传普通胸片，但 skill 需要 HRCT。
+- 用户上传普通胸片，但 knowledge 需要 HRCT。
 - 用户上传单序列 MRI，但胶质瘤 protocol 需要 T1/T1ce/T2/FLAIR。
 
 流程：
 
 ```text
 输入图像
-  -> Skill 已选择
+  -> Knowledge 已选择
   -> Alignment Planner 检查模态
   -> 当前影像不足
   -> 生成 insufficient_evidence
@@ -810,7 +810,7 @@ Diagnosis Agent 不看原图，只读取：
 
 触发条件：
 
-- skill 中某些征象不适合像素级分割。
+- knowledge 中某些征象不适合像素级分割。
 - 当前没有可用 MedSAM2。
 - 用户只需要候选视觉观察。
 - `execution_mode = vlm_only`。
@@ -818,7 +818,7 @@ Diagnosis Agent 不看原图，只读取：
 流程：
 
 ```text
-Skill finding target
+Knowledge finding target
   -> VLM prompt
   -> bbox / polygon / textual observation
   -> structured_visual_facts
@@ -841,7 +841,7 @@ Skill finding target
 
 触发条件：
 
-- skill 的 target 可以先定位再分割。
+- knowledge 的 target 可以先定位再分割。
 - 当前有 VLM API。
 - 当前有 MedSAM2 runner 或 fake runner。
 - `execution_mode = vlm_plus_segmenter`。
@@ -849,8 +849,8 @@ Skill finding target
 流程：
 
 ```text
-Skill target
-  -> VLM 根据 skill 找候选 bbox
+Knowledge target
+  -> VLM 根据 knowledge 找候选 bbox
   -> bbox prompt 给 MedSAM2
   -> MedSAM2 生成 mask
   -> Measurement Tool 计算面积/比例/位置
@@ -883,7 +883,7 @@ Skill target
 流程：
 
 ```text
-Skill target
+Knowledge target
   -> Visual Tool Router 选择 specialist_segmenter
   -> 专病模型输出 mask / heatmap / measurement
   -> Quality Gate
@@ -974,11 +974,11 @@ LLM 不能做的事：
 - 记录本次有哪些证据不足。
 - 生成候选 memory。
 - 生成候选 rule。
-- 生成 candidate skill patch。
+- 生成 candidate knowledge patch。
 
 它不能做：
 
-- 不能自动修改正式 `skills/*.yaml`。
+- 不能自动修改正式 `knowledge/*.yaml`。
 - 不能覆盖诊断报告。
 - 不能把候选经验当成指南。
 
@@ -1010,7 +1010,7 @@ LLM 不能做的事：
 - `prompts/baselines/workflow_prompt.md`
 - `prompts/baselines/fewshot_prompt.md`
 - `scripts/baseline_reasoning_eval.py`
-- `scripts/image_prompt_skill_baseline.py`
+- `scripts/image_prompt_knowledge_baseline.py`
 
 价值：
 
@@ -1027,7 +1027,7 @@ LLM 不能做的事：
 
 上传图片 + 患者描述
   -> Orchestrator 判断意图
-  -> 自动选择或加载 Skill
+  -> 自动选择或加载 Knowledge
   -> Alignment Planner 检查图像是否足够
   -> Vision Agent 根据 visual_protocol 提取证据
   -> Diagnosis Agent 基于 evidence bundle 生成报告
@@ -1036,8 +1036,8 @@ LLM 不能做的事：
   -> Follow-up QA 基于 memory 回答
 
 支线：
-  A 已有 skill：直接主流程
-  B 无 skill：Skill Builder 找指南/生成 skill
+  A 已有 knowledge：直接主流程
+  B 无 knowledge：Knowledge Builder 找指南/生成 knowledge
   C 图像不足：输出 insufficient evidence 和下一步影像
   D VLM-only：只做候选视觉观察
   E VLM+MedSAM2：候选定位 + 候选分割 + 数值测量
@@ -1070,9 +1070,9 @@ MedScope 输出的是：
 下一步需要什么检查。
 ```
 
-### 6.2 Skill 控制视觉任务
+### 6.2 Knowledge 控制视觉任务
 
-Vision Agent 不是随便看图，而是根据 skill 中的 `visual_protocol` 看：
+Vision Agent 不是随便看图，而是根据 knowledge 中的 `visual_protocol` 看：
 
 - 该病需要看哪些征象。
 - 每个征象需要什么图像模态。
@@ -1097,7 +1097,7 @@ Memory 保存：
 
 - 患者问了什么。
 - 图像输出了什么。
-- 用了哪个 skill。
+- 用了哪个 knowledge。
 - 诊断用了哪些证据。
 - 哪些证据被排除。
 - QA 回答引用了什么。
@@ -1121,8 +1121,8 @@ Memory 保存：
 原因：
 
 - 用户上传单张医疗图像。
-- Orchestrator 可以自动选 `femoral_head_necrosis` skill。
-- Skill 中有清晰 visual protocol。
+- Orchestrator 可以自动选 `femoral_head_necrosis` knowledge。
+- Knowledge 中有清晰 visual protocol。
 - Vision Agent 可以展示 VLM-only 和 VLM+MedSAM2 两种视觉路径。
 - 前端可以展示每种征象单独图、局部放大、诊断报告。
 - Diagnosis Agent 可以演示“X 光不足以排除早期病变，需要 MRI”。
@@ -1130,7 +1130,7 @@ Memory 保存：
 
 推荐演示说法：
 
-> 用户上传骨盆正位 X 光和主诉后，Clinical Orchestrator 自动选择股骨头坏死 skill。Skill Gateway 读取指南来源和 visual protocol，告诉 Vision Agent 要看硬化带、囊性变、骨小梁纹理和塌陷。Vision Agent 用 VLM 找候选区域，并在可分割征象上调用 MedSAM2 生成候选 mask 和面积比例。Diagnosis Agent 不看原图，只读取结构化 visual evidence 和 completeness，生成一个承认证据不足的诊断报告，并提示早期病变需要 MRI。最后 Memory Manager 保存 patient/image/skill/reasoning 四类 memory，前端展示 evidence bundle 和 audit trace。
+> 用户上传骨盆正位 X 光和主诉后，Clinical Orchestrator 自动选择股骨头坏死 knowledge。Knowledge Gateway 读取指南来源和 visual protocol，告诉 Vision Agent 要看硬化带、囊性变、骨小梁纹理和塌陷。Vision Agent 用 VLM 找候选区域，并在可分割征象上调用 MedSAM2 生成候选 mask 和面积比例。Diagnosis Agent 不看原图，只读取结构化 visual evidence 和 completeness，生成一个承认证据不足的诊断报告，并提示早期病变需要 MRI。最后 Memory Manager 保存 patient/image/knowledge/reasoning 四类 memory，前端展示 evidence bundle 和 audit trace。
 
 ## 8. 当前最需要继续完善的支线
 
@@ -1138,7 +1138,7 @@ Memory 保存：
 
 1. 视觉后端质量验证：建立疾病级 benchmark，区分 VLM-only、VLM+MedSAM2、专病模型。
 2. 公开可复现实例：准备一组不会泄露隐私的小样例，保证新环境能跑通主线。
-3. Skill Builder 真实指南采集闭环：继续完善网页/PDF 指南采集、抽取、质量门。
+3. Knowledge Builder 真实指南采集闭环：继续完善网页/PDF 指南采集、抽取、质量门。
 4. 依赖和部署：补 `requirements.txt` 或 `pyproject.toml`。
 5. Candidate Queue 验证机制：把人工 review、数据集指标、指南来源确认接入 validation gate。
 

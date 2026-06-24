@@ -111,7 +111,7 @@ def build_vision_evidence_candidate_queue(
         "review_policy": {
             "required_review": "human_or_validated_dataset",
             "promotion_rule": (
-                "Vision evidence failures can only become formal skill changes after "
+                "Vision evidence failures can only become formal knowledge changes after "
                 "manual review or dataset validation."
             ),
             "allowed_outputs": [
@@ -128,7 +128,7 @@ def build_vision_evidence_candidate_queue(
                 "candidate_validation_gate",
             ],
             "presentation_note": (
-                "The gateway distributes skills and shared artifacts, applies policy "
+                "The gateway distributes knowledge and shared artifacts, applies policy "
                 "guards, records hook outputs, and keeps self-evolving items as "
                 "review-only candidates."
             ),
@@ -137,7 +137,7 @@ def build_vision_evidence_candidate_queue(
             "queue_written": True,
             "candidate_only": True,
             "candidate_artifacts_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "formal_update_allowed": False,
@@ -209,14 +209,14 @@ def build_vision_evidence_candidate_validation_gate(
         },
         "review_requirements": [
             "Reviewer notes can update candidate validation state only.",
-            "Formal skill or guideline promotion requires a separate explicit approval step.",
+            "Formal knowledge or guideline promotion requires a separate explicit approval step.",
             "No diagnosis report may be rewritten from candidate queue review alone.",
         ],
         "runtime_safety": {
             "validation_gate_executed": True,
             "read_only": True,
             "candidate_artifacts_only": True,
-            "formal_skill_updated": False,
+            "formal_knowledge_updated": False,
             "formal_guideline_updated": False,
             "diagnosis_report_updated": False,
             "formal_update_allowed": False,
@@ -277,7 +277,7 @@ def build_vision_evidence_reviewer_notes_template(
         "notes": notes,
         "safety_note": (
             "Reviewer notes update candidate validation state only; they do not "
-            "modify formal skills, guidelines, or diagnosis reports."
+            "modify formal knowledge, guidelines, or diagnosis reports."
         ),
     }
     json_path = output / "vision_evidence_reviewer_notes_template.json"
@@ -329,7 +329,7 @@ def _build_brats_cases(
         rows.append(
             {
                 "case_id": str(case.get("case_id") or "unknown_brats_case"),
-                "disease_skill": "diffuse_glioma_brats",
+                "disease_knowledge": "diffuse_glioma_brats",
                 "modality": str(result.get("modality") or "mri"),
                 "reference_available": True,
                 "visual_fact_count": len(suspected_findings),
@@ -487,7 +487,7 @@ def _failure_candidate_item(case: dict[str, Any], failure_type: str) -> dict[str
         "source_stage": "vision_evidence_eval",
         "source_warning_code": failure_type,
         "candidate_type": "visual_protocol_review",
-        "disease_skill": case.get("disease_skill"),
+        "disease_knowledge": case.get("disease_knowledge"),
         "modality": case.get("modality"),
         "proposal": _proposal_for_vision_failure(failure_type),
         "evidence": {
@@ -515,7 +515,7 @@ def _manual_review_candidate_item(
         "source_stage": "vision_evidence_eval",
         "source_warning_code": "manual_review_required",
         "candidate_type": "manual_review_label",
-        "disease_skill": case.get("disease_skill"),
+        "disease_knowledge": case.get("disease_knowledge"),
         "modality": case.get("modality"),
         "proposal": (
             "Review the suggested no-mask finding label before reusing it as "
@@ -541,7 +541,7 @@ def _non_reference_attempt_candidate_item(attempt: dict[str, Any]) -> dict[str, 
         "source_stage": "non_reference_auto_eval",
         "source_warning_code": warning_code,
         "candidate_type": "runtime_configuration_review",
-        "disease_skill": attempt.get("disease_skill"),
+        "disease_knowledge": attempt.get("disease_knowledge"),
         "modality": attempt.get("modality"),
         "proposal": (
             "Configure and validate MedSAM2 runner before claiming non-reference "
@@ -573,7 +573,7 @@ def _non_reference_metric_candidate_item(
         "source_stage": "non_reference_auto_eval",
         "source_warning_code": failure_type,
         "candidate_type": "non_reference_metric_review",
-        "disease_skill": attempt.get("disease_skill"),
+        "disease_knowledge": attempt.get("disease_knowledge"),
         "modality": attempt.get("modality"),
         "proposal": (
             "Review the successful non-reference VLM+MedSAM2 run before using its "
@@ -616,7 +616,7 @@ def _proposal_for_vision_failure(failure_type: str) -> str:
     }
     return proposals.get(
         failure_type,
-        "Review this visual evidence failure before changing a formal skill.",
+        "Review this visual evidence failure before changing a formal knowledge.",
     )
 
 
@@ -659,7 +659,7 @@ def _build_fhn_case(response: dict[str, Any], pipeline_summary: dict[str, Any]) 
     )
     return {
         "case_id": str(response.get("case_id") or "fhn_no_mask_multifinding"),
-        "disease_skill": str(pipeline_summary.get("disease_key") or "femoral_head_necrosis"),
+        "disease_knowledge": str(pipeline_summary.get("disease_key") or "femoral_head_necrosis"),
         "modality": str(image_context.get("modality") or "xray"),
         "reference_available": False,
         "visual_fact_count": len(structured_visual_facts),
@@ -728,7 +728,7 @@ def _build_non_reference_attempts(
     return [
         {
             "case_id": case_id or "unknown_non_reference_case",
-            "disease_skill": str(auto_eval_summary.get("disease_key") or "diffuse_glioma_brats"),
+            "disease_knowledge": str(auto_eval_summary.get("disease_key") or "diffuse_glioma_brats"),
             "modality": "mri",
             "prompt_status": prompt_summary.get("status"),
             "auto_eval_status": auto_eval_status,
@@ -873,7 +873,7 @@ def _build_next_actions(
     ):
         actions.append("Configure MedSAM2 runner to complete non-reference VLM prompt auto-evaluation.")
     if any(attempt.get("failure_types") for attempt in non_reference_attempts):
-        actions.append("Review non-reference VLM+MedSAM2 metric failures before any skill update.")
+        actions.append("Review non-reference VLM+MedSAM2 metric failures before any knowledge update.")
     return actions
 
 
@@ -1070,7 +1070,7 @@ def _render_markdown(payload: dict[str, Any]) -> str:
             "",
             "## Cases",
             "",
-            "| case_id | disease_skill | modality | reference | visual facts | adopted | excluded | mean dice | mean IoU | volume error ml | FP comp | FN comp | failures | diagnosis allowed |",
+            "| case_id | disease_knowledge | modality | reference | visual facts | adopted | excluded | mean dice | mean IoU | volume error ml | FP comp | FN comp | failures | diagnosis allowed |",
             "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
         ]
     )
@@ -1080,11 +1080,11 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         mean_iou = case.get("mean_iou")
         mean_volume_error = case.get("mean_absolute_volume_error_ml")
         lines.append(
-            "| {case_id} | {disease_skill} | {modality} | {reference} | {visual} | "
+            "| {case_id} | {disease_knowledge} | {modality} | {reference} | {visual} | "
             "{adopted} | {excluded} | {mean_dice} | {mean_iou} | {volume_error} | "
             "{fp_components} | {fn_components} | {failures} | {diagnosis_allowed} |".format(
                 case_id=case.get("case_id"),
-                disease_skill=case.get("disease_skill"),
+                disease_knowledge=case.get("disease_knowledge"),
                 modality=case.get("modality"),
                 reference=case.get("reference_available"),
                 visual=case.get("visual_fact_count"),
@@ -1178,7 +1178,7 @@ def _render_candidate_queue_markdown(payload: dict[str, Any]) -> str:
         "- `status`: `{}`".format(payload.get("status")),
         "- `candidate_count`: `{}`".format(payload.get("candidate_count")),
         "- `formal_update_allowed=false`",
-        "- `formal_skill_updated=false`",
+        "- `formal_knowledge_updated=false`",
         "- `formal_guideline_updated=false`",
         "- `diagnosis_report_updated=false`",
         "",
@@ -1194,19 +1194,19 @@ def _render_candidate_queue_markdown(payload: dict[str, Any]) -> str:
             "",
             "## Queue Items",
             "",
-            "| item_id | case_id | type | warning | skill | modality | validation | allowed_action |",
+            "| item_id | case_id | type | warning | knowledge | modality | validation | allowed_action |",
             "| --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for item in payload.get("queue_items") or []:
         lines.append(
-            "| {item_id} | {case_id} | {candidate_type} | {warning} | {skill} | "
+            "| {item_id} | {case_id} | {candidate_type} | {warning} | {knowledge} | "
             "{modality} | {validation} | {allowed_action} |".format(
                 item_id=item.get("item_id"),
                 case_id=item.get("source_case_id"),
                 candidate_type=item.get("candidate_type"),
                 warning=item.get("source_warning_code"),
-                skill=item.get("disease_skill"),
+                knowledge=item.get("disease_knowledge"),
                 modality=item.get("modality"),
                 validation=item.get("validation_status"),
                 allowed_action=item.get("allowed_action"),
@@ -1239,7 +1239,7 @@ def _render_candidate_validation_gate_markdown(payload: dict[str, Any]) -> str:
         "- `status`: `{}`".format((payload.get("promotion_decision") or {}).get("status")),
         "- `reason`: `{}`".format((payload.get("promotion_decision") or {}).get("reason")),
         "- `formal_update_allowed=false`",
-        "- `formal_skill_updated=false`",
+        "- `formal_knowledge_updated=false`",
         "- `formal_guideline_updated=false`",
         "- `diagnosis_report_updated=false`",
         "",

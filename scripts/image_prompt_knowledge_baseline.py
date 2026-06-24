@@ -1,4 +1,4 @@
-"""Run image + patient prompt + skill baselines at three prompt strengths."""
+"""Run image + patient prompt + knowledge baselines at three prompt strengths."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 from tools.vision_prompt_generator import OpenAICompatibleVisionClient, VisionClient
 
 
-DEFAULT_OUTPUT_DIR = Path("output/fake/image_prompt_skill_baseline")
+DEFAULT_OUTPUT_DIR = Path("output/fake/image_prompt_knowledge_baseline")
 
 IMAGE_BASELINE_LEVELS: list[dict[str, Any]] = [
     {
@@ -37,11 +37,11 @@ IMAGE_BASELINE_LEVELS: list[dict[str, Any]] = [
 ]
 
 
-def run_image_prompt_skill_baseline(
+def run_image_prompt_knowledge_baseline(
     *,
     image_path: Path | str,
     patient_prompt: str,
-    disease_skill: dict[str, Any] | None = None,
+    disease_knowledge: dict[str, Any] | None = None,
     disease_key: str | None = None,
     output_dir: Path | str = DEFAULT_OUTPUT_DIR,
     client: VisionClient | None = None,
@@ -51,7 +51,7 @@ def run_image_prompt_skill_baseline(
         raise FileNotFoundError(f"image_path not found: {image}")
     if not patient_prompt.strip():
         raise ValueError("patient_prompt is required")
-    skill = disease_skill or SkillBuilderTool().load_guideline_skill(
+    knowledge = disease_knowledge or KnowledgeBuilderTool().load_guideline_knowledge(
         disease_key or "femoral_head_necrosis"
     )
     output = Path(output_dir)
@@ -62,19 +62,19 @@ def run_image_prompt_skill_baseline(
         _run_level(
             image_path=image,
             patient_prompt=patient_prompt,
-            disease_skill=skill,
+            disease_knowledge=knowledge,
             baseline_level=level,
             client=baseline_client,
         )
         for level in IMAGE_BASELINE_LEVELS
     ]
     payload = {
-        "schema_version": "image_prompt_skill_baseline.v1",
+        "schema_version": "image_prompt_knowledge_baseline.v1",
         "status": "completed",
         "created_at": timestamp,
         "image_path": str(image),
         "patient_prompt": patient_prompt,
-        "skill_summary": _skill_summary(skill),
+        "knowledge_summary": _knowledge_summary(knowledge),
         "baseline_count": len(results),
         "baseline_levels": [dict(level) for level in IMAGE_BASELINE_LEVELS],
         "baseline_results": results,
@@ -90,8 +90,8 @@ def run_image_prompt_skill_baseline(
             "purpose": "Compare prompt-only VLM behavior against MedScope evidence-bound pipeline.",
         },
     }
-    json_path = output / "image_prompt_skill_baseline.json"
-    markdown_path = output / "image_prompt_skill_baseline.md"
+    json_path = output / "image_prompt_knowledge_baseline.json"
+    markdown_path = output / "image_prompt_knowledge_baseline.md"
     chinese_conclusion_path = output / "中文结论.md"
     payload["output_paths"] = {
         "json_path": str(json_path),
@@ -108,7 +108,7 @@ def _run_level(
     *,
     image_path: Path,
     patient_prompt: str,
-    disease_skill: dict[str, Any],
+    disease_knowledge: dict[str, Any],
     baseline_level: dict[str, Any],
     client: VisionClient,
 ) -> dict[str, Any]:
@@ -117,7 +117,7 @@ def _run_level(
     user_payload = {
         "baseline_level": level,
         "patient_prompt": patient_prompt,
-        "skill": _baseline_skill_payload(disease_skill),
+        "knowledge": _baseline_knowledge_payload(disease_knowledge),
         "required_output_schema": {
             "诊断倾向": "string",
             "影像依据": ["string"],
@@ -136,7 +136,7 @@ def _run_level(
         image_path=image_path,
         system_prompt=system_prompt,
         user_payload=user_payload,
-        task="image_prompt_skill_baseline",
+        task="image_prompt_knowledge_baseline",
     )
     parsed_report, parse_error = _parse_json(raw_content)
     metrics = _baseline_metrics(parsed_report=parsed_report, parse_error=parse_error)
@@ -152,16 +152,16 @@ def _run_level(
     }
 
 
-def _baseline_skill_payload(skill: dict[str, Any]) -> dict[str, Any]:
-    protocol = skill.get("visual_protocol") or {}
+def _baseline_knowledge_payload(knowledge: dict[str, Any]) -> dict[str, Any]:
+    protocol = knowledge.get("visual_protocol") or {}
     return {
-        "disease_name": skill.get("disease_name"),
-        "skill_id": skill.get("skill_id"),
-        "skill_type": skill.get("skill_type"),
-        "evidence_level": skill.get("evidence_level"),
-        "source": skill.get("source"),
-        "clinical_features": dict(skill.get("clinical_features") or {}),
-        "required_image_views": list(skill.get("required_image_views") or []),
+        "disease_name": knowledge.get("disease_name"),
+        "knowledge_id": knowledge.get("knowledge_id"),
+        "knowledge_type": knowledge.get("knowledge_type"),
+        "evidence_level": knowledge.get("evidence_level"),
+        "source": knowledge.get("source"),
+        "clinical_features": dict(knowledge.get("clinical_features") or {}),
+        "required_image_views": list(knowledge.get("required_image_views") or []),
         "visual_protocol": {
             "disease_target": protocol.get("disease_target"),
             "clinical_focus": protocol.get("clinical_focus"),
@@ -185,11 +185,11 @@ def _baseline_skill_payload(skill: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _skill_summary(skill: dict[str, Any]) -> dict[str, Any]:
-    protocol = skill.get("visual_protocol") or {}
+def _knowledge_summary(knowledge: dict[str, Any]) -> dict[str, Any]:
+    protocol = knowledge.get("visual_protocol") or {}
     return {
-        "disease_name": skill.get("disease_name"),
-        "skill_id": skill.get("skill_id"),
+        "disease_name": knowledge.get("disease_name"),
+        "knowledge_id": knowledge.get("knowledge_id"),
         "disease_target": protocol.get("disease_target"),
         "finding_target_count": len(protocol.get("finding_targets") or []),
         "required_next_image_count": len(protocol.get("required_next_images") or []),
@@ -241,9 +241,9 @@ def _read_prompt(path: Path) -> str:
 
 def _render_markdown(payload: dict[str, Any]) -> str:
     lines = [
-        "# MedScope Image + Prompt + Skill Baseline",
+        "# MedScope Image + Prompt + Knowledge Baseline",
         "",
-        "This artifact compares three prompt-only VLM baselines on the same uploaded image, patient prompt, and skill.",
+        "This artifact compares three prompt-only VLM baselines on the same uploaded image, patient prompt, and knowledge.",
         "",
         f"- `status`: `{payload.get('status')}`",
         f"- `image_path`: `{payload.get('image_path')}`",
@@ -286,8 +286,8 @@ def _render_chinese_conclusion(payload: dict[str, Any]) -> str:
     simple = _parsed_report(results.get("simple_prompt"))
     workflow = _parsed_report(results.get("workflow_prompt"))
     fewshot = _parsed_report(results.get("fewshot_prompt"))
-    skill = payload.get("skill_summary") or {}
-    disease_name = str(skill.get("disease_name") or "目标疾病")
+    knowledge = payload.get("knowledge_summary") or {}
+    disease_name = str(knowledge.get("disease_name") or "目标疾病")
     image_path = str(payload.get("image_path") or "")
     patient_prompt = str(payload.get("patient_prompt") or "")
     lines = [
@@ -297,7 +297,7 @@ def _render_chinese_conclusion(payload: dict[str, Any]) -> str:
         "",
         f"- 图像：`{image_path}`",
         f"- 患者描述：{patient_prompt}",
-        f"- 使用 skill：`{skill.get('skill_id') or 'unknown'}`",
+        f"- 使用 knowledge：`{knowledge.get('knowledge_id') or 'unknown'}`",
         "",
         "## 总体结论",
         "",
@@ -324,7 +324,7 @@ def _render_chinese_conclusion(payload: dict[str, Any]) -> str:
         "",
         "### Level 1: simple_prompt",
         "",
-        "simple_prompt 是最弱约束版本。它直接把原始医疗图像、患者描述和 disease skill 给 VLM，主要依靠模型自身视觉理解和医学常识回答。",
+        "simple_prompt 是最弱约束版本。它直接把原始医疗图像、患者描述和 disease knowledge 给 VLM，主要依靠模型自身视觉理解和医学常识回答。",
         "",
         "本层适合作为最低基线：可以观察普通 VLM 是否能发现大方向异常，但证据边界通常不够稳定，容易把候选征象说得偏确定。",
         "",
@@ -345,19 +345,19 @@ def _render_chinese_conclusion(payload: dict[str, Any]) -> str:
         "三层 Codex/VLM baseline 的流程是：",
         "",
         "```text",
-        "图片 + 患者描述 + skill -> VLM 直接生成诊断文本",
+        "图片 + 患者描述 + knowledge -> VLM 直接生成诊断文本",
         "```",
         "",
         "MedScope Agent 主流程是：",
         "",
         "```text",
         "图片 + 患者描述",
-        "-> 高医生 Agent 自动选择 skill",
-        "-> VisionAgent 根据 skill 生成候选视觉证据",
+        "-> 高医生 Agent 自动选择 knowledge",
+        "-> VisionAgent 根据 knowledge 生成候选视觉证据",
         "-> MedSAM2 或 VLM-only 模式生成病灶候选图",
         "-> evidence bundle 记录可用证据、缺失证据、排除证据",
         "-> DiagnosisAgent 只消费结构化证据生成诊断报告",
-        "-> MemoryManager 保存 patient/image/skill/reasoning memory",
+        "-> MemoryManager 保存 patient/image/knowledge/reasoning memory",
         "-> QA 只能基于已保存 evidence bundle 回答",
         "```",
         "",
@@ -441,7 +441,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--disease-key", default="femoral_head_necrosis")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     args = parser.parse_args(argv)
-    payload = run_image_prompt_skill_baseline(
+    payload = run_image_prompt_knowledge_baseline(
         image_path=Path(args.image),
         patient_prompt=args.message,
         disease_key=args.disease_key,

@@ -8,10 +8,10 @@ from typing import Any
 from tools.guideline_search_tool import GuidelineSearchTool
 from tools.guideline_source_collector_tool import GuidelineSourceCollectorTool
 from tools.guideline_source_import_tool import GuidelineSourceImportTool
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 
 
-DEFAULT_OUTPUT_DIR = Path("output/fake/ipf_guideline_skill_demo")
+DEFAULT_OUTPUT_DIR = Path("output/fake/ipf_guideline_knowledge_demo")
 DISEASE_KEY = "idiopathic_pulmonary_fibrosis_hrct"
 DISEASE_NAME = "特发性肺纤维化 HRCT 评估"
 
@@ -108,7 +108,7 @@ def canonical_ipf_raw_text(metadata: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def run_ipf_guideline_skill_demo(
+def run_ipf_guideline_knowledge_demo(
     output_dir: Path | str = DEFAULT_OUTPUT_DIR,
     collect_sources: bool = False,
     timeout_seconds: float = 20.0,
@@ -117,7 +117,7 @@ def run_ipf_guideline_skill_demo(
     raw_dir = output / "raw"
     collected_dir = output / "collected_sources"
     catalog_path = output / "guideline_sources.json"
-    skill_output_path = output / f"{DISEASE_KEY}.yaml"
+    knowledge_output_path = output / f"{DISEASE_KEY}.yaml"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     collection_results: list[dict[str, Any]] = []
@@ -143,16 +143,16 @@ def run_ipf_guideline_skill_demo(
         raw_paths.append(str(raw_path))
 
     search_tool = GuidelineSearchTool(source_catalog_path=catalog_path)
-    skill = SkillBuilderTool(
-        skills_dir=output / "_no_existing_skills",
+    knowledge = KnowledgeBuilderTool(
+        knowledges_dir=output / "_no_existing_knowledges",
         guideline_search_tool=search_tool,
-    ).prepare_skill(
+    ).prepare_knowledge(
         disease_key=DISEASE_KEY,
         disease_name=DISEASE_NAME,
         observations=[],
     )
-    skill_output_path.write_text(
-        json.dumps(skill, ensure_ascii=False, indent=2),
+    knowledge_output_path.write_text(
+        json.dumps(knowledge, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     return {
@@ -160,7 +160,7 @@ def run_ipf_guideline_skill_demo(
         "disease_name": DISEASE_NAME,
         "raw_paths": raw_paths,
         "catalog_path": str(catalog_path),
-        "skill_output_path": str(skill_output_path),
+        "knowledge_output_path": str(knowledge_output_path),
         "source_count": len(IPF_SOURCE_SPECS),
         "collected_source_count": len(collection_results),
         "collection_results": collection_results,
@@ -169,7 +169,7 @@ def run_ipf_guideline_skill_demo(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Build an IPF HRCT guideline skill draft from official source definitions."
+        description="Build an IPF HRCT guideline knowledge draft from official source definitions."
     )
     parser.add_argument(
         "--output-dir",
@@ -187,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    result = run_ipf_guideline_skill_demo(
+    result = run_ipf_guideline_knowledge_demo(
         output_dir=Path(args.output_dir),
         collect_sources=args.collect_sources,
         timeout_seconds=args.timeout_seconds,

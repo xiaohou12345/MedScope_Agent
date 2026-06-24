@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MedScope Agent</title>
-    <link rel="stylesheet" href="/static/app.css?v=skill-comparison-v2-20260606" />
+    <link rel="stylesheet" href="/static/app.css?v=knowledge-rename-v1-20260624" />
   </head>
   <body>
     <main class="app-shell">
@@ -52,23 +52,31 @@
 
             <div class="mode-control">
               <strong>安全证据流程</strong>
-              <span>Agent 会按 Skill evidence protocol 自动选择安全视觉链路：先获取候选视觉证据，再按需要调用分割或测量工具；弱证据不会被升级为确诊依据。</span>
+              <span>Agent 会按 Knowledge evidence protocol 自动选择安全视觉链路：先获取候选视觉证据，再按需要调用分割或测量工具；弱证据不会被升级为确诊依据。</span>
             </div>
 
             <label>
-              Skill 选择模式
-              <select id="skillSelectionMode" name="skill_selection_mode">
-                <option value="primary_only" selected>主 Skill 单路</option>
-                <option value="manual_secondary">主 Skill + 人工备用 Skill</option>
-                <option value="agent_auto_secondary">Agent 自动多 Skill</option>
+              Knowledge 选择模式
+              <select id="knowledgeSelectionMode" name="knowledge_selection_mode">
+                <option value="primary_only" selected>主 Knowledge 单路</option>
+                <option value="manual_secondary">主 Knowledge + 人工备用 Knowledge</option>
+                <option value="agent_auto_secondary">Agent 自动多 Knowledge</option>
               </select>
             </label>
 
-            <div id="manualSecondarySkillSelection" class="mode-control">
-              <strong>已选择备用复查</strong>
-              <span>先运行主 Skill 分析；系统给出候选假设后，可在报告中点击“加入备用复查”。</span>
+            <label>
+              证据提取范围
+              <select id="evidenceProtocolMode" name="evidence_protocol_mode">
+                <option value="finding_list_baseline" selected>默认：只看病灶征象</option>
+                <option value="quantitative_optional">可选：加入量化指标协议</option>
+              </select>
+            </label>
+
+            <div id="manualSecondaryKnowledgeSelection" class="mode-control">
+              <strong>当前备用复查 Knowledge</strong>
+              <span>先运行主 Knowledge 分析；系统给出候选假设后，可在报告中点击“加入备用复查”。</span>
             </div>
-            <input type="hidden" id="manualSecondarySkills" name="manual_secondary_skill_candidates" value="" />
+            <input type="hidden" id="manualSecondaryKnowledges" name="manual_secondary_knowledge_candidates" value="" />
 
             <input id="imagePath" name="image_path" type="hidden" value="" />
             <label>
@@ -141,45 +149,24 @@
           <div id="qaLog" class="qa-log"></div>
         </section>
 
-        <details class="debug-details research-evidence-review-details">
-          <summary>Research Evidence Review</summary>
-          <section class="panel research-evidence-review-panel">
+        <details class="debug-details knowledge-debug-details">
+          <summary>Knowledge 管理</summary>
+          <section id="knowledgeReviewPanel" class="panel knowledge-review-panel">
             <div class="panel-title">
-              <h2>论文证据安全补充审核</h2>
-              <span>research evidence is not guideline evidence · proposal-only</span>
-            </div>
-            <div id="researchEvidenceReviewView" class="trace-empty">等待加载 Research Evidence Review</div>
-          </section>
-        </details>
-
-        <details class="debug-details skill-comparison-details">
-          <summary>Skill 版本对比</summary>
-          <section class="panel skill-comparison-panel">
-            <div class="panel-title">
-              <h2>股骨头坏死 Skill 对比</h2>
-              <span>finding-list baseline vs Evidence protocol</span>
-            </div>
-            <div id="skillProtocolComparisonView" class="trace-empty">等待加载 Skill 版本对比</div>
-          </section>
-        </details>
-
-        <details class="debug-details skill-debug-details">
-          <summary>Skill 管理</summary>
-          <section id="skillReviewPanel" class="panel skill-review-panel">
-            <div class="panel-title">
-              <h2>Skill 审核</h2>
+              <h2>Knowledge 审核</h2>
               <div class="sample-actions">
-                <button id="refreshSkillsButton" type="button">刷新 Skill</button>
-                <button id="saveSkillDraftButton" type="button">保存草稿</button>
+                <button id="refreshKnowledgesButton" type="button">刷新 Knowledge</button>
+                <button id="saveKnowledgeDraftButton" type="button">保存草稿</button>
+                <button id="promoteKnowledgeButton" type="button">保存为正式 Knowledge</button>
               </div>
             </div>
-            <div class="skill-review-layout">
-              <aside class="skill-list-pane">
-                <div id="skillListView" class="trace-empty">等待加载 skill</div>
+            <div class="knowledge-review-layout">
+              <aside class="knowledge-list-pane">
+                <div id="knowledgeListView" class="trace-empty">等待加载 knowledge</div>
               </aside>
-              <section class="skill-detail-pane">
-                <div id="skillReviewStatus" class="skill-review-status">医生审核模式：草稿只保存到 output/fake，不直接覆盖正式 skill。</div>
-                <div id="skillDetailView" class="trace-empty">请选择一个 Skill 查看</div>
+              <section class="knowledge-detail-pane">
+                <div id="knowledgeReviewStatus" class="knowledge-review-status">医生审核模式：普通审核保存草稿；候选 Knowledge 可确认后保存到正式 knowledge 库。</div>
+                <div id="knowledgeDetailView" class="trace-empty">请选择一个 Knowledge 查看</div>
               </section>
             </div>
           </section>
@@ -196,7 +183,7 @@
             <span class="status-pill status-in_progress">展示前端 v1</span>
           </section>
 
-          <section class="architecture-grid">
+          <section id="pipelinePosterStage" class="architecture-grid pipeline-poster-stage">
             <section class="panel architecture-diagram-panel">
               <div class="panel-title">
                 <h2>系统流程图</h2>
@@ -216,6 +203,14 @@
             </section>
           </section>
 
+          <section class="panel architecture-quote-panel">
+            <div class="panel-title">
+              <h2>对外表述</h2>
+              <span>组会讲解用</span>
+            </div>
+            <p>本系统不是简单堆叠多个 Agent，而是以 evidence_bundle 为中心的临床证据流水线。Agent 的拆分依据不是功能数量，而是医疗安全边界：谁能看图、谁能解释指南、谁能做诊断、谁负责审计。</p>
+          </section>
+
           <section class="panel optimization-panel">
             <div class="panel-title">
               <h2>Optimization Directions / 四个优化方向</h2>
@@ -226,6 +221,28 @@
               <div id="optimizationDirectionDetail" class="optimization-direction-detail"></div>
             </div>
           </section>
+
+          <details class="debug-details knowledge-comparison-details">
+            <summary>Knowledge 版本对比</summary>
+            <section class="panel knowledge-comparison-panel">
+              <div class="panel-title">
+                <h2>股骨头坏死 Knowledge 对比</h2>
+                <span>Guideline Knowledge 结构扩展 · finding-list baseline vs Evidence protocol</span>
+              </div>
+              <div id="knowledgeProtocolComparisonView" class="trace-empty">等待加载 Knowledge 版本对比</div>
+            </section>
+          </details>
+
+          <details class="debug-details research-evidence-review-details">
+            <summary>Research Evidence Review</summary>
+            <section class="panel research-evidence-review-panel">
+              <div class="panel-title">
+                <h2>论文证据安全补充审核</h2>
+                <span>论文证据安全补充 Guideline Knowledge · research evidence is not guideline evidence · proposal-only</span>
+              </div>
+              <div id="researchEvidenceReviewView" class="trace-empty">等待加载 Research Evidence Review</div>
+            </section>
+          </details>
 
           <section class="panel roadmap-todo-panel">
             <div class="panel-title">
@@ -238,6 +255,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=manual-secondary-visible-20260608"></script>
+    <script src="/static/app.js?v=knowledge-rename-v1-20260624"></script>
   </body>
 </html>

@@ -10,10 +10,10 @@ from typing import Any
 
 DEFAULT_PACKAGE_DIR = Path("data/ONFH_MRI_Xray_COCO_clean_20260605_package")
 DEFAULT_OUTPUT_DIR = Path("output/real/onfh_coco_protocol_evaluation")
-DEFAULT_BASELINE_SKILL = Path(
-    "skills/baselines/femoral_head_necrosis_finding_list_baseline_20260604.yaml"
+DEFAULT_BASELINE_KNOWLEDGE = Path(
+    "knowledge/baselines/femoral_head_necrosis_finding_list_baseline_20260604.yaml"
 )
-DEFAULT_CURRENT_SKILL = Path("skills/femoral_head_necrosis.yaml")
+DEFAULT_CURRENT_KNOWLEDGE = Path("knowledge/femoral_head_necrosis.yaml")
 
 
 ONFH_LABEL_TO_TARGET = {
@@ -74,8 +74,8 @@ def run_onfh_coco_protocol_evaluation(
     *,
     package_dir: Path | str = DEFAULT_PACKAGE_DIR,
     output_dir: Path | str = DEFAULT_OUTPUT_DIR,
-    baseline_skill_path: Path | str = DEFAULT_BASELINE_SKILL,
-    current_skill_path: Path | str = DEFAULT_CURRENT_SKILL,
+    baseline_knowledge_path: Path | str = DEFAULT_BASELINE_KNOWLEDGE,
+    current_knowledge_path: Path | str = DEFAULT_CURRENT_KNOWLEDGE,
     primary_modality: str = "Xray",
     include_auxiliary_modalities: bool = False,
 ) -> dict[str, Any]:
@@ -85,8 +85,8 @@ def run_onfh_coco_protocol_evaluation(
 
     coco_path = package / "annotations" / "instances_coco.json"
     coco = _read_json(coco_path)
-    baseline_skill = _read_json(Path(baseline_skill_path))
-    current_skill = _read_json(Path(current_skill_path))
+    baseline_knowledge = _read_json(Path(baseline_knowledge_path))
+    current_knowledge = _read_json(Path(current_knowledge_path))
     manifest_by_image_id = _read_manifest(package / "annotations" / "manifest.csv")
 
     images_by_id = {
@@ -99,9 +99,9 @@ def run_onfh_coco_protocol_evaluation(
         for category in coco.get("categories") or []
         if isinstance(category, dict) and category.get("id") is not None
     }
-    baseline_targets = _baseline_targets(baseline_skill)
-    current_targets = _current_protocol_targets(current_skill)
-    current_quantitative_targets = _current_quantitative_targets(current_skill)
+    baseline_targets = _baseline_targets(baseline_knowledge)
+    current_targets = _current_protocol_targets(current_knowledge)
+    current_quantitative_targets = _current_quantitative_targets(current_knowledge)
 
     label_stats: dict[str, dict[str, Any]] = {}
     sample_items: list[dict[str, Any]] = []
@@ -221,9 +221,9 @@ def run_onfh_coco_protocol_evaluation(
             ),
             "excluded_label_counts": dict(sorted(auxiliary_excluded_by_label.items())),
         },
-        "skill_comparison": {
-            "baseline_skill_path": str(baseline_skill_path),
-            "current_skill_path": str(current_skill_path),
+        "knowledge_comparison": {
+            "baseline_knowledge_path": str(baseline_knowledge_path),
+            "current_knowledge_path": str(current_knowledge_path),
             "baseline_finding_targets": sorted(baseline_targets),
             "current_imaging_targets": sorted(current_targets),
             "current_quantitative_targets": sorted(current_quantitative_targets),
@@ -232,9 +232,9 @@ def run_onfh_coco_protocol_evaluation(
             "real_data_evaluation_only": True,
             "patient_paths_redacted": True,
             "diagnosis_allowed": False,
-            "formal_skill_update_allowed": False,
+            "formal_knowledge_update_allowed": False,
             "does_not_train_model": True,
-            "does_not_update_formal_skill": True,
+            "does_not_update_formal_knowledge": True,
         },
         "aggregate": {
             "mapped_annotation_count": mapped_annotation_count,
@@ -275,7 +275,7 @@ def _label_mapping(
             "current_protocol_status": "unmapped_label",
             "baseline_status": "unmapped_label",
             "quantitative_protocol_status": "unmapped_label",
-            "protocol_gap_note": "No label-to-skill target mapping is defined.",
+            "protocol_gap_note": "No label-to-knowledge target mapping is defined.",
         }
     target = str(declared["target"])
     if target in current_targets:
@@ -329,8 +329,8 @@ def _sample_evidence_item(
     }
 
 
-def _baseline_targets(skill: dict[str, Any]) -> set[str]:
-    visual_protocol = skill.get("visual_protocol") or {}
+def _baseline_targets(knowledge: dict[str, Any]) -> set[str]:
+    visual_protocol = knowledge.get("visual_protocol") or {}
     return {
         str(item.get("target"))
         for item in visual_protocol.get("finding_targets") or []
@@ -338,8 +338,8 @@ def _baseline_targets(skill: dict[str, Any]) -> set[str]:
     }
 
 
-def _current_protocol_targets(skill: dict[str, Any]) -> set[str]:
-    imaging = skill.get("imaging_evidence_protocol") or {}
+def _current_protocol_targets(knowledge: dict[str, Any]) -> set[str]:
+    imaging = knowledge.get("imaging_evidence_protocol") or {}
     return {
         str(item.get("target"))
         for item in imaging.get("finding_targets") or []
@@ -347,8 +347,8 @@ def _current_protocol_targets(skill: dict[str, Any]) -> set[str]:
     }
 
 
-def _current_quantitative_targets(skill: dict[str, Any]) -> set[str]:
-    quantitative = skill.get("quantitative_evidence_protocol") or {}
+def _current_quantitative_targets(knowledge: dict[str, Any]) -> set[str]:
+    quantitative = knowledge.get("quantitative_evidence_protocol") or {}
     targets = set()
     for item in quantitative.get("image_feature_quantification") or []:
         if isinstance(item, dict) and item.get("target"):
@@ -476,7 +476,7 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         [
             "",
             "Safety boundary: this artifact evaluates protocol coverage on real annotation data.",
-            "It does not train a model, update a formal skill, or authorize clinical diagnosis.",
+            "It does not train a model, update a formal knowledge, or authorize clinical diagnosis.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -492,19 +492,19 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Evaluate ONFH COCO labels against FHN skill protocols.")
+    parser = argparse.ArgumentParser(description="Evaluate ONFH COCO labels against FHN knowledge protocols.")
     parser.add_argument("--package-dir", default=str(DEFAULT_PACKAGE_DIR))
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
-    parser.add_argument("--baseline-skill", default=str(DEFAULT_BASELINE_SKILL))
-    parser.add_argument("--current-skill", default=str(DEFAULT_CURRENT_SKILL))
+    parser.add_argument("--baseline-knowledge", default=str(DEFAULT_BASELINE_KNOWLEDGE))
+    parser.add_argument("--current-knowledge", default=str(DEFAULT_CURRENT_KNOWLEDGE))
     parser.add_argument("--primary-modality", default="Xray")
     parser.add_argument("--include-auxiliary-modalities", action="store_true")
     args = parser.parse_args(argv)
     payload = run_onfh_coco_protocol_evaluation(
         package_dir=Path(args.package_dir),
         output_dir=Path(args.output_dir),
-        baseline_skill_path=Path(args.baseline_skill),
-        current_skill_path=Path(args.current_skill),
+        baseline_knowledge_path=Path(args.baseline_knowledge),
+        current_knowledge_path=Path(args.current_knowledge),
         primary_modality=args.primary_modality,
         include_auxiliary_modalities=args.include_auxiliary_modalities,
     )

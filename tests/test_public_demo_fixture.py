@@ -35,14 +35,14 @@ class PublicDemoFixtureTest(unittest.TestCase):
             payload = manifest["service_payload"]
             self.assertEqual(payload["image_path"], str(image_path))
             self.assertEqual(payload["disease_key"], "femoral_head_necrosis")
-            self.assertEqual(payload["vision_mode"], "no_mask_skill")
+            self.assertEqual(payload["vision_mode"], "no_mask_knowledge")
 
             fake_doctor = FakeGaoDoctor()
             service = MedScopeService(gaodoctor_agent=fake_doctor)
             service_result = service.handle_request(payload)
 
-            self.assertEqual(service_result["routing_decision"]["selected_skill"], "femoral_head_necrosis")
-            self.assertEqual(service_result["routing_decision"]["selected_vision_mode"], "no_mask_skill")
+            self.assertEqual(service_result["routing_decision"]["selected_knowledge"], "femoral_head_necrosis")
+            self.assertEqual(service_result["routing_decision"]["selected_vision_mode"], "no_mask_knowledge")
             self.assertEqual(fake_doctor.calls[0]["image_path"], str(image_path))
 
     def test_public_safe_demo_suite_runs_service_memory_audit_and_qa_without_real_data(self):
@@ -65,8 +65,8 @@ class PublicDemoFixtureTest(unittest.TestCase):
             qa_response = json.loads(Path(result["qa_response_path"]).read_text(encoding="utf-8"))
             audit = json.loads(Path(result["memory_audit_path"]).read_text(encoding="utf-8"))
 
-            self.assertEqual(response["routing_decision"]["selected_skill"], "femoral_head_necrosis")
-            self.assertEqual(response["routing_decision"]["selected_vision_mode"], "no_mask_skill")
+            self.assertEqual(response["routing_decision"]["selected_knowledge"], "femoral_head_necrosis")
+            self.assertEqual(response["routing_decision"]["selected_vision_mode"], "no_mask_knowledge")
             self.assertEqual(qa_response["intent"], "qa")
             self.assertEqual(qa_response["case_id"], response["case_id"])
             self.assertIn("reply_to_patient", qa_response)

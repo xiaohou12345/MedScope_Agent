@@ -592,5 +592,324 @@
         ]
       }
     ]
+  },
+  "osteoarthritis_or_degenerative_hip_disease": {
+    "disease_name": "骨关节炎或退行性髋关节病变",
+    "source_type": "medical_guideline",
+    "evidence_level": "high",
+    "sources": [
+      {
+        "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+        "publisher": "American College of Radiology",
+        "source_id": "acr_chronic_hip_pain",
+        "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+        "source_kind": "imaging_appropriateness_guideline",
+        "publication_year": 2022,
+        "region": "US",
+        "source_priority": 10,
+        "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+      },
+      {
+        "title": "NICE Osteoarthritis in over 16s: diagnosis and management",
+        "publisher": "NICE",
+        "source_id": "nice_osteoarthritis_ng226",
+        "url": "https://www.nice.org.uk/guidance/ng226",
+        "source_kind": "clinical_guideline",
+        "publication_year": 2022,
+        "region": "UK",
+        "source_priority": 9,
+        "evidence_note": "Clinical osteoarthritis diagnosis and management guideline used as a review source."
+      }
+    ],
+    "guideline_documents": [
+      {
+        "title": "Hip osteoarthritis and degenerative hip disease guideline synthesis",
+        "source_id": "hip_osteoarthritis_guideline_synthesis",
+        "sections": [
+          {
+            "heading": "clinical_features",
+            "text": "common_symptoms: 髋关节疼痛; 活动后疼痛加重; 关节僵硬; 活动受限\nrisk_factors: 年龄增长; 既往髋关节损伤; 肥胖或负重增加; 发育性髋关节异常",
+            "citations": [
+              {
+                "source_id": "acr_chronic_hip_pain",
+                "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+              },
+              {
+                "source_id": "nice_osteoarthritis_ng226",
+                "title": "NICE Osteoarthritis in over 16s: diagnosis and management",
+                "url": "https://www.nice.org.uk/guidance/ng226",
+                "source_kind": "clinical_guideline",
+                "evidence_note": "Clinical osteoarthritis diagnosis and management guideline used as a review source."
+              }
+            ]
+          },
+          {
+            "heading": "required_image_views",
+            "text": "骨盆/髋关节 X 光正位; 必要时侧位或蛙式位 X 光; 症状与 X 光不符时补充 MRI",
+            "citations": [
+              {
+                "source_id": "acr_chronic_hip_pain",
+                "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+              },
+              {
+                "source_id": "nice_osteoarthritis_ng226",
+                "title": "NICE Osteoarthritis in over 16s: diagnosis and management",
+                "url": "https://www.nice.org.uk/guidance/ng226",
+                "source_kind": "clinical_guideline",
+                "evidence_note": "Clinical osteoarthritis diagnosis and management guideline used as a review source."
+              }
+            ]
+          },
+          {
+            "heading": "visual_targets",
+            "text": "anatomy: 髋关节间隙; 股骨头; 髋臼边缘; 软骨下骨\nlesion_features: 关节间隙狭窄; 骨赘; 软骨下硬化; 退变性股骨头形态不规则",
+            "citations": [
+              {
+                "source_id": "acr_chronic_hip_pain",
+                "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+              },
+              {
+                "source_id": "nice_osteoarthritis_ng226",
+                "title": "NICE Osteoarthritis in over 16s: diagnosis and management",
+                "url": "https://www.nice.org.uk/guidance/ng226",
+                "source_kind": "clinical_guideline",
+                "evidence_note": "Clinical osteoarthritis diagnosis and management guideline used as a review source."
+              }
+            ]
+          },
+          {
+            "heading": "vision_agent_tasks",
+            "text": "segmentation_targets: 髋关节间隙; 股骨头/髋臼边缘骨赘候选区; 软骨下硬化候选区\nquantitative_features: joint_space_width; osteophyte_candidate_area; subchondral_sclerosis_area_ratio",
+            "citations": [
+              {
+                "source_id": "acr_chronic_hip_pain",
+                "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+              },
+              {
+                "source_id": "nice_osteoarthritis_ng226",
+                "title": "NICE Osteoarthritis in over 16s: diagnosis and management",
+                "url": "https://www.nice.org.uk/guidance/ng226",
+                "source_kind": "clinical_guideline",
+                "evidence_note": "Clinical osteoarthritis diagnosis and management guideline used as a review source."
+              }
+            ]
+          },
+          {
+            "heading": "visual_protocol",
+            "text": "disease_target: osteoarthritis_or_degenerative_hip_disease\navailable_modalities: X-ray; MRI\nrequired_modalities.joint_space_narrowing: X-ray\nrequired_modalities.osteophyte: X-ray\nrequired_modalities.subchondral_sclerosis: X-ray\nrequired_modalities.soft_tissue_or_bone_marrow_change: MRI\nmeasurements: joint_space_width; osteophyte_candidate_area; subchondral_sclerosis_area_ratio",
+            "citations": [
+              {
+                "source_id": "acr_chronic_hip_pain",
+                "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+              },
+              {
+                "source_id": "nice_osteoarthritis_ng226",
+                "title": "NICE Osteoarthritis in over 16s: diagnosis and management",
+                "url": "https://www.nice.org.uk/guidance/ng226",
+                "source_kind": "clinical_guideline",
+                "evidence_note": "Clinical osteoarthritis diagnosis and management guideline used as a review source."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "post_traumatic_change": {
+    "disease_name": "外伤后改变",
+    "source_type": "medical_guideline",
+    "evidence_level": "high",
+    "sources": [
+      {
+        "title": "ACR Appropriateness Criteria Acute Hip Pain",
+        "publisher": "American College of Radiology",
+        "source_id": "acr_acute_hip_pain",
+        "url": "https://acsearch.acr.org/docs/3082587/Narrative/",
+        "source_kind": "imaging_appropriateness_guideline",
+        "publication_year": 2024,
+        "region": "US",
+        "source_priority": 10,
+        "evidence_note": "Imaging pathway for traumatic or acute hip pain."
+      }
+    ],
+    "guideline_documents": [
+      {
+        "title": "Post-traumatic hip change guideline synthesis",
+        "source_id": "post_traumatic_hip_change_guideline_synthesis",
+        "sections": [
+          {
+            "heading": "clinical_features",
+            "text": "common_symptoms: 髋部疼痛; 负重痛; 活动受限\nrisk_factors: 明确外伤史; 既往骨折; 术后或内固定史",
+            "citations": [
+              {
+                "source_id": "acr_acute_hip_pain",
+                "title": "ACR Appropriateness Criteria Acute Hip Pain",
+                "url": "https://acsearch.acr.org/docs/3082587/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Imaging pathway for traumatic or acute hip pain."
+              }
+            ]
+          },
+          {
+            "heading": "required_image_views",
+            "text": "髋关节 X 光正位; 必要时侧位 X 光; 疑似隐匿骨折时补充 CT 或 MRI",
+            "citations": [
+              {
+                "source_id": "acr_acute_hip_pain",
+                "title": "ACR Appropriateness Criteria Acute Hip Pain",
+                "url": "https://acsearch.acr.org/docs/3082587/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Imaging pathway for traumatic or acute hip pain."
+              }
+            ]
+          },
+          {
+            "heading": "visual_targets",
+            "text": "anatomy: 股骨头; 股骨颈; 髋臼; 近端股骨\nlesion_features: 骨折线; 陈旧骨折畸形; 外伤后轮廓异常; 术后或内固定改变",
+            "citations": [
+              {
+                "source_id": "acr_acute_hip_pain",
+                "title": "ACR Appropriateness Criteria Acute Hip Pain",
+                "url": "https://acsearch.acr.org/docs/3082587/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Imaging pathway for traumatic or acute hip pain."
+              }
+            ]
+          },
+          {
+            "heading": "vision_agent_tasks",
+            "text": "segmentation_targets: 骨折线候选区; 外伤后轮廓异常区\nquantitative_features: fracture_line_candidate_length; contour_irregularity_score",
+            "citations": [
+              {
+                "source_id": "acr_acute_hip_pain",
+                "title": "ACR Appropriateness Criteria Acute Hip Pain",
+                "url": "https://acsearch.acr.org/docs/3082587/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Imaging pathway for traumatic or acute hip pain."
+              }
+            ]
+          },
+          {
+            "heading": "visual_protocol",
+            "text": "disease_target: post_traumatic_change\navailable_modalities: X-ray; CT; MRI\nrequired_modalities.fracture_line: X-ray; CT\nrequired_modalities.post_traumatic_deformity: X-ray; CT\nrequired_modalities.occult_fracture: MRI; CT\nmeasurements: fracture_line_candidate_length; contour_irregularity_score",
+            "citations": [
+              {
+                "source_id": "acr_acute_hip_pain",
+                "title": "ACR Appropriateness Criteria Acute Hip Pain",
+                "url": "https://acsearch.acr.org/docs/3082587/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Imaging pathway for traumatic or acute hip pain."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "developmental_dysplasia_related_degeneration": {
+    "disease_name": "发育性髋关节异常相关退变",
+    "source_type": "medical_guideline",
+    "evidence_level": "high",
+    "sources": [
+      {
+        "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+        "publisher": "American College of Radiology",
+        "source_id": "acr_chronic_hip_pain",
+        "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+        "source_kind": "imaging_appropriateness_guideline",
+        "publication_year": 2022,
+        "region": "US",
+        "source_priority": 10,
+        "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+      }
+    ],
+    "guideline_documents": [
+      {
+        "title": "Developmental dysplasia related hip degeneration guideline synthesis",
+        "source_id": "ddh_related_degeneration_guideline_synthesis",
+        "sections": [
+          {
+            "heading": "clinical_features",
+            "text": "common_symptoms: 髋关节疼痛; 跛行; 活动受限\nrisk_factors: 发育性髋关节发育不良史; 髋臼覆盖不足; 女性或年轻成人髋痛",
+            "citations": [
+              {
+                "source_id": "acr_chronic_hip_pain",
+                "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+              }
+            ]
+          },
+          {
+            "heading": "required_image_views",
+            "text": "骨盆/髋关节 X 光正位; 必要时侧位或特殊体位 X 光",
+            "citations": [
+              {
+                "source_id": "acr_chronic_hip_pain",
+                "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+              }
+            ]
+          },
+          {
+            "heading": "visual_targets",
+            "text": "anatomy: 髋臼覆盖; 股骨头位置; 关节间隙; 髋臼外上缘\nlesion_features: 髋臼发育浅; 股骨头外移; 半脱位; 继发退变",
+            "citations": [
+              {
+                "source_id": "acr_chronic_hip_pain",
+                "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+              }
+            ]
+          },
+          {
+            "heading": "vision_agent_tasks",
+            "text": "segmentation_targets: 髋臼覆盖候选区; 股骨头位置关系\nquantitative_features: acetabular_coverage_score; lateralization_score",
+            "citations": [
+              {
+                "source_id": "acr_chronic_hip_pain",
+                "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+              }
+            ]
+          },
+          {
+            "heading": "visual_protocol",
+            "text": "disease_target: developmental_dysplasia_related_degeneration\navailable_modalities: X-ray\nrequired_modalities.acetabular_coverage: X-ray\nrequired_modalities.femoral_head_lateralization: X-ray\nrequired_modalities.secondary_degeneration: X-ray\nmeasurements: acetabular_coverage_score; lateralization_score",
+            "citations": [
+              {
+                "source_id": "acr_chronic_hip_pain",
+                "title": "ACR Appropriateness Criteria Chronic Hip Pain",
+                "url": "https://acsearch.acr.org/docs/69425/Narrative/",
+                "source_kind": "imaging_appropriateness_guideline",
+                "evidence_note": "Hip radiography and imaging workup for chronic hip pain including degenerative disease considerations."
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

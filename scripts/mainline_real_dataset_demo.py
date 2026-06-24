@@ -64,7 +64,7 @@ def run_mainline_real_dataset_demo(
         if manifest_validation.get("status") == "ok"
         and prompt_generation.get("status") == "ok"
         and vision_ground_truth.get("status") == "ok"
-        and end_to_end.get("routing_decision", {}).get("selected_skill")
+        and end_to_end.get("routing_decision", {}).get("selected_knowledge")
         == "diffuse_glioma_brats"
         else "partial_error"
     )
@@ -153,7 +153,7 @@ def _render_run_markdown(payload: dict[str, Any]) -> str:
         "",
         "## 目标",
         "",
-        "用一条真实数据闭环固定当前主线：真实医学图像、guideline skill、skill-driven vision、结构化数值、诊断报告、evidence bundle 和 memory audit。",
+        "用一条真实数据闭环固定当前主线：真实医学图像、guideline knowledge、knowledge-driven vision、结构化数值、诊断报告、evidence bundle 和 memory audit。",
         "",
         "## 数据边界",
         "",
@@ -165,7 +165,7 @@ def _render_run_markdown(payload: dict[str, Any]) -> str:
         "## 关键结果",
         "",
         f"- status: `{payload.get('status')}`",
-        f"- selected_skill: `{routing.get('selected_skill')}`",
+        f"- selected_knowledge: `{routing.get('selected_knowledge')}`",
         f"- selected_vision_mode: `{routing.get('selected_vision_mode')}`",
         f"- manifest cases: `{vision.get('case_count')}`",
         f"- vision ok cases: `{vision.get('ok_count')}`",

@@ -445,7 +445,7 @@ class VisionEvidenceEvalSummaryTest(unittest.TestCase):
                 "cases": [
                     {
                         "case_id": "brats_case_1",
-                        "disease_skill": "diffuse_glioma_brats",
+                        "disease_knowledge": "diffuse_glioma_brats",
                         "modality": "mri",
                         "reference_available": True,
                         "failure_types": ["under_segmentation"],
@@ -458,7 +458,7 @@ class VisionEvidenceEvalSummaryTest(unittest.TestCase):
                     },
                     {
                         "case_id": "case_fhn",
-                        "disease_skill": "femoral_head_necrosis",
+                        "disease_knowledge": "femoral_head_necrosis",
                         "modality": "xray",
                         "reference_available": False,
                         "failure_types": ["low_quality_mask"],
@@ -478,7 +478,7 @@ class VisionEvidenceEvalSummaryTest(unittest.TestCase):
                 "non_reference_attempts": [
                     {
                         "case_id": "brats_case_1",
-                        "disease_skill": "diffuse_glioma_brats",
+                        "disease_knowledge": "diffuse_glioma_brats",
                         "prompt_status": "ok",
                         "auto_eval_status": "not_ready",
                         "prompt_source": "vision_model_bbox",
@@ -509,7 +509,7 @@ class VisionEvidenceEvalSummaryTest(unittest.TestCase):
                 ],
             )
             self.assertTrue(queue["runtime_safety"]["candidate_artifacts_only"])
-            self.assertFalse(queue["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(queue["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(queue["runtime_safety"]["formal_guideline_updated"])
             self.assertFalse(queue["runtime_safety"]["diagnosis_report_updated"])
             self.assertTrue(
@@ -549,7 +549,7 @@ class VisionEvidenceEvalSummaryTest(unittest.TestCase):
                 "non_reference_attempts": [
                     {
                         "case_id": "brats2021_00030",
-                        "disease_skill": "diffuse_glioma_brats",
+                        "disease_knowledge": "diffuse_glioma_brats",
                         "modality": "mri",
                         "prompt_status": "ok",
                         "auto_eval_status": "ok",
@@ -648,7 +648,7 @@ class VisionEvidenceEvalSummaryTest(unittest.TestCase):
                 "candidate_items_reviewed_but_formal_promotion_requires_separate_approval",
             )
             self.assertFalse(gate["promotion_decision"]["formal_update_allowed"])
-            self.assertFalse(gate["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(gate["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(gate["runtime_safety"]["formal_guideline_updated"])
             self.assertFalse(gate["runtime_safety"]["diagnosis_report_updated"])
             self.assertTrue(

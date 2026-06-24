@@ -107,7 +107,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         self.assertEqual(claim["legacy_candidate_type"], "candidate_measurement_protocol")
         self.assertEqual(claim["source_ids"], ["study_texture"])
         self.assertEqual(
-            claim["proposed_skill_section"],
+            claim["proposed_knowledge_section"],
             "quantitative_evidence_protocol.image_feature_quantification",
         )
         self.assertEqual(claim["target_disease"], "femoral_head_necrosis")
@@ -120,7 +120,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
     def test_gateway_outputs_named_goal_gate_statuses_and_formal_update_false(self) -> None:
         package = build_research_evidence_review_package(
             disease_key="femoral_head_necrosis",
-            target_skill_id="femoral_head_necrosis_v0.1",
+            target_knowledge_id="femoral_head_necrosis_v0.1",
             modality="MRI",
             research_question="MRI necrotic area ratio as supplemental measurement",
             supplied_metadata=[
@@ -140,8 +140,8 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                     ),
                 }
             ],
-            guideline_skill={
-                "skill_id": "femoral_head_necrosis_v0.1",
+            guideline_knowledge={
+                "knowledge_id": "femoral_head_necrosis_v0.1",
                 "supported_modalities": ["X-ray"],
                 "evidence_protocol_sections": [
                     "quantitative_evidence_protocol.measurement_evidence"
@@ -193,7 +193,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         )
 
         self.assertEqual(extraction["schema_version"], "research_evidence_extraction.v1")
-        self.assertFalse(extraction["runtime_safety"]["formal_skill_updated"])
+        self.assertFalse(extraction["runtime_safety"]["formal_knowledge_updated"])
         self.assertFalse(extraction["runtime_safety"]["diagnosis_report_updated"])
         evidence = extraction["extracted_research_evidence"][0]
         self.assertEqual(evidence["source_id"], "abstract_texture_2025")
@@ -253,7 +253,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             root = Path(tmpdir)
             package = build_research_evidence_review_package(
                 disease_key="femoral_head_necrosis",
-                target_skill_id="femoral_head_necrosis_v0.1",
+                target_knowledge_id="femoral_head_necrosis_v0.1",
                 modality="MRI",
                 research_question="MRI texture protocol",
                 supplied_texts=[
@@ -270,8 +270,8 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                         ),
                     }
                 ],
-                guideline_skill={
-                    "skill_id": "femoral_head_necrosis_v0.1",
+                guideline_knowledge={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
                     "supported_modalities": ["X-ray"],
                     "evidence_protocol_sections": ["imaging_evidence_protocol"],
                 },
@@ -287,7 +287,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertEqual(candidate["candidate_type"], "candidate_measurement_protocol")
             self.assertEqual(candidate["source_id"], "text_texture")
             self.assertEqual(package["gateway_review_artifact"]["review_items"][0]["guideline_conflict_status"], "human_review_required")
-            self.assertFalse(package["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(package["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(package["runtime_safety"]["diagnosis_report_updated"])
             self.assertTrue((root / "review" / "research_evidence_extraction.json").exists())
             self.assertTrue((root / "review" / "research_evidence_review_package.json").exists())
@@ -301,12 +301,12 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 json.dumps(
                     {
                         "disease_key": "femoral_head_necrosis",
-                        "target_skill_id": "femoral_head_necrosis_v0.1",
+                        "target_knowledge_id": "femoral_head_necrosis_v0.1",
                         "modality": "MRI",
                         "research_question": "MRI texture protocol",
                         "build_review_package": True,
-                        "guideline_skill": {
-                            "skill_id": "femoral_head_necrosis_v0.1",
+                        "guideline_knowledge": {
+                            "knowledge_id": "femoral_head_necrosis_v0.1",
                             "supported_modalities": ["MRI"],
                             "evidence_protocol_sections": [
                                 "quantitative_evidence_protocol.measurement_evidence"
@@ -352,7 +352,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertEqual(payload["schema_version"], "research_evidence_review_package.v1")
             self.assertEqual(payload["research_evidence_extraction"]["source_text_count"], 1)
             self.assertEqual(payload["proposal"]["candidate_extensions"][0]["source_id"], "cli_text_texture")
-            self.assertFalse(payload["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(payload["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(payload["runtime_safety"]["diagnosis_report_updated"])
             self.assertTrue((output_dir / "research_evidence_extraction.json").exists())
 
@@ -417,7 +417,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             },
             {
                 "source_id": "study_extension",
-                "title": "MRI marrow edema as candidate skill extension",
+                "title": "MRI marrow edema as candidate knowledge extension",
                 "year": 2024,
                 "publication_year": 2024,
                 "source_type": "peer_reviewed_journal",
@@ -426,7 +426,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 "modality": "MRI",
                 "study_design": "multi_center_retrospective",
                 "evidence_level": "moderate",
-                "candidate_claim_type": "candidate_skill_extension",
+                "candidate_claim_type": "candidate_knowledge_extension",
             },
         ]
 
@@ -452,7 +452,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 "differential_diagnosis_clue",
                 "clinical_risk_context_clue",
                 "candidate_quality_gate_rule",
-                "candidate_skill_extension",
+                "candidate_knowledge_extension",
             ],
         )
         for claim in claims:
@@ -474,9 +474,9 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             root = Path(tmpdir)
             package = build_research_evidence_review_package(
                 disease_key="femoral_head_necrosis",
-                target_skill_id="femoral_head_necrosis_v0.1",
+                target_knowledge_id="femoral_head_necrosis_v0.1",
                 modality="MRI",
-                research_question="MRI texture protocol conflicts with current X-ray skill scope",
+                research_question="MRI texture protocol conflicts with current X-ray knowledge scope",
                 supplied_metadata=[
                     {
                         "source_id": "study_conflict_texture",
@@ -492,8 +492,8 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                         "target_protocol_section": "quantitative_evidence_protocol.image_feature_quantification",
                     }
                 ],
-                guideline_skill={
-                    "skill_id": "femoral_head_necrosis_v0.1",
+                guideline_knowledge={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
                     "supported_modalities": ["X-ray"],
                     "evidence_protocol_sections": ["imaging_evidence_protocol"],
                 },
@@ -509,8 +509,8 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertTrue(review["review_items"][0]["exploratory_only"])
             self.assertTrue(review["review_items"][0]["research_mode_only"])
             self.assertTrue(review["review_items"][0]["diagnosis_report_forbidden"])
-            self.assertIn("modality_not_in_guideline_skill", review["review_items"][0]["conflict_reasons"])
-            self.assertFalse(review["runtime_safety"]["formal_skill_updated"])
+            self.assertIn("modality_not_in_guideline_knowledge", review["review_items"][0]["conflict_reasons"])
+            self.assertFalse(review["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(review["runtime_safety"]["diagnosis_report_updated"])
 
             checklist = package["human_review_checklist"]
@@ -527,19 +527,19 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 dry_run["suggested_section_updates"][0]["target_protocol_section"],
                 "quantitative_evidence_protocol.image_feature_quantification",
             )
-            self.assertFalse(dry_run["formal_skill_updated"])
+            self.assertFalse(dry_run["formal_knowledge_updated"])
             self.assertFalse(dry_run["diagnosis_report_updated"])
             self.assertTrue((root / "review" / "human_review_checklist.json").exists())
             self.assertTrue((root / "review" / "human_review_checklist.md").exists())
             self.assertTrue((root / "review" / "research_promotion_dry_run.json").exists())
             self.assertTrue((root / "review" / "research_gateway_review_artifact.json").exists())
 
-    def test_review_package_generates_controlled_skill_extension_draft(self) -> None:
+    def test_review_package_generates_controlled_knowledge_extension_draft(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             package = build_research_evidence_review_package(
                 disease_key="femoral_head_necrosis",
-                target_skill_id="femoral_head_necrosis_v0.1",
+                target_knowledge_id="femoral_head_necrosis_v0.1",
                 modality="MRI",
                 research_question="MRI necrotic area ratio as supplemental measurement",
                 supplied_metadata=[
@@ -559,8 +559,8 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                         ),
                     }
                 ],
-                guideline_skill={
-                    "skill_id": "femoral_head_necrosis_v0.1",
+                guideline_knowledge={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
                     "supported_modalities": ["MRI"],
                     "evidence_protocol_sections": [
                         "quantitative_evidence_protocol.measurement_evidence"
@@ -569,16 +569,16 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 output_dir=root / "review",
             )
 
-            draft = package["controlled_skill_extension_draft"]
-            self.assertEqual(draft["schema_version"], "controlled_skill_extension_draft.v1")
+            draft = package["controlled_knowledge_extension_draft"]
+            self.assertEqual(draft["schema_version"], "controlled_knowledge_extension_draft.v1")
             self.assertEqual(draft["draft_status"], "pending_human_review")
             self.assertEqual(
                 draft["source_proposal_schema_version"],
                 package["proposal"]["schema_version"],
             )
-            self.assertEqual(draft["target_skill_id"], "femoral_head_necrosis_v0.1")
+            self.assertEqual(draft["target_knowledge_id"], "femoral_head_necrosis_v0.1")
             self.assertTrue(draft["human_review_required"])
-            self.assertFalse(draft["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(draft["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(draft["runtime_safety"]["formal_guideline_updated"])
             self.assertFalse(draft["runtime_safety"]["diagnosis_report_updated"])
             self.assertFalse(draft["runtime_safety"]["formal_update_allowed"])
@@ -605,10 +605,10 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertFalse(update["diagnosis_allowed"])
             self.assertIn("proposed_section_updates", draft["promotion_dry_run_diff"])
             self.assertTrue(
-                (root / "review" / "controlled_skill_extension_draft.json").exists()
+                (root / "review" / "controlled_knowledge_extension_draft.json").exists()
             )
             self.assertTrue(
-                (root / "review" / "controlled_skill_extension_draft.md").exists()
+                (root / "review" / "controlled_knowledge_extension_draft.md").exists()
             )
 
     def test_human_review_approval_builds_controlled_promotion_package_without_applying_patch(self) -> None:
@@ -616,7 +616,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             root = Path(tmpdir)
             package = build_research_evidence_review_package(
                 disease_key="femoral_head_necrosis",
-                target_skill_id="femoral_head_necrosis_v0.1",
+                target_knowledge_id="femoral_head_necrosis_v0.1",
                 modality="MRI",
                 research_question="MRI necrotic area ratio as supplemental measurement",
                 supplied_metadata=[
@@ -636,8 +636,8 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                         ),
                     }
                 ],
-                guideline_skill={
-                    "skill_id": "femoral_head_necrosis_v0.1",
+                guideline_knowledge={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
                     "supported_modalities": ["MRI"],
                     "evidence_protocol_sections": [
                         "quantitative_evidence_protocol.measurement_evidence"
@@ -670,7 +670,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 promotion["package_status"],
                 "ready_for_controlled_promotion_review",
             )
-            self.assertFalse(promotion["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(promotion["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(promotion["runtime_safety"]["formal_guideline_updated"])
             self.assertFalse(promotion["runtime_safety"]["diagnosis_report_updated"])
             self.assertFalse(promotion["runtime_safety"]["formal_update_allowed"])
@@ -687,9 +687,9 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertFalse(approved["formal_patch_applied"])
             self.assertFalse(approved["diagnosis_flow_changed"])
 
-            patch_preview = promotion["formal_skill_patch_preview"]
+            patch_preview = promotion["formal_knowledge_patch_preview"]
             self.assertEqual(patch_preview["patch_status"], "preview_only_not_applied")
-            self.assertFalse(patch_preview["formal_skill_file_changed"])
+            self.assertFalse(patch_preview["formal_knowledge_file_changed"])
             self.assertIn(
                 "quantitative_evidence_protocol.measurement_evidence",
                 patch_preview["preview_sections"][0]["target_protocol_section"],
@@ -707,12 +707,12 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 (root / "review" / "controlled_promotion_package.md").exists()
             )
 
-    def test_formal_skill_extension_patch_preview_is_generated_for_approved_supplemental_update(self) -> None:
+    def test_formal_knowledge_extension_patch_preview_is_generated_for_approved_supplemental_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             package = build_research_evidence_review_package(
                 disease_key="femoral_head_necrosis",
-                target_skill_id="femoral_head_necrosis_v0.1",
+                target_knowledge_id="femoral_head_necrosis_v0.1",
                 modality="MRI",
                 research_question="MRI necrotic area ratio as supplemental measurement",
                 supplied_metadata=[
@@ -732,8 +732,8 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                         ),
                     }
                 ],
-                guideline_skill={
-                    "skill_id": "femoral_head_necrosis_v0.1",
+                guideline_knowledge={
+                    "knowledge_id": "femoral_head_necrosis_v0.1",
                     "supported_modalities": ["MRI"],
                     "evidence_protocol_sections": [
                         "quantitative_evidence_protocol.measurement_evidence"
@@ -750,14 +750,14 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 output_dir=root / "review",
             )
 
-            patch = package["formal_skill_extension_patch_preview"]
+            patch = package["formal_knowledge_extension_patch_preview"]
             self.assertEqual(
                 patch["schema_version"],
-                "formal_skill_extension_patch_preview.v1",
+                "formal_knowledge_extension_patch_preview.v1",
             )
             self.assertEqual(patch["patch_status"], "ready_for_human_apply_review")
-            self.assertEqual(patch["target_skill_id"], "femoral_head_necrosis_v0.1")
-            self.assertIn("femoral_head_necrosis_v0.1", patch["target_skill_file_preview"])
+            self.assertEqual(patch["target_knowledge_id"], "femoral_head_necrosis_v0.1")
+            self.assertIn("femoral_head_necrosis_v0.1", patch["target_knowledge_file_preview"])
             self.assertEqual(
                 patch["target_sections"][0]["safe_extension_section"],
                 (
@@ -781,23 +781,23 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertTrue(patch["pre_apply_audit"]["allowed_research_mode_sections_only"])
             self.assertFalse(patch["pre_apply_audit"]["guideline_core_modified"])
             self.assertFalse(patch["pre_apply_audit"]["diagnosis_rules_modified"])
-            self.assertFalse(patch["pre_apply_audit"]["skill_registry_modified"])
-            self.assertFalse(patch["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(patch["pre_apply_audit"]["knowledge_registry_modified"])
+            self.assertFalse(patch["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(patch["runtime_safety"]["formal_guideline_updated"])
             self.assertFalse(patch["runtime_safety"]["diagnosis_report_updated"])
-            self.assertFalse(patch["runtime_safety"]["skill_registry_updated"])
+            self.assertFalse(patch["runtime_safety"]["knowledge_registry_updated"])
             self.assertFalse(patch["runtime_safety"]["patch_applied"])
             self.assertTrue(
-                (root / "review" / "formal_skill_extension_patch_preview.json").exists()
+                (root / "review" / "formal_knowledge_extension_patch_preview.json").exists()
             )
             self.assertTrue(
-                (root / "review" / "formal_skill_extension_patch_preview.md").exists()
+                (root / "review" / "formal_knowledge_extension_patch_preview.md").exists()
             )
 
-    def test_formal_skill_extension_patch_preview_blocks_diagnosis_or_core_sections(self) -> None:
+    def test_formal_knowledge_extension_patch_preview_blocks_diagnosis_or_core_sections(self) -> None:
         package = build_research_evidence_review_package(
             disease_key="femoral_head_necrosis",
-            target_skill_id="femoral_head_necrosis_v0.1",
+            target_knowledge_id="femoral_head_necrosis_v0.1",
             modality="MRI",
             research_question="unsafe diagnosis rule change should be blocked",
             supplied_metadata=[
@@ -811,12 +811,12 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                     "modality": "MRI",
                     "population": "adult hip pain cohort",
                     "evidence_level": "moderate",
-                    "candidate_claim_type": "candidate_skill_extension",
+                    "candidate_claim_type": "candidate_knowledge_extension",
                     "target_protocol_section": "diagnosis_rules.confirmatory_criteria",
                 }
             ],
-            guideline_skill={
-                "skill_id": "femoral_head_necrosis_v0.1",
+            guideline_knowledge={
+                "knowledge_id": "femoral_head_necrosis_v0.1",
                 "supported_modalities": ["MRI"],
                 "evidence_protocol_sections": [
                     "diagnosis_rules.confirmatory_criteria"
@@ -831,7 +831,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             ],
         )
 
-        patch = package["formal_skill_extension_patch_preview"]
+        patch = package["formal_knowledge_extension_patch_preview"]
         self.assertEqual(patch["patch_status"], "blocked_by_pre_apply_audit")
         self.assertEqual(patch["pre_apply_audit"]["audit_status"], "blocked")
         self.assertIn(
@@ -840,19 +840,19 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         )
         self.assertFalse(patch["pre_apply_audit"]["allowed_research_mode_sections_only"])
         self.assertFalse(patch["pre_apply_audit"]["guideline_core_modified"])
-        self.assertFalse(patch["pre_apply_audit"]["skill_registry_modified"])
+        self.assertFalse(patch["pre_apply_audit"]["knowledge_registry_modified"])
         self.assertTrue(patch["pre_apply_audit"]["diagnosis_rules_modified"])
         self.assertEqual(patch["diff_preview"]["unified_diff"], "")
         self.assertFalse(patch["diff_preview"]["patch_applied"])
-        self.assertFalse(patch["runtime_safety"]["formal_skill_updated"])
+        self.assertFalse(patch["runtime_safety"]["formal_knowledge_updated"])
         self.assertFalse(patch["runtime_safety"]["diagnosis_report_updated"])
-        self.assertFalse(patch["runtime_safety"]["skill_registry_updated"])
+        self.assertFalse(patch["runtime_safety"]["knowledge_registry_updated"])
         self.assertFalse(patch["runtime_safety"]["patch_applied"])
 
     def test_review_package_blocks_weak_claim_and_keeps_promotion_dry_run_read_only(self) -> None:
         package = build_research_evidence_review_package(
             disease_key="community_acquired_pneumonia",
-            target_skill_id="pneumonia_chest_xray_v0.1",
+            target_knowledge_id="pneumonia_chest_xray_v0.1",
             modality="Chest X-ray",
             research_question="AI opacity score for pneumonia",
             supplied_metadata=[
@@ -866,11 +866,11 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                     "modality": "Chest CT",
                     "population": "pediatric ICU cohort",
                     "evidence_level": "low",
-                    "candidate_claim_type": "candidate_skill_extension",
+                    "candidate_claim_type": "candidate_knowledge_extension",
                 }
             ],
-            guideline_skill={
-                "skill_id": "pneumonia_chest_xray_v0.1",
+            guideline_knowledge={
+                "knowledge_id": "pneumonia_chest_xray_v0.1",
                 "supported_modalities": ["Chest X-ray"],
                 "evidence_protocol_sections": ["integrated_reasoning_protocol"],
             },
@@ -883,10 +883,10 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         self.assertFalse(package["promotion_dry_run"]["diagnosis_allowed"])
         self.assertTrue(package["gateway_review_artifact"]["review_items"][0]["diagnosis_report_forbidden"])
 
-    def test_controlled_skill_extension_draft_blocks_conflicted_or_weak_items(self) -> None:
+    def test_controlled_knowledge_extension_draft_blocks_conflicted_or_weak_items(self) -> None:
         package = build_research_evidence_review_package(
             disease_key="community_acquired_pneumonia",
-            target_skill_id="pneumonia_chest_xray_v0.1",
+            target_knowledge_id="pneumonia_chest_xray_v0.1",
             modality="Chest X-ray",
             research_question="AI opacity score for pneumonia",
             supplied_metadata=[
@@ -900,18 +900,18 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                     "modality": "Chest CT",
                     "population": "pediatric ICU cohort",
                     "evidence_level": "low",
-                    "candidate_claim_type": "candidate_skill_extension",
+                    "candidate_claim_type": "candidate_knowledge_extension",
                 }
             ],
-            guideline_skill={
-                "skill_id": "pneumonia_chest_xray_v0.1",
+            guideline_knowledge={
+                "knowledge_id": "pneumonia_chest_xray_v0.1",
                 "supported_modalities": ["Chest X-ray"],
                 "evidence_protocol_sections": ["integrated_reasoning_protocol"],
             },
         )
 
-        draft = package["controlled_skill_extension_draft"]
-        self.assertEqual(draft["schema_version"], "controlled_skill_extension_draft.v1")
+        draft = package["controlled_knowledge_extension_draft"]
+        self.assertEqual(draft["schema_version"], "controlled_knowledge_extension_draft.v1")
         self.assertEqual(draft["draft_status"], "blocked_by_gateway")
         self.assertEqual(draft["guideline_conflict_summary"]["blocked_count"], 1)
         self.assertFalse(draft["runtime_safety"]["formal_update_allowed"])
@@ -922,7 +922,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         self.assertEqual(update["evidence_use_label"], "research_only")
         self.assertEqual(update["suggested_section_action"], "do_not_promote_blocked_item")
         self.assertEqual(update["guideline_conflict_status"], "human_review_required")
-        self.assertIn("modality_not_in_guideline_skill", update["conflict_reasons"])
+        self.assertIn("modality_not_in_guideline_knowledge", update["conflict_reasons"])
         self.assertTrue(update["research_mode_only"])
         self.assertTrue(update["exploratory_only"])
         self.assertFalse(update["promotion_allowed_after_review"])
@@ -932,7 +932,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
     def test_rejected_or_needs_revision_items_do_not_enter_promotion_package(self) -> None:
         package = build_research_evidence_review_package(
             disease_key="femoral_head_necrosis",
-            target_skill_id="femoral_head_necrosis_v0.1",
+            target_knowledge_id="femoral_head_necrosis_v0.1",
             modality="MRI",
             research_question="MRI research-only additions needing review",
             supplied_metadata=[
@@ -965,8 +965,8 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                     "target_protocol_section": "differential_diagnosis_protocol",
                 },
             ],
-            guideline_skill={
-                "skill_id": "femoral_head_necrosis_v0.1",
+            guideline_knowledge={
+                "knowledge_id": "femoral_head_necrosis_v0.1",
                 "supported_modalities": ["MRI"],
                 "evidence_protocol_sections": [
                     "quantitative_evidence_protocol.measurement_evidence",
@@ -1001,11 +1001,11 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         self.assertEqual(promotion["approved_updates"], [])
         self.assertEqual(len(promotion["rejected_or_revision_items"]), 2)
         self.assertEqual(
-            promotion["formal_skill_patch_preview"]["patch_status"],
+            promotion["formal_knowledge_patch_preview"]["patch_status"],
             "no_approved_updates",
         )
-        self.assertEqual(promotion["formal_skill_patch_preview"]["preview_sections"], [])
-        self.assertFalse(promotion["formal_skill_patch_preview"]["formal_skill_file_changed"])
+        self.assertEqual(promotion["formal_knowledge_patch_preview"]["preview_sections"], [])
+        self.assertFalse(promotion["formal_knowledge_patch_preview"]["formal_knowledge_file_changed"])
         self.assertTrue(
             any(
                 event["event"] == "human_review_item_not_approved"
@@ -1024,12 +1024,12 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 json.dumps(
                     {
                         "disease_key": "femoral_head_necrosis",
-                        "target_skill_id": "femoral_head_necrosis_v0.1",
+                        "target_knowledge_id": "femoral_head_necrosis_v0.1",
                         "modality": "MRI",
                         "research_question": "MRI texture protocol",
                         "build_review_package": True,
-                        "guideline_skill": {
-                            "skill_id": "femoral_head_necrosis_v0.1",
+                        "guideline_knowledge": {
+                            "knowledge_id": "femoral_head_necrosis_v0.1",
                             "supported_modalities": ["MRI"],
                             "evidence_protocol_sections": [
                                 "quantitative_evidence_protocol.measurement_evidence"
@@ -1081,7 +1081,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertEqual(payload["schema_version"], "research_evidence_review_package.v1")
             self.assertEqual(payload["proposal"]["proposal_status"], "proposal_only")
-            self.assertFalse(payload["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(payload["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(payload["runtime_safety"]["diagnosis_report_updated"])
             self.assertTrue((output_dir / "research_evidence_proposal.json").exists())
             self.assertTrue((output_dir / "research_gateway_review_artifact.json").exists())
@@ -1100,14 +1100,14 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertTrue((output_dir / "controlled_promotion_package.json").exists())
             self.assertTrue((output_dir / "controlled_promotion_package.md").exists())
             self.assertEqual(
-                payload["formal_skill_extension_patch_preview"]["patch_status"],
+                payload["formal_knowledge_extension_patch_preview"]["patch_status"],
                 "ready_for_human_apply_review",
             )
             self.assertTrue(
-                (output_dir / "formal_skill_extension_patch_preview.json").exists()
+                (output_dir / "formal_knowledge_extension_patch_preview.json").exists()
             )
             self.assertTrue(
-                (output_dir / "formal_skill_extension_patch_preview.md").exists()
+                (output_dir / "formal_knowledge_extension_patch_preview.md").exists()
             )
 
     def test_retriever_normalizes_supplied_metadata_without_pubmed_retrieval(self) -> None:
@@ -1248,7 +1248,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             root = Path(tmpdir)
             payload = build_research_evidence_proposal_from_request(
                 disease_key="femoral_head_necrosis",
-                target_skill_id="femoral_head_necrosis_v0.1",
+                target_knowledge_id="femoral_head_necrosis_v0.1",
                 modality="MRI",
                 research_question="MRI necrotic area ratio as a candidate measurement",
                 supplied_metadata=[
@@ -1290,7 +1290,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             self.assertEqual(payload["candidate_extensions"][0]["source_id"], payload["sources"][0]["source_id"])
             self.assertEqual(payload["proposal_status"], "proposal_only")
             self.assertEqual(payload["quality_gate"]["promotion_decision"]["status"], "candidate_review_only")
-            self.assertFalse(payload["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(payload["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(payload["runtime_safety"]["diagnosis_report_updated"])
             self.assertFalse(payload["runtime_safety"]["formal_update_allowed"])
             self.assertFalse(payload["runtime_safety"]["diagnosis_allowed"])
@@ -1299,7 +1299,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
     def test_request_builder_blocks_weak_normalized_source_through_gateway(self) -> None:
         payload = build_research_evidence_proposal_from_request(
             disease_key="community_acquired_pneumonia",
-            target_skill_id="pneumonia_chest_xray_v0.1",
+            target_knowledge_id="pneumonia_chest_xray_v0.1",
             modality="Chest X-ray",
             research_question="AI opacity score for pneumonia",
             supplied_metadata=[
@@ -1317,7 +1317,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             extracted_claims=[
                 {
                     "claim_id": "ct_opacity_ai_score",
-                    "claim_type": "candidate_skill_extension",
+                    "claim_type": "candidate_knowledge_extension",
                     "summary": "AI score should diagnose adult chest X-ray pneumonia.",
                     "target_protocol_section": "integrated_reasoning_protocol",
                     "modality": "Chest X-ray",
@@ -1343,7 +1343,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             root = Path(tmpdir)
             payload = build_research_evidence_proposal(
                 disease_key="femoral_head_necrosis",
-                target_skill_id="femoral_head_necrosis_v0.1",
+                target_knowledge_id="femoral_head_necrosis_v0.1",
                 sources=[
                     {
                         "source_id": "study_2025_mri_texture",
@@ -1377,7 +1377,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
 
             self.assertEqual(payload["schema_version"], "research_evidence_proposal.v1")
             self.assertEqual(payload["disease_key"], "femoral_head_necrosis")
-            self.assertEqual(payload["target_skill_id"], "femoral_head_necrosis_v0.1")
+            self.assertEqual(payload["target_knowledge_id"], "femoral_head_necrosis_v0.1")
             self.assertEqual(payload["proposal_status"], "proposal_only")
             self.assertEqual(payload["candidate_extensions"][0]["candidate_type"], "candidate_measurement_protocol")
             self.assertEqual(
@@ -1386,7 +1386,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             )
             self.assertFalse(payload["candidate_extensions"][0]["formal_update_allowed"])
             self.assertFalse(payload["candidate_extensions"][0]["diagnosis_allowed"])
-            self.assertFalse(payload["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(payload["runtime_safety"]["formal_knowledge_updated"])
             self.assertFalse(payload["runtime_safety"]["formal_guideline_updated"])
             self.assertFalse(payload["runtime_safety"]["diagnosis_report_updated"])
             self.assertFalse(payload["quality_gate"]["promotion_decision"]["formal_update_allowed"])
@@ -1406,7 +1406,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
     def test_quality_gate_blocks_weak_or_inapplicable_research_evidence(self) -> None:
         payload = build_research_evidence_proposal(
             disease_key="community_acquired_pneumonia",
-            target_skill_id="pneumonia_chest_xray_v0.1",
+            target_knowledge_id="pneumonia_chest_xray_v0.1",
             sources=[
                 {
                     "source_id": "preprint_small_single_center",
@@ -1423,7 +1423,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             extracted_claims=[
                 {
                     "claim_id": "ct_opacity_ai_score",
-                    "claim_type": "candidate_skill_extension",
+                    "claim_type": "candidate_knowledge_extension",
                     "summary": "AI score should diagnose adult chest X-ray pneumonia.",
                     "target_protocol_section": "integrated_reasoning_protocol",
                     "modality": "Chest X-ray",
@@ -1451,7 +1451,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_research_evidence_proposal(
                 disease_key="femoral_head_necrosis",
-                target_skill_id="femoral_head_necrosis_v0.1",
+                target_knowledge_id="femoral_head_necrosis_v0.1",
                 sources=[
                     {
                         "source_id": "study",
@@ -1468,8 +1468,8 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 extracted_claims=[
                     {
                         "claim_id": "unsafe_claim",
-                        "claim_type": "candidate_skill_extension",
-                        "summary": "Directly update the formal skill.",
+                        "claim_type": "candidate_knowledge_extension",
+                        "summary": "Directly update the formal knowledge.",
                         "target_protocol_section": "imaging_evidence_protocol",
                         "modality": "MRI",
                         "formal_update_allowed": True,
@@ -1486,7 +1486,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
                 json.dumps(
                     {
                         "disease_key": "femoral_head_necrosis",
-                        "target_skill_id": "femoral_head_necrosis_v0.1",
+                        "target_knowledge_id": "femoral_head_necrosis_v0.1",
                         "sources": [
                             {
                                 "source_id": "study_2024_area_ratio",
@@ -1538,7 +1538,7 @@ class ResearchEvidenceGatewayTest(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertEqual(payload["schema_version"], "research_evidence_proposal.v1")
             self.assertFalse(payload["runtime_safety"]["paper_search_performed"])
-            self.assertFalse(payload["runtime_safety"]["formal_skill_updated"])
+            self.assertFalse(payload["runtime_safety"]["formal_knowledge_updated"])
             self.assertTrue((output_dir / "research_evidence_proposal.json").exists())
             self.assertTrue((output_dir / "research_evidence_quality_gate.json").exists())
 

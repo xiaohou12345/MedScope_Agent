@@ -77,7 +77,7 @@ class BratsVisionToolsTest(unittest.TestCase):
                 image_path=str(image_path),
                 mask_path=str(mask_path),
                 overlay_path=str(overlay_path),
-                disease_skill={"disease_name": "成人弥漫性胶质瘤"},
+                disease_knowledge={"disease_name": "成人弥漫性胶质瘤"},
             )
 
             self.assertEqual(result["modality"], "MRI")
@@ -87,13 +87,13 @@ class BratsVisionToolsTest(unittest.TestCase):
             self.assertEqual(result["visual_evidence"]["whole_tumor_volume_ml"], 16.0)
             self.assertIn("肿瘤区域分割 mask 已生成", result["visual_evidence"]["suspected_visual_findings"])
 
-    def test_vision_agent_uses_skill_visual_protocol_for_measurement_completeness(self):
+    def test_vision_agent_uses_knowledge_visual_protocol_for_measurement_completeness(self):
         with TemporaryDirectory() as tmpdir:
             image_path, mask_path = self._write_demo_image_and_mask(Path(tmpdir))
             flair_path = Path(tmpdir) / "case_flair.nii.gz"
             image_path.rename(flair_path)
             overlay_path = Path(tmpdir) / "overlay.png"
-            skill = {
+            knowledge = {
                 "disease_name": "成人弥漫性胶质瘤",
                 "visual_protocol": {
                     "disease_target": "diffuse_glioma_adult",
@@ -115,7 +115,7 @@ class BratsVisionToolsTest(unittest.TestCase):
                 image_path=str(flair_path),
                 mask_path=str(mask_path),
                 overlay_path=str(overlay_path),
-                disease_skill=skill,
+                disease_knowledge=knowledge,
             )
 
             evidence = result["visual_evidence"]
@@ -136,7 +136,7 @@ class BratsVisionToolsTest(unittest.TestCase):
             flair_path = Path(tmpdir) / "case_flair.nii.gz"
             image_path.rename(flair_path)
             overlay_path = Path(tmpdir) / "overlay.png"
-            skill = {
+            knowledge = {
                 "disease_name": "成人弥漫性胶质瘤",
                 "visual_protocol": {
                     "disease_target": "diffuse_glioma_adult",
@@ -168,7 +168,7 @@ class BratsVisionToolsTest(unittest.TestCase):
                 image_path=str(flair_path),
                 mask_path=str(mask_path),
                 overlay_path=str(overlay_path),
-                disease_skill=skill,
+                disease_knowledge=knowledge,
             )
 
             task_results = result["visual_evidence"]["segmentation_results"]
@@ -184,7 +184,7 @@ class BratsVisionToolsTest(unittest.TestCase):
             image_path, mask_path = self._write_demo_image_and_mask(Path(tmpdir))
             flair_path = Path(tmpdir) / "case_flair.nii.gz"
             image_path.rename(flair_path)
-            skill = {
+            knowledge = {
                 "disease_name": "通用胶质瘤视觉协议",
                 "visual_protocol": {
                     "disease_target": "generic_glioma_protocol",
@@ -215,7 +215,7 @@ class BratsVisionToolsTest(unittest.TestCase):
 
             result = VisionAgent().analyze_with_visual_protocol(
                 image_path=str(flair_path),
-                disease_skill=skill,
+                disease_knowledge=knowledge,
                 mask_path=str(mask_path),
                 overlay_path=str(Path(tmpdir) / "generic_overlay.png"),
             )
@@ -235,7 +235,7 @@ class BratsVisionToolsTest(unittest.TestCase):
             image_path, _ = self._write_demo_image_and_mask(Path(tmpdir))
             flair_path = Path(tmpdir) / "case_flair.nii.gz"
             image_path.rename(flair_path)
-            skill = {
+            knowledge = {
                 "disease_name": "通用胶质瘤视觉协议",
                 "visual_protocol": {
                     "disease_target": "generic_glioma_protocol",
@@ -255,7 +255,7 @@ class BratsVisionToolsTest(unittest.TestCase):
 
             result = VisionAgent().analyze_with_visual_protocol(
                 image_path=str(flair_path),
-                disease_skill=skill,
+                disease_knowledge=knowledge,
             )
 
             evidence = result["visual_evidence"]

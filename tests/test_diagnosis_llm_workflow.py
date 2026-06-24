@@ -11,7 +11,7 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
     def _visual_result(self):
         return VisionAgent().analyze_image(
             image_path="data/images/demo_xray.png",
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "股骨头坏死",
                 "vision_agent_tasks": {
                     "segmentation_targets": ["股骨头区域"],
@@ -22,7 +22,7 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
 
     def _alignment_plan(self, analysis_status="partial_evidence", blocked=None):
         return {
-            "selected_skill": "femoral_head_necrosis",
+            "selected_knowledge": "femoral_head_necrosis",
             "analysis_status": analysis_status,
             "clinical_focus": "指南约束影像评估",
             "image_context": {
@@ -46,7 +46,7 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             "suspected_conditions": [
                 {
                     "disease": "股骨头坏死",
-                    "reason": "症状和当前 skill 匹配，但影像证据不足。",
+                    "reason": "症状和当前 knowledge 匹配，但影像证据不足。",
                 }
             ],
             "required_next_images": [
@@ -90,7 +90,7 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
         self.assertEqual(report["诊断倾向"], "LLM 疑似早期股骨头坏死")
         self.assertEqual(report["diagnostic_tendency"], "LLM 疑似早期股骨头坏死")
         self.assertEqual(model_client.calls[0]["task"], "diagnosis_report_generation")
-        self.assertIn("used_skill", report)
+        self.assertIn("used_knowledge", report)
 
     def test_diagnosis_agent_excludes_not_usable_segmentation_measurements(self):
         agent = DiagnosisDoctorAgent()
@@ -142,7 +142,7 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             case_id="case_low_quality",
             patient_info={"symptoms": ["头痛"]},
             visual_result=visual_result,
-            disease_skill=agent.load_disease_skill("diffuse_glioma_brats"),
+            disease_knowledge=agent.load_disease_knowledge("diffuse_glioma_brats"),
         )
 
         self.assertIsNone(
@@ -343,7 +343,7 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
         self.assertEqual(report["诊断倾向"], "疑似早期股骨头坏死")
         self.assertIn("missing required report fields", report["llm_fallback_reason"])
 
-    def test_diagnosis_agent_uses_skill_findings_for_femoral_head_necrosis_xray(self):
+    def test_diagnosis_agent_uses_knowledge_findings_for_femoral_head_necrosis_xray(self):
         visual_result = self._visual_result()
         visual_result["visual_evidence"].update(
             {
@@ -378,7 +378,7 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
         self.assertIn("硬化带", " ".join(report["影像依据"]))
         self.assertIn("囊性变", " ".join(report["影像依据"]))
 
-    def test_diagnosis_agent_marks_overlapping_skill_findings_as_non_independent(self):
+    def test_diagnosis_agent_marks_overlapping_knowledge_findings_as_non_independent(self):
         visual_result = self._visual_result()
         visual_result["visual_evidence"].update(
             {
@@ -762,10 +762,10 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             case_id="case_glioma",
             patient_info={"symptoms": ["头痛"]},
             visual_result=visual_result,
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "成人弥漫性胶质瘤",
-                "skill_id": "diffuse_glioma_brats_v0.1",
-                "skill_type": "guideline_based",
+                "knowledge_id": "diffuse_glioma_brats_v0.1",
+                "knowledge_type": "guideline_based",
                 "evidence_level": "high",
                 "source": "EANO adult diffuse glioma guideline",
             },
@@ -820,10 +820,10 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             case_id="case_bad_glioma_llm",
             patient_info={"symptoms": ["头痛"]},
             visual_result=visual_result,
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "成人弥漫性胶质瘤",
-                "skill_id": "diffuse_glioma_brats_v0.1",
-                "skill_type": "guideline_based",
+                "knowledge_id": "diffuse_glioma_brats_v0.1",
+                "knowledge_type": "guideline_based",
                 "evidence_level": "high",
                 "source": "EANO adult diffuse glioma guideline",
             },
@@ -881,10 +881,10 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             case_id="case_missing_visual_contract",
             patient_info={"symptoms": ["头痛"]},
             visual_result=visual_result,
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "成人弥漫性胶质瘤",
-                "skill_id": "diffuse_glioma_brats_v0.1",
-                "skill_type": "guideline_based",
+                "knowledge_id": "diffuse_glioma_brats_v0.1",
+                "knowledge_type": "guideline_based",
                 "evidence_level": "high",
                 "source": "EANO adult diffuse glioma guideline",
             },
@@ -941,10 +941,10 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             case_id="case_good_visual_contract",
             patient_info={"symptoms": ["头痛"]},
             visual_result=visual_result,
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "成人弥漫性胶质瘤",
-                "skill_id": "diffuse_glioma_brats_v0.1",
-                "skill_type": "guideline_based",
+                "knowledge_id": "diffuse_glioma_brats_v0.1",
+                "knowledge_type": "guideline_based",
                 "evidence_level": "high",
                 "source": "EANO adult diffuse glioma guideline",
             },
@@ -1008,10 +1008,10 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             case_id="case_negated_zero_claim",
             patient_info={"symptoms": ["头痛"]},
             visual_result=visual_result,
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "成人弥漫性胶质瘤",
-                "skill_id": "diffuse_glioma_brats_v0.1",
-                "skill_type": "guideline_based",
+                "knowledge_id": "diffuse_glioma_brats_v0.1",
+                "knowledge_type": "guideline_based",
                 "evidence_level": "high",
                 "source": "EANO adult diffuse glioma guideline",
             },
@@ -1066,10 +1066,10 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             case_id="case_negated_negative_claim",
             patient_info={"symptoms": ["头痛"]},
             visual_result=visual_result,
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "成人弥漫性胶质瘤",
-                "skill_id": "diffuse_glioma_brats_v0.1",
-                "skill_type": "guideline_based",
+                "knowledge_id": "diffuse_glioma_brats_v0.1",
+                "knowledge_type": "guideline_based",
                 "evidence_level": "high",
                 "source": "EANO adult diffuse glioma guideline",
             },
@@ -1131,10 +1131,10 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             case_id="case_supported_edema_negative_missing_core_safe",
             patient_info={"symptoms": ["头痛"]},
             visual_result=visual_result,
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "成人弥漫性胶质瘤",
-                "skill_id": "diffuse_glioma_brats_v0.1",
-                "skill_type": "guideline_based",
+                "knowledge_id": "diffuse_glioma_brats_v0.1",
+                "knowledge_type": "guideline_based",
                 "evidence_level": "high",
                 "source": "EANO adult diffuse glioma guideline",
             },
@@ -1198,10 +1198,10 @@ class DiagnosisLlmWorkflowTest(unittest.TestCase):
             case_id="case_differential_non_enhancing_glioma",
             patient_info={"symptoms": ["头痛"]},
             visual_result=visual_result,
-            disease_skill={
+            disease_knowledge={
                 "disease_name": "成人弥漫性胶质瘤",
-                "skill_id": "diffuse_glioma_brats_v0.1",
-                "skill_type": "guideline_based",
+                "knowledge_id": "diffuse_glioma_brats_v0.1",
+                "knowledge_type": "guideline_based",
                 "evidence_level": "high",
                 "source": "EANO adult diffuse glioma guideline",
             },

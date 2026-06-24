@@ -9,21 +9,21 @@ from tools.lesion_gallery_builder import build_lesion_gallery
 
 
 class MemoryManager:
-    """Persists case-level patient, image, skill, and reasoning memory as JSON."""
+    """Persists case-level patient, image, knowledge, and reasoning memory as JSON."""
 
     SCHEMA_VERSION = "memory_v1"
-    MEMORY_TYPES = ["patient_memory", "image_memory", "skill_memory", "reasoning_memory"]
+    MEMORY_TYPES = ["patient_memory", "image_memory", "knowledge_memory", "reasoning_memory"]
     REQUIRED_TRACE_AGENTS = [
         "GaoDoctorAgent",
-        "SkillBuilderAgent",
+        "KnowledgeBuilderAgent",
         "VisionAgent",
         "DiagnosisDoctorAgent",
         "MemoryManager",
     ]
     REQUIRED_REPLAY_EVENTS = [
         "patient_intake",
-        "skill_routing",
-        "skill_loading",
+        "knowledge_routing",
+        "knowledge_loading",
         "visual_evidence",
         "diagnosis_report",
         "memory_audit",
@@ -42,7 +42,7 @@ class MemoryManager:
         case_id: str,
         patient_memory: dict[str, Any],
         image_memory: dict[str, Any],
-        skill_memory: dict[str, Any],
+        knowledge_memory: dict[str, Any],
         reasoning_memory: dict[str, Any],
     ) -> Path:
         now = datetime.now().isoformat(timespec="seconds")
@@ -59,7 +59,7 @@ class MemoryManager:
             "updated_at": now,
             "patient_memory": normalized_patient_memory,
             "image_memory": self._normalize_image_memory(case_id, image_memory),
-            "skill_memory": self._normalize_skill_memory(skill_memory),
+            "knowledge_memory": self._normalize_knowledge_memory(knowledge_memory),
             "reasoning_memory": self._normalize_reasoning_memory(case_id, reasoning_memory),
             "qa_memory": normalized_patient_memory["qa_history"],
         }
@@ -81,13 +81,13 @@ class MemoryManager:
         records = []
         for case_path in sorted(self.cases_dir.glob("*.json")):
             record = self._normalize_record(json.loads(case_path.read_text(encoding="utf-8")))
-            skill_memory = record.get("skill_memory", {})
+            knowledge_memory = record.get("knowledge_memory", {})
             disease_candidates = {
-                str(skill_memory.get("disease") or ""),
-                str(skill_memory.get("disease_name") or ""),
-                str(skill_memory.get("skill_id") or ""),
-                str(skill_memory.get("selected_skill") or ""),
-                str(skill_memory.get("used_skill") or ""),
+                str(knowledge_memory.get("disease") or ""),
+                str(knowledge_memory.get("disease_name") or ""),
+                str(knowledge_memory.get("knowledge_id") or ""),
+                str(knowledge_memory.get("selected_knowledge") or ""),
+                str(knowledge_memory.get("used_knowledge") or ""),
             }
             if disease in disease_candidates:
                 records.append(record)
@@ -123,7 +123,7 @@ class MemoryManager:
     def get_evidence_bundle(self, case_id: str) -> dict[str, Any]:
         record = self.load_case_memory(case_id)
         image_memory = record["image_memory"]
-        skill_memory = record["skill_memory"]
+        knowledge_memory = record["knowledge_memory"]
         reasoning_memory = record["reasoning_memory"]
         missing_or_unassessed = self._collect_missing_or_unassessed(record)
         quality_warnings = self._collect_quality_warnings(record, missing_or_unassessed)
@@ -162,17 +162,17 @@ class MemoryManager:
                 "completeness": image_memory.get("completeness", {}),
                 "segmentation_quality": image_memory.get("segmentation_quality"),
             },
-            "skill_evidence": {
-                "selected_skill": skill_memory.get("selected_skill"),
-                "selected_vision_mode": skill_memory.get("selected_vision_mode"),
-                "routing_decision": skill_memory.get("routing_decision", {}),
-                "alignment_plan": skill_memory.get("alignment_plan", {}),
-                "used_skill": skill_memory.get("used_skill"),
-                "skill_type": skill_memory.get("skill_type"),
-                "guideline_evidence": skill_memory.get("guideline_evidence", {}),
-                "source_priority": skill_memory.get("source_priority", []),
-                "guideline_conflicts": skill_memory.get("guideline_conflicts", []),
-                "quality_control": skill_memory.get("quality_control", {}),
+            "knowledge_evidence": {
+                "selected_knowledge": knowledge_memory.get("selected_knowledge"),
+                "selected_vision_mode": knowledge_memory.get("selected_vision_mode"),
+                "routing_decision": knowledge_memory.get("routing_decision", {}),
+                "alignment_plan": knowledge_memory.get("alignment_plan", {}),
+                "used_knowledge": knowledge_memory.get("used_knowledge"),
+                "knowledge_type": knowledge_memory.get("knowledge_type"),
+                "guideline_evidence": knowledge_memory.get("guideline_evidence", {}),
+                "source_priority": knowledge_memory.get("source_priority", []),
+                "guideline_conflicts": knowledge_memory.get("guideline_conflicts", []),
+                "quality_control": knowledge_memory.get("quality_control", {}),
             },
             "reasoning_evidence": {
                 "diagnostic_tendency": reasoning_memory.get("diagnostic_tendency"),
@@ -314,13 +314,13 @@ class MemoryManager:
         }
 
     def _differential_reasoning_evidence(self, record: dict[str, Any]) -> dict[str, Any]:
-        skill_memory = record.get("skill_memory") or {}
-        routing_decision = skill_memory.get("routing_decision") or {}
+        knowledge_memory = record.get("knowledge_memory") or {}
+        routing_decision = knowledge_memory.get("routing_decision") or {}
         reasoning_report = (record.get("reasoning_memory") or {}).get("report") or {}
         considerations = reasoning_report.get("differential_considerations") or []
         if not isinstance(considerations, list):
             considerations = []
-        candidates = routing_decision.get("differential_skill_candidates") or []
+        candidates = routing_decision.get("differential_knowledge_candidates") or []
         if not isinstance(candidates, list):
             candidates = []
         return {
@@ -329,7 +329,7 @@ class MemoryManager:
             "primary_hypothesis": routing_decision.get("primary_hypothesis"),
             "routing_evidence_status": routing_decision.get("routing_evidence_status")
             or routing_decision.get("initial_evidence_status"),
-            "differential_skill_candidates": list(candidates),
+            "differential_knowledge_candidates": list(candidates),
             "considerations": [dict(item) for item in considerations if isinstance(item, dict)],
             "diagnosis_usable": False,
             "diagnosis_usable_level": "bounded_differential_only",
@@ -460,12 +460,12 @@ class MemoryManager:
         record = self.load_case_memory(case_id)
         evidence_bundle = self.get_evidence_bundle(case_id)
         alignment_plan = (
-            record["skill_memory"].get("alignment_plan")
+            record["knowledge_memory"].get("alignment_plan")
             or record["reasoning_memory"].get("alignment_plan")
             or {}
         )
-        routing_decision = record["skill_memory"].get("routing_decision", {})
-        quality_control = record["skill_memory"].get("quality_control") or {}
+        routing_decision = record["knowledge_memory"].get("routing_decision", {})
+        quality_control = record["knowledge_memory"].get("quality_control") or {}
         qa_history = record["patient_memory"].get("qa_history", [])
         blocked_scopes = list((alignment_plan.get("diagnosis_scope") or {}).get("blocked") or [])
         missing_count = len(evidence_bundle["missing_or_unassessed"].get("image_memory", {}))
@@ -473,7 +473,7 @@ class MemoryManager:
             evidence_bundle.get("lesion_gallery", {})
         )
         selected_vision_mode = (
-            record["skill_memory"].get("selected_vision_mode")
+            record["knowledge_memory"].get("selected_vision_mode")
             or routing_decision.get("selected_vision_mode")
         )
         visual_tool_name = self._infer_visual_tool_name(
@@ -482,7 +482,7 @@ class MemoryManager:
         )
         agents_traced = [
             "GaoDoctorAgent",
-            "SkillBuilderAgent",
+            "KnowledgeBuilderAgent",
             "VisionAgent",
             "DiagnosisDoctorAgent",
             "MemoryManager",
@@ -495,10 +495,10 @@ class MemoryManager:
                 "output": record["patient_memory"].get("intent"),
                 "routing_decision": routing_decision,
             },
-            "SkillBuilderAgent": {
-                "input": record["skill_memory"].get("routing_decision", {}),
-                "output": record["skill_memory"].get("selected_skill")
-                or record["skill_memory"].get("skill_id"),
+            "KnowledgeBuilderAgent": {
+                "input": record["knowledge_memory"].get("routing_decision", {}),
+                "output": record["knowledge_memory"].get("selected_knowledge")
+                or record["knowledge_memory"].get("knowledge_id"),
             },
             "VisionAgent": {
                 "input": record["image_memory"].get("image_path"),
@@ -589,22 +589,22 @@ class MemoryManager:
                         (record["image_memory"].get("image_outputs") or {}).get("overlay_path")
                     ),
                 },
-                "skill_memory": {
-                    "selected_skill": record["skill_memory"].get("selected_skill"),
-                    "used_skill": record["skill_memory"].get("used_skill"),
-                    "skill_type": record["skill_memory"].get("skill_type"),
+                "knowledge_memory": {
+                    "selected_knowledge": record["knowledge_memory"].get("selected_knowledge"),
+                    "used_knowledge": record["knowledge_memory"].get("used_knowledge"),
+                    "knowledge_type": record["knowledge_memory"].get("knowledge_type"),
                     "routing_agent_scope": routing_decision.get("agent_scope"),
                     "routing_source": routing_decision.get("source"),
-                    "skill_builder_action": routing_decision.get("skill_builder_action"),
+                    "knowledge_builder_action": routing_decision.get("knowledge_builder_action"),
                     "primary_hypothesis": routing_decision.get("primary_hypothesis"),
                     "initial_evidence_status": routing_decision.get("initial_evidence_status"),
                     "routing_evidence_status": routing_decision.get("routing_evidence_status"),
-                    "differential_skill_candidates": list(
-                        routing_decision.get("differential_skill_candidates") or []
+                    "differential_knowledge_candidates": list(
+                        routing_decision.get("differential_knowledge_candidates") or []
                     ),
                     "clinical_hypotheses": clinical_hypotheses,
                     "clinical_hypotheses_count": len(clinical_hypotheses),
-                    "formal_skill_status": quality_control.get("formal_skill_status"),
+                    "formal_knowledge_status": quality_control.get("formal_knowledge_status"),
                     "visual_protocol_status": quality_control.get("visual_protocol_status"),
                 },
                 "reasoning_memory": {
@@ -627,8 +627,8 @@ class MemoryManager:
                     alignment_plan.get("visual_tasks") or []
                 ),
             },
-            "skill_quality": {
-                "formal_skill_status": quality_control.get("formal_skill_status"),
+            "knowledge_quality": {
+                "formal_knowledge_status": quality_control.get("formal_knowledge_status"),
                 "visual_protocol_status": quality_control.get("visual_protocol_status"),
                 "visual_protocol_errors": list(quality_control.get("visual_protocol_errors") or []),
                 "visual_protocol_warnings": list(quality_control.get("visual_protocol_warnings") or []),
@@ -650,13 +650,13 @@ class MemoryManager:
             "visual_fact_usage": record["reasoning_memory"].get("visual_fact_usage", {}),
             "lesion_gallery_summary": lesion_gallery_summary,
             "visual_evidence_used": evidence_bundle["image_evidence"],
-            "guideline_evidence_used": evidence_bundle["skill_evidence"].get(
+            "guideline_evidence_used": evidence_bundle["knowledge_evidence"].get(
                 "guideline_evidence",
                 {},
             ),
             "missing_or_unassessed": evidence_bundle["missing_or_unassessed"],
             "quality_warnings": evidence_bundle["quality_warnings"],
-            "guideline_conflicts": record["skill_memory"].get("guideline_conflicts", []),
+            "guideline_conflicts": record["knowledge_memory"].get("guideline_conflicts", []),
             "qa_history_count": len(record["patient_memory"].get("qa_history", [])),
         }
         audit_dir = Path("output/fake/memory_audit")
@@ -695,16 +695,16 @@ class MemoryManager:
         )
         patient_memory = record["patient_memory"]
         image_memory = record["image_memory"]
-        skill_memory = record["skill_memory"]
+        knowledge_memory = record["knowledge_memory"]
         reasoning_memory = record["reasoning_memory"]
-        routing_decision = skill_memory.get("routing_decision", {})
+        routing_decision = knowledge_memory.get("routing_decision", {})
         alignment_plan = (
-            skill_memory.get("alignment_plan")
+            knowledge_memory.get("alignment_plan")
             or reasoning_memory.get("alignment_plan")
             or {}
         )
         selected_vision_mode = (
-            skill_memory.get("selected_vision_mode")
+            knowledge_memory.get("selected_vision_mode")
             or routing_decision.get("selected_vision_mode")
         )
         visual_tool_name = self._infer_visual_tool_name(
@@ -722,31 +722,31 @@ class MemoryManager:
             },
             {
                 "agent": "GaoDoctorAgent",
-                "event": "skill_routing",
-                "memory_scope": "skill_memory",
+                "event": "knowledge_routing",
+                "memory_scope": "knowledge_memory",
                 "decision_owner": routing_decision.get("agent_scope") or "gaodoctor_agent",
                 "routing_decision": routing_decision,
-                "selected_skill": skill_memory.get("selected_skill"),
-                "used_skill": skill_memory.get("used_skill"),
-                "skill_type": skill_memory.get("skill_type"),
-                "skill_builder_action": routing_decision.get("skill_builder_action"),
+                "selected_knowledge": knowledge_memory.get("selected_knowledge"),
+                "used_knowledge": knowledge_memory.get("used_knowledge"),
+                "knowledge_type": knowledge_memory.get("knowledge_type"),
+                "knowledge_builder_action": routing_decision.get("knowledge_builder_action"),
                 "analysis_status": alignment_plan.get("analysis_status"),
                 "required_next_images": list(alignment_plan.get("required_next_images") or []),
             },
             {
-                "agent": "SkillBuilderAgent",
-                "event": "skill_loading",
-                "memory_scope": "skill_memory",
-                "action": routing_decision.get("skill_builder_action"),
-                "selected_skill": skill_memory.get("selected_skill"),
-                "used_skill": skill_memory.get("used_skill"),
-                "skill_type": skill_memory.get("skill_type"),
-                "evidence_level": skill_memory.get("evidence_level"),
-                "formal_skill_status": (
-                    skill_memory.get("quality_control", {}) or {}
-                ).get("formal_skill_status"),
+                "agent": "KnowledgeBuilderAgent",
+                "event": "knowledge_loading",
+                "memory_scope": "knowledge_memory",
+                "action": routing_decision.get("knowledge_builder_action"),
+                "selected_knowledge": knowledge_memory.get("selected_knowledge"),
+                "used_knowledge": knowledge_memory.get("used_knowledge"),
+                "knowledge_type": knowledge_memory.get("knowledge_type"),
+                "evidence_level": knowledge_memory.get("evidence_level"),
+                "formal_knowledge_status": (
+                    knowledge_memory.get("quality_control", {}) or {}
+                ).get("formal_knowledge_status"),
                 "visual_protocol_status": (
-                    skill_memory.get("quality_control", {}) or {}
+                    knowledge_memory.get("quality_control", {}) or {}
                 ).get("visual_protocol_status"),
             },
             {
@@ -777,7 +777,7 @@ class MemoryManager:
             {
                 "agent": "MemoryManager",
                 "event": "memory_audit",
-                "memory_scope": "patient_memory,image_memory,skill_memory,reasoning_memory",
+                "memory_scope": "patient_memory,image_memory,knowledge_memory,reasoning_memory",
                 "evidence_bundle_status": "available",
                 "audit_status": "available",
                 "memory_completeness": audit.get("memory_completeness", {}),
@@ -818,16 +818,16 @@ class MemoryManager:
         evidence_bundle = self.get_evidence_bundle(case_id)
         patient_memory = record["patient_memory"]
         image_memory = record["image_memory"]
-        skill_memory = record["skill_memory"]
+        knowledge_memory = record["knowledge_memory"]
         reasoning_memory = record["reasoning_memory"]
-        routing_decision = skill_memory.get("routing_decision", {})
+        routing_decision = knowledge_memory.get("routing_decision", {})
         alignment_plan = (
-            skill_memory.get("alignment_plan")
+            knowledge_memory.get("alignment_plan")
             or reasoning_memory.get("alignment_plan")
             or {}
         )
         selected_vision_mode = (
-            skill_memory.get("selected_vision_mode")
+            knowledge_memory.get("selected_vision_mode")
             or routing_decision.get("selected_vision_mode")
         )
         visual_tool_name = self._infer_visual_tool_name(
@@ -840,17 +840,17 @@ class MemoryManager:
             "case_id": case_id,
             "created_at": record.get("created_at"),
             "updated_at": record.get("updated_at"),
-            "selected_skill": (
-                skill_memory.get("selected_skill")
-                or skill_memory.get("used_skill")
-                or skill_memory.get("skill_id")
+            "selected_knowledge": (
+                knowledge_memory.get("selected_knowledge")
+                or knowledge_memory.get("used_knowledge")
+                or knowledge_memory.get("knowledge_id")
             ),
-            "skill_version": (
-                skill_memory.get("used_skill")
-                or skill_memory.get("skill_id")
-                or skill_memory.get("selected_skill")
+            "knowledge_version": (
+                knowledge_memory.get("used_knowledge")
+                or knowledge_memory.get("knowledge_id")
+                or knowledge_memory.get("selected_knowledge")
             ),
-            "skill_type": skill_memory.get("skill_type"),
+            "knowledge_type": knowledge_memory.get("knowledge_type"),
             "input_artifacts": {
                 "patient_message_present": bool(patient_memory.get("patient_message")),
                 "image_path": image_memory.get("image_path"),
@@ -868,10 +868,10 @@ class MemoryManager:
             },
             "tool_calls": [
                 {
-                    "stage": "skill_gateway",
-                    "tool": "SkillBuilderTool",
-                    "action": routing_decision.get("skill_builder_action"),
-                    "selected_skill": routing_decision.get("selected_skill"),
+                    "stage": "knowledge_gateway",
+                    "tool": "KnowledgeBuilderTool",
+                    "action": routing_decision.get("knowledge_builder_action"),
+                    "selected_knowledge": routing_decision.get("selected_knowledge"),
                 },
                 {
                     "stage": "visual_evidence",
@@ -890,7 +890,7 @@ class MemoryManager:
             "contracts_checked": {
                 "memory_v1": record.get("schema_version") == self.SCHEMA_VERSION,
                 "patient_case_input": bool(patient_memory),
-                "skill_routing_decision": bool(routing_decision),
+                "knowledge_routing_decision": bool(routing_decision),
                 "alignment_plan": bool(alignment_plan),
                 "visual_analysis_result": bool(
                     image_memory.get("visual_evidence")
@@ -899,8 +899,8 @@ class MemoryManager:
                 ),
                 "evidence_bundle": bool(evidence_bundle),
                 "safety_gate": bool(
-                    skill_memory.get("safety_gate")
-                    or skill_memory.get("quality_control")
+                    knowledge_memory.get("safety_gate")
+                    or knowledge_memory.get("quality_control")
                     or alignment_plan.get("diagnosis_scope")
                 ),
             },
@@ -920,8 +920,8 @@ class MemoryManager:
             "runtime_safety": {
                 "manifest_only": True,
                 "stop_hook_executed": False,
-                "formal_skill_updated": False,
-                "self_evolving_action": "candidate_only_no_formal_skill_update",
+                "formal_knowledge_updated": False,
+                "self_evolving_action": "candidate_only_no_formal_knowledge_update",
             },
         }
         manifest_dir = Path("output/fake/runtime_manifest")
@@ -1011,7 +1011,7 @@ class MemoryManager:
                 "status": "not_generated",
                 "reason": "read_only_gate",
             },
-            "candidate_skill_patch": {
+            "candidate_knowledge_patch": {
                 "status": "not_generated",
                 "reason": "read_only_gate",
                 "validation_status": "not_started",
@@ -1019,7 +1019,7 @@ class MemoryManager:
             "runtime_safety": {
                 "stop_hook_executed": True,
                 "read_only": True,
-                "formal_skill_updated": False,
+                "formal_knowledge_updated": False,
                 "diagnosis_report_updated": False,
                 "self_evolving_queue_updated": False,
             },
@@ -1046,18 +1046,18 @@ class MemoryManager:
             "review_policy": {
                 "required_review": "human_or_validated_dataset",
                 "promotion_rule": (
-                    "Candidate memory or skill patches must be validated before formal skill update."
+                    "Candidate memory or knowledge patches must be validated before formal knowledge update."
                 ),
                 "allowed_outputs": [
                     "candidate_memory",
                     "candidate_rule",
-                    "candidate_skill_patch",
+                    "candidate_knowledge_patch",
                 ],
             },
             "runtime_safety": {
                 "queue_written": True,
                 "candidate_only": True,
-                "formal_skill_updated": False,
+                "formal_knowledge_updated": False,
                 "formal_guideline_updated": False,
                 "diagnosis_report_updated": False,
             },
@@ -1103,12 +1103,12 @@ class MemoryManager:
             "review_requirements": [
                 "人工或经过验证的数据集审核候选项。",
                 "保留 source warning、case id、evidence 和版本回滚路径。",
-                "升级正式 skill 前必须确认不覆盖正式指南原文。",
+                "升级正式 knowledge 前必须确认不覆盖正式指南原文。",
             ],
             "runtime_safety": {
                 "validation_gate_executed": True,
                 "read_only": True,
-                "formal_skill_updated": False,
+                "formal_knowledge_updated": False,
                 "formal_guideline_updated": False,
                 "diagnosis_report_updated": False,
             },
@@ -1139,8 +1139,8 @@ class MemoryManager:
                     "status": "available",
                     "artifact_path": manifest.get("manifest_path"),
                     "summary": {
-                        "selected_skill": manifest.get("selected_skill"),
-                        "skill_type": manifest.get("skill_type"),
+                        "selected_knowledge": manifest.get("selected_knowledge"),
+                        "knowledge_type": manifest.get("knowledge_type"),
                     },
                 },
                 {
@@ -1181,14 +1181,14 @@ class MemoryManager:
                 promotion_decision.get("formal_update_allowed")
             ),
             "safety_invariants": {
-                "formal_skill_updated": False,
+                "formal_knowledge_updated": False,
                 "formal_guideline_updated": False,
                 "diagnosis_report_updated": False,
                 "candidate_artifacts_only": True,
             },
             "presentation_summary": (
-                "Runtime Gateway coordinates skill dispatch, artifacts, hooks, "
-                "candidate learning, and validation without directly changing formal medical skills."
+                "Runtime Gateway coordinates knowledge dispatch, artifacts, hooks, "
+                "candidate learning, and validation without directly changing formal medical knowledge."
             ),
         }
         trace["trace_consistency"] = self._build_runtime_gateway_trace_consistency(
@@ -1308,7 +1308,7 @@ class MemoryManager:
                     "source_warning_code": "no_runtime_warning",
                     "severity": "info",
                     "candidate_type": "candidate_memory",
-                    "proposal": "保留本轮运行记录；暂不提出 skill 或规则变更。",
+                    "proposal": "保留本轮运行记录；暂不提出 knowledge 或规则变更。",
                     "evidence": {},
                     "next_actions": list(gate.get("next_actions") or []),
                     "validation_status": "not_required",
@@ -1320,7 +1320,7 @@ class MemoryManager:
 
     def _candidate_type_for_warning(self, warning_code: str) -> str:
         if warning_code in {"blocked_diagnosis_scope", "missing_or_unassessed_evidence"}:
-            return "candidate_skill_patch"
+            return "candidate_knowledge_patch"
         if warning_code in {"memory_incomplete", "excluded_visual_facts_present"}:
             return "candidate_memory"
         return "candidate_rule"
@@ -1328,7 +1328,7 @@ class MemoryManager:
     def _proposal_for_warning(self, warning: dict[str, Any]) -> str:
         code = str(warning.get("code") or "")
         if code == "missing_or_unassessed_evidence":
-            return "为当前 skill 补充 evidence completeness 规则，明确 missing/unassessed 不可解释为阴性。"
+            return "为当前 knowledge 补充 evidence completeness 规则，明确 missing/unassessed 不可解释为阴性。"
         if code == "blocked_diagnosis_scope":
             return "保留诊断范围阻断规则，并要求补充指定影像后再解除阻断。"
         if code == "quality_warnings_present":
@@ -1365,7 +1365,7 @@ class MemoryManager:
         if any(warning.get("code") == "excluded_visual_facts_present" for warning in warnings):
             actions.append("追问 QA 不得把 excluded visual facts 重新作为独立诊断证据。")
         if not actions:
-            actions.append("无需自动修改报告或 skill；保留只读审计记录。")
+            actions.append("无需自动修改报告或 knowledge；保留只读审计记录。")
         return actions
 
     def _visual_evidence_has_diagnosis_usable_fact(self, image_memory: dict[str, Any]) -> bool:
@@ -1446,10 +1446,10 @@ class MemoryManager:
     def _case_summary(self, record: dict[str, Any]) -> dict[str, Any]:
         patient_memory = record.get("patient_memory", {})
         image_memory = record.get("image_memory", {})
-        skill_memory = record.get("skill_memory", {})
+        knowledge_memory = record.get("knowledge_memory", {})
         reasoning_memory = record.get("reasoning_memory", {})
         alignment_plan = (
-            skill_memory.get("alignment_plan")
+            knowledge_memory.get("alignment_plan")
             or reasoning_memory.get("alignment_plan")
             or {}
         )
@@ -1460,9 +1460,9 @@ class MemoryManager:
             "updated_at": record.get("updated_at"),
             "patient_id": patient_memory.get("patient_id"),
             "intent": patient_memory.get("intent"),
-            "selected_skill": skill_memory.get("selected_skill") or skill_memory.get("skill_id"),
-            "used_skill": skill_memory.get("used_skill"),
-            "skill_type": skill_memory.get("skill_type"),
+            "selected_knowledge": knowledge_memory.get("selected_knowledge") or knowledge_memory.get("knowledge_id"),
+            "used_knowledge": knowledge_memory.get("used_knowledge"),
+            "knowledge_type": knowledge_memory.get("knowledge_type"),
             "analysis_status": alignment_plan.get("analysis_status"),
             "modality": image_memory.get("modality"),
             "body_part": image_memory.get("body_part"),
@@ -1502,7 +1502,7 @@ class MemoryManager:
                 case_id,
                 dict(record.get("image_memory") or {}),
             ),
-            "skill_memory": self._normalize_skill_memory(dict(record.get("skill_memory") or {})),
+            "knowledge_memory": self._normalize_knowledge_memory(dict(record.get("knowledge_memory") or {})),
             "reasoning_memory": self._normalize_reasoning_memory(
                 case_id,
                 dict(record.get("reasoning_memory") or {}),
@@ -1562,18 +1562,18 @@ class MemoryManager:
         normalized["segmentation_quality"] = segmentation_quality
         return normalized
 
-    def _normalize_skill_memory(self, skill_memory: dict[str, Any]) -> dict[str, Any]:
-        normalized = dict(skill_memory)
-        skill_id = skill_memory.get("skill_id") or skill_memory.get("selected_skill")
-        normalized["selected_skill"] = skill_memory.get("selected_skill") or skill_id
+    def _normalize_knowledge_memory(self, knowledge_memory: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(knowledge_memory)
+        knowledge_id = knowledge_memory.get("knowledge_id") or knowledge_memory.get("selected_knowledge")
+        normalized["selected_knowledge"] = knowledge_memory.get("selected_knowledge") or knowledge_id
         normalized.setdefault("selected_vision_mode", None)
         normalized.setdefault("routing_decision", {})
         normalized.setdefault("alignment_plan", {})
-        normalized["used_skill"] = skill_memory.get("used_skill") or skill_id
-        normalized.setdefault("skill_type", skill_memory.get("type"))
+        normalized["used_knowledge"] = knowledge_memory.get("used_knowledge") or knowledge_id
+        normalized.setdefault("knowledge_type", knowledge_memory.get("type"))
         normalized.setdefault("guideline_evidence", {})
         normalized.setdefault("source_priority", [])
-        normalized.setdefault("guideline_conflicts", skill_memory.get("conflicts", []))
+        normalized.setdefault("guideline_conflicts", knowledge_memory.get("conflicts", []))
         normalized.setdefault("quality_control", {})
         return normalized
 
@@ -1690,10 +1690,10 @@ class MemoryManager:
             warnings.append(
                 f"image_memory.{target} is {status.get('status')}: {status.get('reason')}"
             )
-        quality_control = record["skill_memory"].get("quality_control") or {}
-        if quality_control.get("formal_skill_status") == "needs_review":
-            warnings.append("skill_memory quality_control requires review")
-        conflicts = record["skill_memory"].get("guideline_conflicts") or []
+        quality_control = record["knowledge_memory"].get("quality_control") or {}
+        if quality_control.get("formal_knowledge_status") == "needs_review":
+            warnings.append("knowledge_memory quality_control requires review")
+        conflicts = record["knowledge_memory"].get("guideline_conflicts") or []
         if conflicts:
             warnings.append("guideline conflicts require manual review")
         return warnings

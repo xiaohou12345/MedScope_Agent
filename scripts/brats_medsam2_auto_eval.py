@@ -16,7 +16,7 @@ from tools.medsam2_segmentation_tool import (
 from tools.nifti_mask_reader_tool import NiftiMaskReaderTool
 from tools.nifti_overlay_generation_tool import NiftiOverlayGenerationTool
 from tools.segmentation_tool import SegmentationTool
-from tools.skill_builder_tool import SkillBuilderTool
+from tools.knowledge_builder_tool import KnowledgeBuilderTool
 
 
 DEFAULT_OUTPUT_DIR = Path("output/fake/brats_medsam2_auto_eval")
@@ -85,7 +85,7 @@ def run_brats_medsam2_auto_eval(
             })
         medsam2_runner = MedSAM2CommandRunner.from_env()
 
-    skill = SkillBuilderTool().load_guideline_skill(DISEASE_KEY)
+    knowledge = KnowledgeBuilderTool().load_guideline_knowledge(DISEASE_KEY)
     mask_path = output / f"{case_id}_medsam2_auto_mask.nii.gz"
     overlay_path = output / f"{case_id}_medsam2_auto_overlay.png"
     result_json_path = output / f"{case_id}_medsam2_auto_eval_result.json"
@@ -99,7 +99,7 @@ def run_brats_medsam2_auto_eval(
         prompt=prompt,
         mask_path=str(mask_path),
         overlay_path=str(overlay_path),
-        disease_skill=skill,
+        disease_knowledge=knowledge,
     )
     evaluation = BratsEvaluationTool().evaluate(
         prediction_mask_path=result["image_outputs"]["mask_path"],

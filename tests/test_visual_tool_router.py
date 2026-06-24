@@ -157,7 +157,7 @@ class VisualToolRouterTest(unittest.TestCase):
         self.assertIsNone(plan[0]["selected_tool"])
         self.assertFalse(plan[0]["diagnosis_usable_without_qc"])
 
-    def test_router_derives_execution_modes_from_skill_finding_targets(self):
+    def test_router_derives_execution_modes_from_knowledge_finding_targets(self):
         registry = VisualToolRegistry.from_dict(
             {
                 "tools": [
