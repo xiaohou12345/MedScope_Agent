@@ -74,7 +74,13 @@
     },
     "ARCO_III": {
       "description": "出现股骨头塌陷或新月征",
-      "xray_features": ["新月征", "股骨头塌陷"]
+      "xray_features": ["新月征", "股骨头塌陷"],
+      "subclassification": {
+        "required_measurement": "maximum_femoral_head_depression_mm",
+        "ARCO_IIIA": "股骨头凹陷或塌陷深度 <= 2 mm",
+        "ARCO_IIIB": "股骨头凹陷或塌陷深度 > 2 mm",
+        "safety_note": "缺少可靠像素间距、标尺、ROI、参考轮廓或 landmark QC 时，不能强行细分 IIIA/IIIB。"
+      }
     },
     "ARCO_IV": {
       "description": "继发骨关节炎改变",
@@ -85,7 +91,8 @@
     "segmentation_targets": ["股骨头区域", "疑似坏死区域", "关节间隙"],
     "quantitative_features": [
       "lesion_area_ratio",
-      "collapse_ratio",
+      "maximum_femoral_head_depression_mm",
+      "normalized_contour_deviation",
       "joint_space_width",
       "texture_abnormality_score"
     ]
@@ -182,7 +189,7 @@
         "localization_mode": "measurement",
         "segmentation_mode": "none",
         "diagnosis_usable_level": "measurement_support",
-        "measurements": ["collapse_ratio", "head_contour_irregularity_score"],
+        "measurements": ["maximum_femoral_head_depression_mm", "normalized_contour_deviation", "head_contour_irregularity_score"],
         "diagnostic_role": "ARCO_III_or_later_boundary_feature"
       }
     ],
@@ -292,10 +299,10 @@
         "localization_mode": "measurement",
         "segmentation_mode": "none",
         "diagnosis_usable_level": "measurement_support",
-        "measurement_dependencies": ["femoral_head_roi", "contour", "articular_surface_contour", "landmark_quality"],
+        "measurement_dependencies": ["femoral_head_roi", "contour", "articular_surface_contour", "reference_contour", "landmark_quality", "pixel_spacing_or_scale_marker"],
         "measurement_usable": false,
-        "quality_requirements": ["roi_quality", "contour_quality", "landmark_quality"],
-        "limitations": ["缺少可靠 ROI/contour/landmark 时 measurement_usable 必须为 false。"]
+        "quality_requirements": ["roi_quality", "contour_quality", "reference_contour_quality", "landmark_quality", "calibration_quality"],
+        "limitations": ["缺少可靠 ROI/contour/reference_contour/landmark/标尺时 measurement_usable 必须为 false。", "疑似塌陷但无法可靠测量时，只能提示疑似轻度塌陷，不能细分 ARCO IIIA/IIIB。"]
       },
       {
         "target": "subchondral_fracture",
@@ -330,13 +337,57 @@
   },
   "quantitative_evidence_protocol": {
     "schema_version": "quantitative_evidence_protocol.v1",
-    "protocol_sections": ["image_feature_quantification", "measurement_evidence"],
+    "protocol_sections": ["image_feature_quantification", "measurement_evidence", "collapse_measurement_protocol"],
     "quality_gate_defaults": {
       "measurement_usable_default": false,
       "requires_quality_requirements_for_usable_measurement": true,
       "exploratory_feature_validation_required": true
     },
     "diagnosis_boundary": "Exploratory image-feature quantification cannot confirm diagnosis; geometric measurement support requires usable ROI, contour, landmark, and quality gates.",
+    "collapse_measurement_protocol": {
+      "target": "femoral_head_collapse",
+      "measurement_type": "geometric_measurement",
+      "primary_metric": "maximum_depression_depth",
+      "metric_name": "maximum_femoral_head_depression_mm",
+      "unit": "mm",
+      "measurement_method": "reference_contour_deviation",
+      "fallback_metric_without_calibration": "normalized_contour_deviation",
+      "staging_rule": {
+        "ARCO_IIIA": "<= 2 mm",
+        "ARCO_IIIB": "> 2 mm"
+      },
+      "workflow": [
+        "segment_femoral_head_roi",
+        "extract_articular_surface_contour",
+        "fit_reference_contour_or_arc",
+        "find_maximum_depression_point",
+        "compute_vertical_depression_depth",
+        "run_contour_landmark_calibration_qc"
+      ],
+      "tool_division": {
+        "vlm": "判断疑似塌陷位置并给出候选区域，不直接输出毫米值。",
+        "anatomical_segmenter": "分割股骨头 ROI 与关节面轮廓。",
+        "measurement_tool": "基于像素间距或可靠标尺和参考轮廓计算最大凹陷深度。",
+        "diagnosis_agent": "根据数值、QC 和 ARCO Knowledge 解释分期含义。"
+      },
+      "safety_rules": {
+        "no_calibration": "do_not_output_mm; only output normalized_contour_deviation",
+        "unreliable_roi_or_landmark": "measurement_usable=false",
+        "suspected_collapse_unmeasurable": "只写疑似轻度塌陷，不能强行细分 ARCO IIIA/IIIB。",
+        "no_collapse_measured": "未测到塌陷不能自动等于无塌陷，需区分图像质量、投照位和模型失败。"
+      },
+      "output_contract": {
+        "target": "femoral_head_collapse",
+        "evidence_type": "anatomical_measurement",
+        "collapse_status": "supported_or_unassessed",
+        "maximum_depression_mm": "number_or_null",
+        "measurement_method": "reference_contour_deviation",
+        "calibration_source": "dicom_pixel_spacing_or_scale_marker_or_none",
+        "measurement_usable": "boolean",
+        "stage_implication": "compatible_with_ARCO_IIIA_or_ARCO_IIIB_or_unavailable",
+        "diagnosis_usable_level": "measurement_support"
+      }
+    },
     "image_feature_quantification": [
       {
         "feature_name": "texture_disorder_score",
@@ -361,15 +412,44 @@
         "validation_status": "requires_validation",
         "diagnosis_usable": false,
         "diagnosis_usable_level": "exploratory_only"
+      },
+      {
+        "feature_name": "collapse_angle",
+        "target": "collapse",
+        "status": "exploratory",
+        "validation_status": "requires_clinical_definition_and_validation",
+        "diagnosis_usable": false,
+        "diagnosis_usable_level": "exploratory_only",
+        "limitations": ["塌陷角度不是当前 ARCO 分期核心指标，完成临床定义和验证前仅作为探索项。"]
       }
     ],
     "measurement_evidence": [
       {
-        "measurement_name": "femoral_head_collapse_depth",
+        "measurement_name": "maximum_femoral_head_depression_mm",
         "target": "collapse",
-        "requires": ["femoral_head_roi", "articular_surface_contour", "landmark_quality"],
-        "quality_requirements": ["roi_quality", "contour_quality", "landmark_quality"],
-        "measurement_usable_default": false
+        "display_name": "股骨头最大凹陷深度",
+        "measurement_type": "geometric_measurement",
+        "primary_metric": "maximum_depression_depth",
+        "unit": "mm",
+        "measurement_method": "reference_contour_deviation",
+        "calibration_required": true,
+        "calibration_sources": ["dicom_pixel_spacing", "radiographic_scale_marker"],
+        "requires": ["femoral_head_roi", "articular_surface_contour", "reference_contour", "landmark_quality", "pixel_spacing_or_scale_marker"],
+        "quality_requirements": ["roi_qc", "contour_qc", "reference_contour_qc", "landmark_qc", "calibration_qc", "view_quality"],
+        "measurement_usable_default": false,
+        "measurement_usable_when": ["roi_qc pass", "contour_qc pass", "reference_contour_qc pass", "landmark_qc pass", "calibration_qc pass"],
+        "staging_rule": {
+          "ARCO_IIIA": "<= 2 mm",
+          "ARCO_IIIB": "> 2 mm"
+        },
+        "diagnosis_usable_level": "measurement_support",
+        "no_calibration_policy": "do_not_output_mm; output normalized_contour_deviation only",
+        "failure_policy": {
+          "roi_or_landmark_unreliable": "measurement_usable=false",
+          "suspected_collapse_unmeasurable": "report suspected mild collapse only; do not split ARCO IIIA/IIIB",
+          "no_collapse_measured": "do not equate with no collapse; report image/view/model limitations"
+        },
+        "limitations": ["分期还需结合软骨下骨骨折、新月征和其他影像表现。"]
       },
       {
         "measurement_name": "suspected_necrotic_area_ratio",

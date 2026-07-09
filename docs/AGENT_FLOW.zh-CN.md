@@ -1,10 +1,12 @@
 # MedScope Agent 功能边界与主线/支线流程
 
-本文档用于把 MedScope 当前项目从“几个 Agent 的堆叠”整理成一条可讲清楚、可演示、可扩展的系统主线。
+本文档用于把 MedScope 当前项目从“几个 Agent 的堆叠”整理成一条可讲清楚、可演示、可扩展的 ONFH 专病系统主线。
 
 推荐对外表述：
 
-> MedScope 不是为了分 Agent 而分 Agent，而是把医疗图像诊断拆成一条受 guideline knowledge、visual evidence、evidence bundle 和 memory audit 约束的临床证据流水线。每个 Agent 只负责一个安全边界内的工作，底层 Evidence Gateway 负责 knowledge、文件、工具、契约、hooks 和 candidate queue 的统一管理。
+> MedScope 不再定位为全病种自动诊断系统，而是面向股骨头坏死（ONFH）的专病筛查、证据分析和分期辅助系统。它把 ONFH 影像证据分析拆成一条受 guideline knowledge、visual evidence、evidence bundle 和 memory audit 约束的临床证据流水线。每个 Agent 只负责一个安全边界内的工作，底层 Evidence Gateway 负责 knowledge、文件、工具、契约、hooks 和 candidate queue 的统一管理。
+
+其他髋关节 Knowledge 的定位是鉴别复查和假阳性控制：当 ONFH Knowledge 发现硬化带、囊性变、塌陷或新月征等支持证据时，系统可以调用骨关节炎、外伤后改变、DDH 相关退变等 Knowledge 检查这些阳性征象是否存在替代解释。这样做的目标不是扩大成全病种诊断，而是降低 ONFH 假阳性。
 
 ## 1. 总体结构
 
@@ -1141,4 +1143,3 @@ Memory 保存：
 3. Knowledge Builder 真实指南采集闭环：继续完善网页/PDF 指南采集、抽取、质量门。
 4. 依赖和部署：补 `requirements.txt` 或 `pyproject.toml`。
 5. Candidate Queue 验证机制：把人工 review、数据集指标、指南来源确认接入 validation gate。
-

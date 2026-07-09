@@ -344,6 +344,15 @@ class MedScopeService:
         if not patient_message:
             raise ValueError("patient_message is required")
         routing_decision = self._build_routing_decision(payload)
+        applicability = self._onfh_applicability_check(payload, routing_decision)
+        if applicability:
+            routing_decision["onfh_applicability"] = applicability
+            if applicability.get("status") != "applicable":
+                return self._build_onfh_not_applicable_response(
+                    payload=payload,
+                    routing_decision=routing_decision,
+                    applicability=applicability,
+                )
         if routing_decision.get("knowledge_builder_action") == "search_or_generate_knowledge":
             return self._build_knowledge_proposal_response(
                 payload=payload,
@@ -378,6 +387,16 @@ class MedScopeService:
                     "配置完成后可先运行 MedSAM2 smoke/readiness 测试，再重新提交病例。",
                 ],
             ) from exc
+        except RuntimeError as exc:
+            if self._is_onfh_visual_candidate_failure(exc, routing_decision):
+                applicability = self._build_onfh_visual_candidate_failure_applicability()
+                routing_decision["onfh_applicability"] = applicability
+                return self._build_onfh_not_applicable_response(
+                    payload=payload,
+                    routing_decision=routing_decision,
+                    applicability=applicability,
+                )
+            raise
         result.setdefault("image_path", payload.get("image_path") or "")
         result.setdefault("patient_message", patient_message)
         result.setdefault("patient_info", payload.get("patient_info") or {})
@@ -397,7 +416,292 @@ class MedScopeService:
             result.setdefault("required_next_images", alignment_plan["required_next_images"])
         result = self._attach_case_outputs(result)
         self._attach_diagnostic_confidence(result)
+        self._attach_onfh_diagnostic_flow(result)
         return result
+
+    def _onfh_applicability_check(
+        self,
+        payload: dict[str, Any],
+        routing_decision: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if routing_decision.get("selected_knowledge") != "femoral_head_necrosis":
+            return None
+        text = self._routing_text(payload)
+        image_text = " ".join(
+            str(value)
+            for value in [
+                payload.get("image_path", ""),
+                " ".join(str(path) for path in self._coerce_image_paths(payload.get("image_paths"))),
+            ]
+        ).lower()
+        has_image = bool(payload.get("image_path") or self._coerce_image_paths(payload.get("image_paths")))
+        hip_image_markers = [
+            "hip",
+            "pelvis",
+            "femoral",
+            "fhn",
+            "onfh",
+            "avn",
+            "髋",
+            "骨盆",
+            "股骨头",
+        ]
+        non_hip_image_markers = [
+            "brain",
+            "brats",
+            "flair",
+            "glioma",
+            "chest",
+            "lung",
+            "hrct",
+            "ipf",
+            "脑",
+            "胶质瘤",
+            "胸",
+            "肺",
+        ]
+        hip_context_markers = [
+            "髋",
+            "股骨头",
+            "骨盆",
+            "hip",
+            "femoral",
+            "pelvis",
+            "onfh",
+            "fhn",
+            "avn",
+        ]
+        hip_image_context_markers = [
+            "髋关节",
+            "髋部",
+            "骨盆",
+            "pelvis",
+            "hip",
+            "femoral head x",
+            "股骨头 x",
+            "股骨头x",
+            "股骨头影像",
+            "股骨头片",
+        ]
+        clinical_markers = [
+            "疼",
+            "痛",
+            "活动",
+            "走路",
+            "负重",
+            "跛行",
+            "受限",
+            "激素",
+            "饮酒",
+            "酗酒",
+            "外伤",
+            "创伤",
+            "steroid",
+            "corticosteroid",
+            "alcohol",
+            "trauma",
+            "pain",
+            "limp",
+        ]
+        supported_modality_markers = ["xray", "x-ray", "x 光", "x光", "radiograph", "mri", "磁共振"]
+        unsupported_modality_markers = ["ct", "hrct", "超声", "ultrasound"]
+        modality = self._onfh_requested_modality(payload, text)
+        image_has_hip_marker = any(marker in image_text for marker in hip_image_markers)
+        image_has_non_hip_marker = any(marker in image_text for marker in non_hip_image_markers)
+        text_has_non_hip_context = any(marker in text for marker in non_hip_image_markers)
+        text_has_hip_context = any(marker in text for marker in hip_context_markers)
+        text_has_hip_image_context = any(marker in text for marker in hip_image_context_markers)
+        text_has_clinical_context = any(marker in text for marker in clinical_markers)
+        has_supported_modality = modality in {"xray", "mri"} or any(
+            marker in text for marker in supported_modality_markers
+        )
+        has_unsupported_modality = modality == "unsupported" or any(
+            marker in text for marker in unsupported_modality_markers
+        )
+
+        missing: list[str] = []
+        if not has_image:
+            missing.append("需要上传骨盆/髋关节 X 光或 MRI。")
+        if (image_has_non_hip_marker or text_has_non_hip_context) and not (
+            image_has_hip_marker or text_has_hip_image_context
+        ):
+            return {
+                "status": "not_applicable",
+                "reason": "uploaded_image_is_not_hip_related",
+                "checks": {
+                    "hip_related_image": False,
+                    "supported_modality": has_supported_modality,
+                    "clinical_context": text_has_clinical_context or text_has_hip_context,
+                    "has_image": has_image,
+                },
+                "missing": ["当前上传影像不像骨盆/髋关节影像。"],
+                "recommendation": [
+                    "请上传骨盆正位、蛙式位或髋关节 MRI。",
+                    "如果需要分析脑部、胸部或其他部位，应切换到对应专病系统。",
+                ],
+            }
+        if has_unsupported_modality and not has_supported_modality:
+            return {
+                "status": "not_applicable",
+                "reason": "unsupported_image_modality_for_onfh",
+                "checks": {
+                    "hip_related_image": image_has_hip_marker or text_has_hip_context,
+                    "supported_modality": False,
+                    "clinical_context": text_has_clinical_context or text_has_hip_context,
+                    "has_image": has_image,
+                },
+                "missing": ["当前 ONFH MVP 主要支持 X 光和 MRI。"],
+                "recommendation": [
+                    "请上传髋关节 X 光或 MRI。",
+                    "CT/超声等模态暂不作为当前演示主流程输入。",
+                ],
+            }
+        if not (image_has_hip_marker or text_has_hip_context):
+            missing.append("需要明确这是骨盆/髋关节相关影像或描述。")
+        if not (text_has_clinical_context or text_has_hip_context):
+            missing.append("请补充髋痛、活动受限、激素使用、饮酒或外伤等 ONFH 相关背景。")
+        if not has_supported_modality:
+            missing.append("请说明影像类型是 X 光还是 MRI。")
+        if missing:
+            return {
+                "status": "insufficient_input",
+                "reason": "missing_onfh_applicability_inputs",
+                "checks": {
+                    "hip_related_image": image_has_hip_marker or text_has_hip_context,
+                    "supported_modality": has_supported_modality,
+                    "clinical_context": text_has_clinical_context or text_has_hip_context,
+                    "has_image": has_image,
+                },
+                "missing": missing,
+                "recommendation": [
+                    "请上传骨盆/髋关节 X 光或 MRI。",
+                    "请补充髋部症状、活动受限和激素/饮酒/外伤等风险因素。",
+                ],
+            }
+        return {
+            "status": "applicable",
+            "reason": "hip_related_input_matches_onfh_scope",
+            "checks": {
+                "hip_related_image": image_has_hip_marker or text_has_hip_context,
+                "supported_modality": has_supported_modality,
+                "clinical_context": text_has_clinical_context or text_has_hip_context,
+                "has_image": has_image,
+            },
+            "modality": modality,
+            "missing": [],
+            "recommendation": [],
+        }
+
+    def _onfh_requested_modality(self, payload: dict[str, Any], text: str) -> str:
+        patient_info = payload.get("patient_info") if isinstance(payload.get("patient_info"), dict) else {}
+        raw = str(
+            payload.get("image_modality")
+            or patient_info.get("image_modality")
+            or patient_info.get("modality")
+            or ""
+        ).strip().lower()
+        if raw in {"xray", "x-ray", "x 光", "x光", "radiograph"}:
+            return "xray"
+        if raw in {"mri", "mr", "磁共振"}:
+            return "mri"
+        if raw in {"ct", "hrct", "ultrasound", "超声"}:
+            return "unsupported"
+        if any(marker in text for marker in ["xray", "x-ray", "x 光", "x光", "radiograph"]):
+            return "xray"
+        if any(marker in text for marker in ["ap_pelvis", "frog_lateral", "frog", "正位", "侧位", "蛙式"]):
+            return "xray"
+        if any(marker in text for marker in ["mri", "磁共振"]):
+            return "mri"
+        if any(marker in text for marker in ["ct", "hrct", "ultrasound", "超声"]):
+            return "unsupported"
+        return "unknown"
+
+    def _build_onfh_not_applicable_response(
+        self,
+        *,
+        payload: dict[str, Any],
+        routing_decision: dict[str, Any],
+        applicability: dict[str, Any],
+    ) -> dict[str, Any]:
+        status = str(applicability.get("status") or "not_applicable")
+        not_applicable = status == "not_applicable"
+        title = "不适用当前 ONFH 专病系统" if not_applicable else "当前输入不足以进行 ONFH 筛查"
+        reply = (
+            f"{title}。"
+            + " ".join(str(item) for item in applicability.get("missing", []) if item)
+        ).strip()
+        recommendations = list(applicability.get("recommendation") or [])
+        return {
+            "intent": "diagnosis",
+            "analysis_status": (
+                "not_applicable_to_onfh_system" if not_applicable else "insufficient_onfh_input"
+            ),
+            "reply_to_patient": reply,
+            "patient_message": payload.get("patient_message") or "",
+            "image_path": payload.get("image_path") or "",
+            "patient_info": payload.get("patient_info") or {},
+            "routing_decision": routing_decision,
+            "onfh_applicability": applicability,
+            "report": {
+                "重点结论": {
+                    "疾病判断": title,
+                    "发现的病灶/征象": [],
+                    "疑似/确诊边界": reply,
+                },
+                "target_disease_assessment": {
+                    "target_disease": "femoral_head_necrosis",
+                    "evidence_status": status,
+                    "conclusion": title,
+                },
+                "integrated_reasoning_summary": {
+                    "evidence_status": status,
+                    "conclusion": reply,
+                },
+                "适用性检查": applicability,
+                "建议下一步": recommendations,
+            },
+            "missing_evidence": [
+                {
+                    "field": "onfh_applicability",
+                    "status": status,
+                    "reason": item,
+                }
+                for item in applicability.get("missing", [])
+            ],
+            "recommendation": recommendations,
+        }
+
+    def _is_onfh_visual_candidate_failure(
+        self,
+        exc: RuntimeError,
+        routing_decision: dict[str, Any],
+    ) -> bool:
+        if routing_decision.get("selected_knowledge") != "femoral_head_necrosis":
+            return False
+        message = str(exc)
+        return (
+            "FHN no-mask visual pipeline did not complete" in message
+            and "finding_segmentation_not_ready" in message
+        )
+
+    def _build_onfh_visual_candidate_failure_applicability(self) -> dict[str, Any]:
+        return {
+            "status": "not_applicable",
+            "reason": "visual_pipeline_could_not_confirm_hip_onfh_candidate",
+            "checks": {
+                "hip_related_image": "unverified_by_visual_pipeline",
+                "supported_modality": True,
+                "clinical_context": True,
+                "has_image": True,
+            },
+            "missing": [
+                "视觉链路未能在当前图片中确认可用于股骨头坏死筛查的髋关节候选区域。",
+            ],
+            "recommendation": [
+                "请上传骨盆正位、蛙式位或清晰髋关节 MRI。",
+                "如果当前图片是胸部、脑部或其他部位影像，则不适用当前 ONFH 专病系统。",
+            ],
+        }
 
     def _build_knowledge_proposal_response(
         self,
@@ -2190,7 +2494,10 @@ class MedScopeService:
         knowledge_builder_action_reason: str | None = None,
     ) -> str:
         if not disease_key:
-            return "No primary disease knowledge matched; Knowledge Builder may search guideline sources if requested."
+            return (
+                "No ONFH primary knowledge matched from the current hip/ONFH screening scope; "
+                "non-ONFH inputs require explicit review before any extension knowledge is generated."
+            )
         if knowledge_builder_action == "search_or_generate_knowledge":
             return (
                 f"Selected {disease_key} as a primary clinical hypothesis, but {knowledge_builder_action_reason or 'the local knowledge is not ready'}; "
@@ -2208,7 +2515,10 @@ class MedScopeService:
                 f"{side} with hip X-ray; user did not provide a confirmed diagnosis; "
                 "FHN and degenerative, traumatic, and dysplasia-related causes should be considered before evidence-bounded diagnosis."
             )
-        return "Selected primary disease knowledge as a clinical hypothesis; existing knowledge is loaded before any Knowledge Builder proposal."
+        return (
+            "Selected an extension knowledge as a bounded technical example or differential review; "
+            "the current product scope remains ONFH screening and evidence analysis."
+        )
 
     def _initial_evidence_status(
         self,
@@ -2299,23 +2609,30 @@ class MedScopeService:
 
     def _match_femoral_head_clues(self, payload: dict[str, Any]) -> list[str]:
         text = self._routing_text(payload)
-        femoral_markers = [
+        specific_markers = [
             "股骨头",
             "髋",
             "hip",
+            "pelvis",
+            "femoral",
+            "fhn",
+            "onfh",
+            "avn",
+        ]
+        if not any(marker in text for marker in specific_markers):
+            return []
+        femoral_markers = specific_markers + [
             "xray",
             "x-ray",
             "x 光",
             "x光",
             "坏死",
-            "fhn",
-            "onfh",
-            "avn",
         ]
         return [marker for marker in femoral_markers if marker in text]
 
     def _routing_text(self, payload: dict[str, Any]) -> str:
-        symptoms = payload.get("patient_info", {}).get("symptoms", [])
+        patient_info = payload.get("patient_info", {}) if isinstance(payload.get("patient_info"), dict) else {}
+        symptoms = patient_info.get("symptoms", [])
         if isinstance(symptoms, str):
             symptoms_text = symptoms
         else:
@@ -2325,6 +2642,9 @@ class MedScopeService:
             for value in [
                 payload.get("patient_message", ""),
                 payload.get("image_path", ""),
+                payload.get("image_modality", ""),
+                patient_info.get("image_modality", ""),
+                patient_info.get("clinical_notes", ""),
                 " ".join(str(path) for path in self._coerce_image_paths(payload.get("image_paths"))),
                 symptoms_text,
             ]
@@ -2495,6 +2815,294 @@ class MedScopeService:
         basis_text = f"；依据：{'、'.join(str(value) for value in basis[:3])}" if basis else ""
         caveat = f"；{item.get('caveat')}" if item.get("caveat") else ""
         return f"{name}：当前证据支持度为{level}{basis_text}{caveat}"
+
+    def _attach_onfh_diagnostic_flow(self, result: dict[str, Any]) -> None:
+        routing = result.get("routing_decision") or {}
+        report = result.setdefault("report", {})
+        disease_key = str(
+            routing.get("selected_knowledge")
+            or routing.get("primary_hypothesis")
+            or (report.get("target_disease_assessment") or {}).get("target_disease")
+            or ""
+        )
+        if disease_key != "femoral_head_necrosis":
+            return
+        confidence = self._primary_diagnostic_confidence(result)
+        findings = self._onfh_detected_findings(result)
+        has_supporting_findings = bool(findings)
+        support_level = (confidence or {}).get("confidence_level") or "insufficient"
+        support_label = (confidence or {}).get("confidence_label") or "证据不足"
+        if has_supporting_findings:
+            flow_type = "positive"
+            negative_category = None
+            conclusion = (
+                f"当前影像发现 {', '.join(item['display_name'] for item in findings[:4])}，"
+                f"对股骨头坏死方向为{support_label}。"
+            )
+        else:
+            flow_type = "negative"
+            negative_category = self._onfh_negative_category(result)
+            conclusion = self._onfh_negative_conclusion(negative_category)
+        staging = self._onfh_staging_assessment(findings=findings, result=result)
+        next_steps = self._onfh_next_steps(
+            flow_type=flow_type,
+            negative_category=negative_category,
+            findings=findings,
+            result=result,
+        )
+        assessment = {
+            "disease_key": "femoral_head_necrosis",
+            "flow_type": flow_type,
+            "support_level": support_level,
+            "support_label": support_label,
+            "confidence_score": (confidence or {}).get("confidence_score"),
+            "detected_findings": findings,
+            "staging_assessment": staging,
+            "negative_category": negative_category,
+            "conclusion": conclusion,
+            "next_steps": next_steps,
+            "safety_note": (
+                "该结果是基于当前 evidence bundle 的 ONFH 专病辅助判断，"
+                "不能替代影像科/骨科医生的正式诊断。"
+            ),
+        }
+        result["onfh_assessment"] = assessment
+        report["onfh_assessment"] = assessment
+        if staging:
+            report["分期辅助"] = staging
+            if flow_type == "positive" and staging.get("stage") and staging.get("stage") != "不能分期":
+                supporting = [
+                    str(item)
+                    for item in staging.get("supporting_findings", [])
+                    if item
+                ]
+                stage_summary = str(staging["stage"])
+                if supporting:
+                    stage_summary = f"{stage_summary}；依据：{'、'.join(supporting)}"
+                report.setdefault("重点结论", {})["分期辅助"] = stage_summary
+        if next_steps:
+            report["建议下一步"] = next_steps
+
+    def _onfh_detected_findings(self, result: dict[str, Any]) -> list[dict[str, Any]]:
+        targets: list[dict[str, Any]] = []
+
+        def add(target: str, *, text: str = "", source: str = "") -> None:
+            normalized = self._normalize_onfh_finding_target(target or text)
+            if not normalized:
+                return
+            display_name = self._finding_name_for(normalized)
+            if any(item["target"] == normalized for item in targets):
+                return
+            targets.append(
+                {
+                    "target": normalized,
+                    "display_name": display_name,
+                    "evidence_text": text or display_name,
+                    "diagnostic_role": self._onfh_finding_diagnostic_role(normalized),
+                    "source": source,
+                }
+            )
+
+        visual_bundle = result.get("visual_evidence_bundle") or {}
+        for target in visual_bundle.get("present_findings") or []:
+            add(str(target), source="visual_evidence_bundle.present_findings")
+        for container in [
+            result.get("structured_visual_facts") or [],
+            visual_bundle.get("structured_visual_facts") or [],
+            visual_bundle.get("findings") or [],
+            result.get("used_visual_facts") or [],
+        ]:
+            for item in container:
+                if not isinstance(item, dict):
+                    continue
+                text = str(
+                    item.get("summary_text")
+                    or item.get("evidence_text")
+                    or item.get("description")
+                    or item.get("display_name")
+                    or ""
+                )
+                add(str(item.get("target") or item.get("display_name") or text), text=text, source="visual_fact")
+        report = result.get("report") or {}
+        imaging = report.get("imaging_evidence_summary") or {}
+        for target in imaging.get("supported_targets") or []:
+            add(str(target), source="report.imaging_evidence_summary")
+        for basis in self._primary_confidence_basis(result):
+            add(str(basis), source="diagnostic_confidence_basis")
+        return targets
+
+    def _normalize_onfh_finding_target(self, value: str) -> str:
+        text = str(value or "").strip().lower()
+        if not text:
+            return ""
+        if any(marker in text for marker in ["sclerotic", "硬化"]):
+            return "sclerotic_band"
+        if any(marker in text for marker in ["cystic", "囊性", "囊变"]):
+            return "cystic_change"
+        if any(marker in text for marker in ["crescent", "新月", "软骨下骨折", "subchondral_fracture", "subchondral fracture"]):
+            return "crescent_sign"
+        if any(marker in text for marker in ["collapse", "塌陷"]):
+            return "collapse"
+        if any(marker in text for marker in ["trabecular", "骨小梁", "纹理"]):
+            return "trabecular_blurring"
+        return ""
+
+    def _onfh_finding_diagnostic_role(self, target: str) -> str:
+        if target in {"collapse", "crescent_sign"}:
+            return "supports_collapse_stage"
+        if target in {"sclerotic_band", "cystic_change", "trabecular_blurring"}:
+            return "supports_radiographic_onfh"
+        return "supporting_visual_clue"
+
+    def _onfh_staging_assessment(
+        self,
+        *,
+        findings: list[dict[str, Any]],
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        targets = {item["target"] for item in findings}
+        modality = self._onfh_result_modality(result)
+        if "collapse" in targets or "crescent_sign" in targets:
+            supporting = [
+                item["display_name"]
+                for item in findings
+                if item["target"] in {"collapse", "crescent_sign"}
+            ]
+            return {
+                "stage": "疑似 ARCO III 或以上",
+                "confidence": "stage_suspected",
+                "supporting_findings": supporting,
+                "rationale": "新月征/软骨下骨折或股骨头塌陷提示已进入塌陷相关阶段。",
+                "limitations": "仍需标准体位 X 光或 MRI 明确塌陷范围和坏死面积。",
+            }
+        if targets.intersection({"sclerotic_band", "cystic_change", "trabecular_blurring"}):
+            supporting = [
+                item["display_name"]
+                for item in findings
+                if item["target"] in {"sclerotic_band", "cystic_change", "trabecular_blurring"}
+            ]
+            return {
+                "stage": "疑似 ARCO II",
+                "confidence": "stage_suspected",
+                "supporting_findings": supporting,
+                "rationale": "X 光可见硬化带、囊性变或骨小梁异常，且未返回明确塌陷/新月征。",
+                "limitations": "MRI 可进一步确认坏死范围，并排除早期或隐匿性改变。",
+            }
+        if modality == "xray":
+            return {
+                "stage": "不能分期",
+                "confidence": "not_stageable",
+                "supporting_findings": [],
+                "rationale": "当前 X 光未返回可用于 ONFH 分期的明确征象。",
+                "limitations": "X 光阴性不能排除 ARCO I；如症状和风险因素强，建议 MRI。",
+            }
+        return {
+            "stage": "不能分期",
+            "confidence": "not_stageable",
+            "supporting_findings": [],
+            "rationale": "当前 evidence bundle 未提供可用于分期的 ONFH 影像征象。",
+            "limitations": "需要标准化 X 光/MRI 和可靠视觉证据后再分期。",
+        }
+
+    def _onfh_negative_category(self, result: dict[str, Any]) -> str:
+        quality_text = json.dumps(
+            {
+                "visual_evidence_bundle": result.get("visual_evidence_bundle") or {},
+                "visual_input_contract": result.get("visual_input_contract") or {},
+                "image_outputs": result.get("image_outputs") or {},
+            },
+            ensure_ascii=False,
+        ).lower()
+        if any(
+            marker in quality_text
+            for marker in [
+                "low_quality",
+                "quality_low",
+                "poor_quality",
+                "view_insufficient",
+                "not_standard_view",
+                "invalid_view",
+                "图像质量",
+                "体位不足",
+            ]
+        ):
+            return "image_quality_or_view_insufficient"
+        modality = self._onfh_result_modality(result)
+        if modality == "xray" and self._onfh_has_strong_clinical_risk(result):
+            return "xray_negative_but_clinical_risk_high"
+        return "evidence_not_supportive"
+
+    def _onfh_negative_conclusion(self, category: str) -> str:
+        if category == "image_quality_or_view_insufficient":
+            return "当前图像质量或体位不足，不能可靠判断股骨头坏死。"
+        if category == "xray_negative_but_clinical_risk_high":
+            return "当前 X 光未发现明确 ONFH 征象，但症状或风险因素较强，不能排除早期股骨头坏死。"
+        return "当前 evidence bundle 未发现支持股骨头坏死的明确影像征象。"
+
+    def _onfh_next_steps(
+        self,
+        *,
+        flow_type: str,
+        negative_category: str | None,
+        findings: list[dict[str, Any]],
+        result: dict[str, Any],
+    ) -> list[str]:
+        if flow_type == "positive":
+            targets = {item["target"] for item in findings}
+            steps = ["建议结合影像科/骨科医生复核原片和病史。"]
+            if targets.intersection({"sclerotic_band", "cystic_change", "trabecular_blurring"}):
+                steps.append("建议 MRI 明确坏死范围、骨髓水肿和是否存在早期塌陷。")
+            if targets.intersection({"collapse", "crescent_sign"}):
+                steps.append("建议进一步评估塌陷范围、负重区受累程度和治疗方案。")
+            return steps
+        if negative_category == "image_quality_or_view_insufficient":
+            return ["建议补充标准骨盆正位、蛙式位 X 光或髋关节 MRI 后再评估。"]
+        if negative_category == "xray_negative_but_clinical_risk_high":
+            return ["建议补充髋关节 MRI；X 光阴性不能排除 ARCO I 或早期坏死。"]
+        return ["若症状持续、加重或存在明确风险因素，建议随访复查或补充 MRI。"]
+
+    def _onfh_result_modality(self, result: dict[str, Any]) -> str:
+        patient_info = result.get("patient_info") if isinstance(result.get("patient_info"), dict) else {}
+        routing_text = self._routing_text(
+            {
+                "patient_message": result.get("patient_message") or "",
+                "image_path": result.get("image_path") or "",
+                "patient_info": patient_info,
+            }
+        )
+        return self._onfh_requested_modality(
+            {
+                "image_path": result.get("image_path") or "",
+                "patient_info": patient_info,
+            },
+            routing_text,
+        )
+
+    def _onfh_has_strong_clinical_risk(self, result: dict[str, Any]) -> bool:
+        patient_info = result.get("patient_info") if isinstance(result.get("patient_info"), dict) else {}
+        text = self._routing_text(
+            {
+                "patient_message": result.get("patient_message") or "",
+                "image_path": result.get("image_path") or "",
+                "patient_info": patient_info,
+            }
+        )
+        has_symptoms = any(marker in text for marker in ["髋", "hip", "疼", "痛", "走路", "活动", "负重"])
+        has_risk = any(
+            marker in text
+            for marker in [
+                "激素",
+                "饮酒",
+                "酗酒",
+                "外伤",
+                "创伤",
+                "steroid",
+                "corticosteroid",
+                "alcohol",
+                "trauma",
+            ]
+        )
+        return has_symptoms and has_risk
 
     def _finding_name_for(self, target: str) -> str:
         labels = {

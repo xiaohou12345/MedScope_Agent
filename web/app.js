@@ -56,6 +56,7 @@ const elements = {
   fileInput: document.getElementById("fileInput"),
   uploadStatus: document.getElementById("uploadStatus"),
   patientMessage: document.getElementById("patientMessage"),
+  imageModality: document.getElementById("imageModality"),
   imagePath: document.getElementById("imagePath"),
   symptoms: document.getElementById("symptoms"),
   knowledgeSelectionMode: document.getElementById("knowledgeSelectionMode"),
@@ -99,32 +100,32 @@ const architectureRoadmapData = {
     {
       key: "clinical_orchestrator",
       title: "Clinical Orchestrator",
-      short: "高医生入口：理解问题、选择 Knowledge、协调流程。",
-      positioning: "高医生入口：把患者描述和图像类型转成分析任务，决定用哪个 Knowledge。",
-      inputs: ["患者描述", "上传图像类型", "部位和症状", "疾病线索"],
-      outputs: ["主要怀疑方向（primary hypothesis）", "选中的 Knowledge（selected_knowledge）", "备用可能性（differential candidates）", "选择理由（routing reason）"],
-      boundaries: ["不直接诊断", "不把 Knowledge 选择当成确诊结论"],
+      short: "高医生入口：识别 ONFH 筛查场景、选择 Knowledge、协调流程。",
+      positioning: "高医生入口：把髋部症状和髋关节影像转成 ONFH 证据分析任务，决定是否进入股骨头坏死主线或鉴别复查。",
+      inputs: ["患者描述", "髋关节影像类型", "部位和症状", "ONFH 风险因素"],
+      outputs: ["ONFH 主要怀疑方向（primary hypothesis）", "选中的 Knowledge（selected_knowledge）", "鉴别复查候选（differential candidates）", "选择理由（routing reason）"],
+      boundaries: ["不做全病种自动诊断", "不直接诊断", "不把 Knowledge 选择当成确诊结论"],
       status: "in_progress",
-      todo: ["补充“部位 + 图像类型 + 症状”的轻量路由表", "统一 Knowledge 选择结果格式"],
+      todo: ["补充“髋部 + 图像类型 + 症状 + 风险因素”的 ONFH 路由表", "统一 Knowledge 选择结果格式"],
     },
     {
       key: "vision_evidence_agent",
       title: "Vision Evidence Agent",
       short: "从图片里提取证据，不负责下诊断。",
-      positioning: "从图片里提取证据：按 Knowledge 要求找可疑区域、生成候选分割，并输出可读的结构化数值。",
-      inputs: ["原始图像（raw image）", "选中的 Knowledge（selected knowledge）", "看什么的清单（visual checklist）"],
+      positioning: "从髋关节影像里提取 ONFH 证据：按 Knowledge 要求找硬化带、囊性变、塌陷/新月征等可疑区域，生成候选分割，并输出可读的结构化数值。",
+      inputs: ["髋关节原始图像（raw image）", "ONFH Knowledge 或鉴别 Knowledge", "看什么的清单（visual checklist）"],
       outputs: ["视觉证据（visual evidence）", "候选病灶图 / mask", "面积、比例、位置等数值（measurement）", "证据质量和缺失项"],
       boundaries: ["不直接输出诊断", "不把不稳定的候选框当成确定病灶"],
       status: "in_progress",
-      todo: ["继续优化病灶候选定位", "补 mask 质量检查", "真实量化先等 VisionAgent 稳定"],
+      todo: ["继续优化 ONFH X 光征象候选定位", "补 mask 质量检查", "真实量化先等 VisionAgent 稳定"],
     },
     {
       key: "diagnosis_reasoning_agent",
       title: "Diagnosis Reasoning Agent",
       short: "判断还能不能下结论，只能使用证据包。",
-      positioning: "判断还能不能下结论：只根据 evidence_bundle 和指南规则生成有边界的报告。",
+      positioning: "判断 ONFH 筛查和分期辅助能说到哪一步：只根据 evidence_bundle 和指南规则生成有边界的报告。",
       inputs: ["患者信息（patient info）", "选中的 Knowledge", "证据包（evidence_bundle）", "指南规则（guideline rules）"],
-      outputs: ["支持什么", "缺少什么", "哪些表现不特异", "能说到哪一步", "下一步建议"],
+      outputs: ["是否支持 ONFH", "可能分期边界", "缺少什么", "哪些表现不特异", "下一步建议"],
       boundaries: ["不直接看原图", "不重新选择 Knowledge", "不补全证据包里没有的内容"],
       status: "in_progress",
       todo: ["用人工标注生成的 evidence_bundle 验证推理", "继续收紧缺失证据表达"],
@@ -133,8 +134,8 @@ const architectureRoadmapData = {
       key: "knowledge_builder_guideline_agent",
       title: "Knowledge Builder / Guideline Agent",
       short: "缺少 Knowledge 时，找指南并生成候选 Knowledge。",
-      positioning: "缺少 Knowledge 时才工作：检索权威指南，把指南整理成候选 Knowledge 和视觉检查清单。",
-      inputs: ["疾病名", "图像类型", "指南来源"],
+      positioning: "主线优先维护 ONFH Knowledge；缺少鉴别复查或扩展资料时，检索权威指南，把指南整理成候选 Knowledge 和视觉检查清单。",
+      inputs: ["ONFH 或鉴别疾病名", "图像类型", "指南来源"],
       outputs: ["候选 Knowledge", "视觉检查清单", "待审核草稿（proposal）"],
       boundaries: ["不自动覆盖正式 Knowledge", "候选草稿必须人工审核"],
       status: "in_progress",
@@ -166,10 +167,10 @@ const architectureRoadmapData = {
   optimizationDirections: [
     {
       key: "guideline_knowledge_structure",
-      title: "Guideline Knowledge 结构扩展",
+      title: "ONFH Guideline Knowledge 结构扩展",
       progress: 84,
       status: "in_progress",
-      summary: "指南 Knowledge 升级：把“要看什么、怎么量化、缺什么证据”写清楚。",
+      summary: "ONFH 指南 Knowledge 升级：把“要看什么、怎么量化、缺什么证据”写清楚。",
       completed: [
         "影像证据清单（Imaging evidence）：告诉视觉 Agent 要找哪些征象",
         "可量化指标（Measurement）：面积、比例、位置等能转成数值的内容",
@@ -179,7 +180,7 @@ const architectureRoadmapData = {
       ],
       todo: [
         "统一 Knowledge 格式和校验器",
-        "沉淀通用 Knowledge 模板",
+        "沉淀 ONFH 专病 Knowledge 模板",
         "未来接入 Annotation-derived Evidence Bundle v1",
       ],
       limits: [
@@ -212,22 +213,23 @@ const architectureRoadmapData = {
     },
     {
       key: "knowledge_routing",
-      title: "系统生成候选假设 / Knowledge Routing",
+      title: "ONFH 主线候选假设 / Knowledge Routing",
       progress: 84,
       status: "done",
-      summary: "v1 完成，暂时不需要重做。",
+      summary: "v1 完成：系统不做全病种诊断，只做 ONFH-first 路由；其他髋关节 Knowledge 作为假阳性抑制器和鉴别复查候选。",
       completed: [
         "用户没明确说股骨头坏死时，可根据髋痛 + X-ray 生成主要怀疑方向",
         "自动选择 FHN knowledge",
-        "保留备用可能性（differential candidates）",
+        "保留骨关节炎、外伤后改变、DDH 相关退变等备用可能性（differential candidates）",
+        "备用髋关节 Knowledge 用于检查 ONFH 阳性征象是否存在更合理的替代解释，从而降低假阳性",
         "前端提示 routing 不是诊断结论",
       ],
       todo: [
         "统一路由输出格式",
         "补一个轻量的“部位 + 图像类型 + 症状”路由表",
-        "未来可做 Differential Knowledge Run v1",
+        "未来可做 Differential Knowledge Run v1：输出 false_positive_risk 和 alternative_explanation_strength",
       ],
-      limits: ["不做完整多疾病排序", "不做多 knowledge 自动诊断", "不自动运行所有 differential candidates"],
+      limits: ["不做完整多疾病排序", "不做全病种自动诊断", "不自动运行所有 differential candidates"],
       recovery: "当主线 demo 稳定后，再扩展 differential knowledge run。",
       safety: "routing 是流程选择，不是最终诊断。",
     },
@@ -618,11 +620,14 @@ function buildCasePayload() {
   const imagePaths = state.uploadedImagePaths.length
     ? state.uploadedImagePaths
     : splitList(elements.imagePath.value);
+  const caseNarrative = elements.patientMessage.value.trim();
   const payload = {
-    patient_message: elements.patientMessage.value.trim(),
+    patient_message: caseNarrative,
     image_path: imagePaths[0] || elements.imagePath.value.trim() || null,
     patient_info: {
-      symptoms: splitList(elements.symptoms.value),
+      symptoms: splitList(caseNarrative),
+      clinical_notes: caseNarrative,
+      image_modality: elements.imageModality.value || "xray",
     },
   };
   if (imagePaths.length > 1) {
@@ -636,9 +641,7 @@ function buildCasePayload() {
   if (state.useSampleMask) {
     payload.mask_path = state.sampleMaskPath;
   }
-  if (state.sampleDiseaseKey) {
-    payload.disease_key = state.sampleDiseaseKey;
-  }
+  payload.disease_key = state.sampleDiseaseKey || "femoral_head_necrosis";
   const knowledgeSelectionMode = elements.knowledgeSelectionMode.value || "primary_only";
   payload.knowledge_selection_mode = knowledgeSelectionMode;
   payload.evidence_protocol_mode = elements.evidenceProtocolMode.value || "finding_list_baseline";
@@ -1288,6 +1291,9 @@ function shortApiErrorMessage(error, fallbackMessage = "病例分析失败") {
   if (body.error_type === "vlm_api_unavailable") {
     return "视觉模型调用中断，详情见报告区";
   }
+  if (isOnfhVisualCandidateFailure(error)) {
+    return "当前图片不适用 ONFH 专病筛查，详情见报告区";
+  }
   if (body.error_type) {
     return `${fallbackMessage}：${body.error_type}`;
   }
@@ -1872,10 +1878,33 @@ function renderQuantificationGroup(group) {
             <span>${escapeHtml(item.name || "")}</span>
             <b>${escapeHtml(item.human_target || item.target || "")}</b>
             <em>${escapeHtml(item.reason || "")}</em>
+            ${renderQuantificationItemMeta(item)}
           </article>
         `).join("")}
       </div>
     </section>
+  `;
+}
+
+function renderQuantificationItemMeta(item) {
+  const meta = [];
+  if (item.unit) {
+    meta.push(`单位：${item.unit}`);
+  }
+  if (item.measurement_method) {
+    meta.push(`方法：${item.measurement_method}`);
+  }
+  if (item.staging_rule_summary) {
+    meta.push(`分期规则：${item.staging_rule_summary}`);
+  }
+  if (item.safety_summary) {
+    meta.push(`安全规则：${item.safety_summary}`);
+  }
+  if (!meta.length) {
+    return "";
+  }
+  return `
+    <small>${meta.map(escapeHtml).join(" · ")}</small>
   `;
 }
 
@@ -2447,6 +2476,7 @@ function renderPatientDiagnosisSummary(payload) {
   const evidenceItems = patientDiagnosisEvidenceItems(payload).slice(0, 5);
   const lesionHighlights = patientDiagnosisLesionHighlights(payload).slice(0, 4);
   const nextSteps = patientDiagnosisNextSteps(payload).slice(0, 3);
+  const stagingHtml = renderOnfhStagingAssessment(payload);
   return `
     <div class="report-section patient-diagnosis-summary" aria-label="患者诊断摘要">
       <h3>重点结论</h3>
@@ -2469,6 +2499,7 @@ function renderPatientDiagnosisSummary(payload) {
         <h4>主要依据</h4>
         ${evidenceItems.length ? renderList(evidenceItems) : "<p>当前没有足够稳定的可诊断依据。</p>"}
       </div>
+      ${stagingHtml}
       <div class="patient-summary-block">
         <h4>下一步</h4>
         ${nextSteps.length ? renderList(nextSteps) : "<p>建议结合线下医生评估后决定补充检查。</p>"}
@@ -2477,8 +2508,31 @@ function renderPatientDiagnosisSummary(payload) {
   `;
 }
 
+function renderOnfhStagingAssessment(payload) {
+  const staging = onfhStagingSummary(payload);
+  if (!staging || !Object.keys(staging).length) {
+    return "";
+  }
+  const supporting = Array.isArray(staging.supporting_findings || staging.supporting)
+    ? (staging.supporting_findings || staging.supporting).filter(Boolean)
+    : [];
+  return `
+    <div class="patient-summary-block onfh-staging-summary">
+      <h4>分期辅助</h4>
+      <p><strong>${escapeHtml(staging.stage || "不能分期")}</strong></p>
+      ${supporting.length ? `<p>分期依据：${escapeHtml(supporting.join("、"))}</p>` : ""}
+      ${staging.rationale ? `<p>${escapeHtml(staging.rationale)}</p>` : ""}
+      ${staging.limitations ? `<p class="muted">${escapeHtml(staging.limitations)}</p>` : ""}
+    </div>
+  `;
+}
+
 function patientDiagnosisHeadline(payload) {
   const report = payload.report || {};
+  const onfh = payload.onfh_assessment || report.onfh_assessment || {};
+  if (onfh.flow_type === "negative" && onfh.conclusion) {
+    return String(onfh.conclusion);
+  }
   const integrated = report.integrated_reasoning_summary || {};
   const assessment = report.target_disease_assessment || {};
   const targetDisease = integrated.target_disease || assessment.target_disease || payload.routing_decision?.primary_hypothesis;
@@ -2504,13 +2558,16 @@ function patientDiagnosisHeadline(payload) {
 
 function renderPatientPrimaryDiagnosis(payload) {
   const confidence = primaryDiagnosticConfidence(payload);
+  const staging = onfhPriorityStagingSummary(payload);
   if (!confidence) {
-    return `<p class="diagnosis-main-text">${escapeHtml(patientDiagnosisHeadline(payload))}</p>`;
+    return `
+      <p class="diagnosis-main-text">${escapeHtml(patientDiagnosisHeadline(payload))}</p>
+      ${renderDiagnosisStageSnippet(staging)}
+    `;
   }
   const diseaseName = confidence.disease_name || humanDiseaseName(confidence.disease_key || "") || "目标疾病";
   const level = confidence.confidence_label || confidence.confidence_level || "未分级";
-  const score = Number(confidence.confidence_score);
-  const scoreText = Number.isFinite(score) ? `规则支持度 ${Math.round(score * 100)}%` : "规则支持度未计算";
+  const scoreText = `规则支持等级：${diagnosticSupportTierLabel(confidence)}`;
   const basis = Array.isArray(confidence.basis) ? confidence.basis.filter(Boolean).slice(0, 3) : [];
   return `
     <div class="diagnosis-main-line">
@@ -2518,11 +2575,89 @@ function renderPatientPrimaryDiagnosis(payload) {
       <span class="diagnosis-confidence-pill">${escapeHtml(level)}</span>
     </div>
     <p class="diagnosis-score-line">${escapeHtml(scoreText)}</p>
+    ${renderDiagnosisStageSnippet(staging)}
     ${basis.length ? `
       <p class="diagnosis-confidence-note">依据：${escapeHtml(basis.join("、"))}</p>
     ` : ""}
     <p class="diagnosis-confidence-note">该支持度由当前 evidence bundle 的规则估计得到，不是校准后的真实患病概率。</p>
   `;
+}
+
+function renderDiagnosisStageSnippet(staging) {
+  if (!staging) {
+    return "";
+  }
+  return `
+    <div class="diagnosis-stage-line">
+      <span>分期辅助</span>
+      <strong>${escapeHtml(staging.stage)}</strong>
+    </div>
+    ${staging.supporting.length ? `
+      <p class="diagnosis-confidence-note">分期依据：${escapeHtml(staging.supporting.join("、"))}</p>
+    ` : ""}
+  `;
+}
+
+function onfhPriorityStagingSummary(payload) {
+  const staging = onfhStagingSummary(payload);
+  const stage = staging?.stage || "";
+  if (!stage || stage === "不能分期") {
+    return null;
+  }
+  return {
+    stage,
+    supporting: Array.isArray(staging.supporting_findings || staging.supporting)
+      ? (staging.supporting_findings || staging.supporting).filter(Boolean).slice(0, 4)
+      : [],
+  };
+}
+
+function onfhStagingSummary(payload) {
+  const assessment = payload.onfh_assessment || payload.report?.onfh_assessment || {};
+  const staging = assessment.staging_assessment || payload.report?.["分期辅助"] || {};
+  if (staging && Object.keys(staging).length) {
+    return staging;
+  }
+  return deriveOnfhStagingFromVisibleFindings(payload);
+}
+
+function deriveOnfhStagingFromVisibleFindings(payload) {
+  const lesionText = patientDiagnosisLesionHighlights(payload).join(" ");
+  const supporting = [];
+  if (/塌陷|collapse/i.test(lesionText)) {
+    supporting.push("股骨头塌陷");
+  }
+  if (/新月|软骨下骨折|subchondral[_\s-]*fracture|crescent/i.test(lesionText)) {
+    supporting.push("新月征/软骨下骨折");
+  }
+  if (supporting.length) {
+    return {
+      stage: "疑似 ARCO III 或以上",
+      confidence: "stage_suspected_from_visible_findings",
+      supporting_findings: uniqueStrings(supporting),
+      rationale: "塌陷、新月征或软骨下骨折提示进入塌陷相关阶段。",
+      limitations: "仍需标准体位 X 光或 MRI 明确塌陷范围和坏死面积。",
+    };
+  }
+  if (/硬化|sclerotic/i.test(lesionText)) {
+    supporting.push("硬化带");
+  }
+  if (/囊性|囊变|cystic/i.test(lesionText)) {
+    supporting.push("囊性变");
+  }
+  if (/骨小梁|trabecular|纹理/i.test(lesionText)) {
+    supporting.push("骨小梁模糊");
+  }
+  if (supporting.length) {
+    return {
+      stage: "疑似 ARCO II",
+      confidence: "stage_suspected_from_visible_findings",
+      supporting_findings: uniqueStrings(supporting),
+      rationale: "X 光可见硬化、囊性变或骨小梁异常，且当前未显示明确塌陷相关征象。",
+      limitations: "MRI 可进一步确认坏死范围，并排除早期或隐匿性改变。",
+    };
+  }
+  return {};
 }
 
 function renderPatientSecondaryReviewSummary(payload) {
@@ -2630,7 +2765,7 @@ function derivedPrimaryDiagnosticConfidence(payload) {
   const lesionText = patientDiagnosisLesionHighlights(payload).join(" ");
   const hasSclerotic = /硬化|sclerotic/i.test(lesionText);
   const hasCystic = /囊性|囊变|cystic/i.test(lesionText);
-  const hasCollapse = /塌陷|新月|collapse|crescent/i.test(lesionText);
+  const hasCollapse = /塌陷|新月|软骨下骨折|collapse|crescent|subchondral[_\s-]*fracture/i.test(lesionText);
   if (!hasSclerotic && !hasCystic && !hasCollapse) {
     return null;
   }
@@ -2658,12 +2793,25 @@ function derivedPrimaryDiagnosticConfidence(payload) {
 function diagnosticConfidenceSentence(confidence = {}) {
   const diseaseName = confidence.disease_name || humanDiseaseName(confidence.disease_key || "") || "目标疾病";
   const level = confidence.confidence_label || confidence.confidence_level || "未分级";
-  const score = Number(confidence.confidence_score);
-  const scoreText = Number.isFinite(score) ? `，规则支持度 ${Math.round(score * 100)}%` : "";
   if (confidence.confidence_level === "insufficient") {
-    return `证据不足：${diseaseName}${scoreText}`;
+    return `证据不足：${diseaseName}`;
   }
-  return `影像证据${level}：${diseaseName}${scoreText}`;
+  return `影像证据${level}：${diseaseName}，规则支持等级：${diagnosticSupportTierLabel(confidence)}`;
+}
+
+function diagnosticSupportTierLabel(confidence = {}) {
+  const label = confidence.confidence_label || confidence.confidence_level || "";
+  const level = String(confidence.confidence_level || "").toLowerCase();
+  if (label.includes("高度") || level === "high") {
+    return "高度";
+  }
+  if (label.includes("中等") || level === "moderate" || level === "medium") {
+    return "中度";
+  }
+  if (label.includes("不足") || level === "insufficient" || level === "low") {
+    return "证据不足";
+  }
+  return label || "证据不足";
 }
 
 function patientDiagnosisLesionHighlights(payload) {
@@ -2696,6 +2844,10 @@ function patientDiagnosisBoundary(payload) {
 
 function patientDiagnosisConclusion(payload) {
   const report = payload.report || {};
+  const onfh = payload.onfh_assessment || report.onfh_assessment || {};
+  if (onfh.conclusion) {
+    return String(onfh.conclusion);
+  }
   const integrated = report.integrated_reasoning_summary || {};
   const assessment = report.target_disease_assessment || {};
   const targetDisease = integrated.target_disease || assessment.target_disease || payload.routing_decision?.primary_hypothesis;
@@ -2740,12 +2892,7 @@ function patientSecondaryKnowledgeConclusion(payload, options = {}) {
 }
 
 function secondaryConfidenceText(confidence = {}) {
-  const label = confidence.confidence_label || confidence.confidence_level || "证据不足";
-  const score = Number(confidence.confidence_score);
-  if (!Number.isFinite(score)) {
-    return label;
-  }
-  return `${label} · 规则支持度 ${Math.round(score * 100)}%`;
+  return `规则支持等级：${diagnosticSupportTierLabel(confidence)}`;
 }
 
 function secondaryKnowledgeConclusionText(item, options = {}) {
@@ -2779,6 +2926,7 @@ function secondaryKnowledgeConclusionText(item, options = {}) {
 
 function patientDiagnosisEvidenceItems(payload) {
   const report = payload.report || {};
+  const onfh = payload.onfh_assessment || report.onfh_assessment || {};
   const integrated = report.integrated_reasoning_summary || {};
   const imaging = integrated.imaging_support || report.imaging_evidence_summary || {};
   const quantitative = integrated.quantitative_support || report.quantitative_evidence_summary || {};
@@ -2789,6 +2937,12 @@ function patientDiagnosisEvidenceItems(payload) {
     : [];
   if (supportedTargets.length) {
     items.push(`可参考发现：${uniquePatientFindingNames(supportedTargets).join("、")}`);
+  }
+  if (Array.isArray(onfh.detected_findings) && onfh.detected_findings.length) {
+    items.push(`ONFH 征象：${onfh.detected_findings.map((item) => item.display_name || humanFindingName(item.target)).filter(Boolean).slice(0, 4).join("、")}`);
+  }
+  if (onfh.flow_type === "negative" && onfh.negative_category) {
+    items.push(`阴性流程：${onfhNegativeCategoryLabel(onfh.negative_category)}`);
   }
   const nonspecificTargets = Array.isArray(imaging.nonspecific_or_unusable_targets)
     ? imaging.nonspecific_or_unusable_targets
@@ -2810,6 +2964,15 @@ function patientDiagnosisEvidenceItems(payload) {
     items.push(`仍缺少：${missingTargets.slice(0, 3).map(patientMissingEvidenceName).join("、")}。`);
   }
   return items;
+}
+
+function onfhNegativeCategoryLabel(category) {
+  const labels = {
+    image_quality_or_view_insufficient: "图像质量或体位不足，当前无法可靠判断",
+    xray_negative_but_clinical_risk_high: "X 光未见明确征象，但症状/风险因素强，建议 MRI",
+    evidence_not_supportive: "当前证据不支持 ONFH，但建议随访观察",
+  };
+  return labels[category] || category || "阴性证据待复核";
 }
 
 function secondaryReviewEvidenceItems(payload) {
@@ -2834,6 +2997,9 @@ function patientDiagnosisNextSteps(payload) {
   }
   if (Array.isArray(report.recommendation) && report.recommendation.length) {
     return report.recommendation;
+  }
+  if (Array.isArray(report["建议下一步"]) && report["建议下一步"].length) {
+    return report["建议下一步"];
   }
   const legacyNext = report["建议进一步检查"];
   if (Array.isArray(legacyNext)) {
@@ -3445,6 +3611,8 @@ function humanFindingName(target) {
     cystic_change: "囊性变",
     trabecular_blurring: "骨小梁模糊",
     collapse: "股骨头塌陷",
+    crescent_sign: "新月征/软骨下骨折",
+    subchondral_fracture: "新月征/软骨下骨折",
     early_osteonecrosis: "早期股骨头坏死",
     insufficient_visual_input: "影像输入不足",
     image_review_limitation: "影像查看受限",
@@ -3650,7 +3818,7 @@ function knowledgeSelectionModeLabel(mode) {
   const labels = {
     primary_only: "主 Knowledge 单路",
     manual_secondary: "主 Knowledge + 人工备用 Knowledge",
-    agent_auto_secondary: "Agent 自动多 Knowledge",
+    agent_auto_secondary: "ONFH + 鉴别复查",
   };
   return labels[mode] || mode || "";
 }
@@ -5745,17 +5913,29 @@ function updateQaControls() {
 function setCasePending(isPending, label = "运行分析") {
   state.casePending = isPending;
   elements.submitButton.disabled = isPending;
-  elements.sampleGliomaButton.disabled = isPending;
-  elements.publicSafeDemoButton.disabled = isPending;
-  elements.realVlmMedSAM2Button.disabled = isPending;
-  elements.evidenceGatewaySnapshotButton.disabled = isPending;
-  elements.xrayInsufficientButton.disabled = isPending;
-  elements.fhnNoMaskButton.disabled = isPending;
-  elements.autoRoutingRiskCompareButton.disabled = isPending;
+  [
+    elements.sampleGliomaButton,
+    elements.publicSafeDemoButton,
+    elements.realVlmMedSAM2Button,
+    elements.evidenceGatewaySnapshotButton,
+    elements.xrayInsufficientButton,
+    elements.fhnNoMaskButton,
+    elements.autoRoutingRiskCompareButton,
+  ].forEach((button) => {
+    if (button) {
+      button.disabled = isPending;
+    }
+  });
   elements.submitButton.textContent = isPending ? "Thinking..." : label;
   updateQaControls();
   if (!isPending) {
     clearCaseProgressTimer();
+  }
+}
+
+function bindOptionalClick(element, handler) {
+  if (element) {
+    element.addEventListener("click", handler);
   }
 }
 
@@ -5823,6 +6003,20 @@ function renderCaseError(error, fallbackMessage = "病例分析失败") {
 
 function renderStructuredErrorPanel(error, fallbackMessage = "病例分析失败") {
   const body = error?.apiPayload || {};
+  if (isOnfhVisualCandidateFailure(error)) {
+    return `
+      <div class="report-section readiness-error-panel error-state" role="alert">
+        <h3>不适用当前 ONFH 专病系统</h3>
+        <p>视觉链路未能在当前图片中确认可用于股骨头坏死筛查的髋关节候选区域。</p>
+        <h4>需要处理</h4>
+        ${renderList([
+          "请上传骨盆正位、蛙式位或清晰髋关节 MRI。",
+          "如果当前图片是胸部、脑部或其他部位影像，应切换到对应专病系统。",
+        ])}
+        <p class="muted">该提示来自 ONFH 适用性检查；不会把底层视觉管线错误当作诊断结果。</p>
+      </div>
+    `;
+  }
   if (!body.error_type && !body.medsam2_configuration && !body.routing_decision) {
     return "";
   }
@@ -5865,6 +6059,17 @@ function renderStructuredErrorPanel(error, fallbackMessage = "病例分析失败
       <p class="muted">这个提示已放在报告区；顶部状态栏只保留短提示，避免错误细节挤占界面。</p>
     </div>
   `;
+}
+
+function isOnfhVisualCandidateFailure(error) {
+  const body = error?.apiPayload || {};
+  const text = [
+    body.error,
+    body.technical_detail,
+    error?.message,
+  ].filter(Boolean).join(" ");
+  return text.includes("FHN no-mask visual pipeline did not complete")
+    && text.includes("finding_segmentation_not_ready");
 }
 
 function showQaThinking(question) {
@@ -6269,6 +6474,7 @@ function renderManualSecondaryKnowledgeSelection() {
 
 function loadStandardSample() {
   elements.patientMessage.value = "请基于这次 FLAIR MRI 做胶质瘤辅助分析";
+  elements.imageModality.value = "mri";
   elements.imagePath.value = "data/external/brats2021_00030/BraTS2021_00030_flair.nii.gz";
   state.uploadedImagePaths = [];
   state.uploadedImageNames = [];
@@ -6286,6 +6492,7 @@ function loadStandardSample() {
 
 function loadRealVlmMedSAM2Sample() {
   elements.patientMessage.value = "请展示真实 VLM bbox + MedSAM2 分割 + 诊断 Agent 的 BraTS 胶质瘤样例";
+  elements.imageModality.value = "mri";
   elements.imagePath.value = "data/external/brats2021_00030/BraTS2021_00030_flair.nii.gz";
   state.uploadedImagePaths = [];
   state.uploadedImageNames = [];
@@ -6303,6 +6510,7 @@ function loadRealVlmMedSAM2Sample() {
 
 function loadXrayInsufficientSample() {
   elements.patientMessage.value = "左髋疼痛，X光能不能判断有没有早期股骨头坏死？";
+  elements.imageModality.value = "xray";
   elements.imagePath.value = "output/fake/uploads/hip_xray.png";
   state.uploadedImagePaths = [];
   state.uploadedImageNames = [];
@@ -6320,6 +6528,7 @@ function loadXrayInsufficientSample() {
 
 function loadFhnNoMaskSample() {
   elements.patientMessage.value = "右髋疼痛，上传 X 光，请根据股骨头坏死 knowledge 自动圈出候选征象";
+  elements.imageModality.value = "xray";
   elements.imagePath.value = "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png";
   state.uploadedImagePaths = [];
   state.uploadedImageNames = [];
@@ -6331,30 +6540,42 @@ function loadFhnNoMaskSample() {
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
-  elements.symptoms.value = "髋关节疼痛";
+  elements.symptoms.value = [
+    "症状：右髋疼痛三个月，走路后加重。",
+    "检查背景：已上传髋关节 X 光片。",
+    "风险因素：长期激素治疗，偶尔饮酒。",
+    "外伤史：无明显外伤史。",
+  ].join("\n");
   elements.uploadStatus.textContent = "已载入 FHN no-mask 多征象样例；将调用 VLM 生成 box prompt，再由 MedSAM2 分割候选病灶。";
 }
 
 function loadAutoRoutingRiskCompareSample() {
-  elements.patientMessage.value = "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒，无明显外伤史。请结合这张髋关节 X 光片分析可能方向。";
+  elements.patientMessage.value = [
+    "症状：右髋疼痛三个月，走路后加重。",
+    "检查背景：已上传髋关节 X 光片。",
+    "风险因素：长期激素治疗，偶尔饮酒。",
+    "外伤史：无明显外伤史。",
+  ].join("\n");
+  elements.imageModality.value = "xray";
   elements.imagePath.value = "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png";
   state.uploadedImagePaths = [];
   state.uploadedImageNames = [];
   state.useSampleMask = false;
-  state.sampleDiseaseKey = "";
+  state.sampleDiseaseKey = "femoral_head_necrosis";
   state.sampleVisionMode = "real_vlm_validation";
   clearManualSecondaryKnowledges();
-  setKnowledgeSelectionMode("agent_auto_secondary", []);
+  setKnowledgeSelectionMode("primary_only", []);
   setEvidenceProtocolMode("finding_list_baseline");
   state.demoCaseSlug = "";
   state.realDemoMode = false;
   state.publicSafeDemoMode = false;
-  elements.symptoms.value = "髋关节疼痛";
-  elements.uploadStatus.textContent = "已载入自动路由+不良习惯对比样例；不预设 disease_key，系统会根据症状、风险因素和髋关节 X 光自动生成候选假设并选择 knowledge。当前为 Agent 自动多 Knowledge 模式，不沿用人工备用复查选择。";
+  elements.symptoms.value = "";
+  elements.uploadStatus.textContent = "已载入 ONFH 专病样例；系统将直接使用股骨头坏死 Knowledge 分析髋关节 X 光证据。";
 }
 
 function loadPublicSafeDemoInputs() {
   elements.patientMessage.value = "public-safe MVP 演示：髋部疼痛，展示自动 knowledge 路由、视觉候选证据、诊断报告、evidence bundle 和 memory audit";
+  elements.imageModality.value = "xray";
   elements.imagePath.value = "";
   state.uploadedImagePaths = [];
   state.uploadedImageNames = [];
@@ -6380,7 +6601,7 @@ async function runStandardSample() {
   }
   loadStandardSample();
   resetViews();
-  setStatus("已载入标准样例，点击“运行分析”开始", "ok");
+  setStatus("已载入扩展示例，点击“运行分析”开始", "ok");
 }
 
 async function runPublicSafeDemo() {
@@ -6471,7 +6692,7 @@ async function runAutoRoutingRiskCompareSample() {
   }
   loadAutoRoutingRiskCompareSample();
   resetViews();
-  setStatus("已载入自动路由+不良习惯对比样例，点击“运行分析”开始", "ok");
+  setStatus("已载入 ONFH 专病样例，点击“运行分析”开始", "ok");
 }
 
 function resetViews() {
@@ -6501,13 +6722,13 @@ window.addEventListener("hashchange", () => {
   setWorkspaceView(window.location.hash === "#architecture-roadmap" ? "architecture" : "clinical");
 });
 elements.healthButton.addEventListener("click", checkHealth);
-elements.sampleGliomaButton.addEventListener("click", runStandardSample);
-elements.publicSafeDemoButton.addEventListener("click", runPublicSafeDemo);
-elements.realVlmMedSAM2Button.addEventListener("click", runRealVlmMedSAM2Sample);
-elements.evidenceGatewaySnapshotButton.addEventListener("click", runEvidenceGatewaySnapshot);
-elements.xrayInsufficientButton.addEventListener("click", runXrayInsufficientSample);
-elements.fhnNoMaskButton.addEventListener("click", runFhnNoMaskSample);
-elements.autoRoutingRiskCompareButton.addEventListener("click", runAutoRoutingRiskCompareSample);
+bindOptionalClick(elements.sampleGliomaButton, runStandardSample);
+bindOptionalClick(elements.publicSafeDemoButton, runPublicSafeDemo);
+bindOptionalClick(elements.realVlmMedSAM2Button, runRealVlmMedSAM2Sample);
+bindOptionalClick(elements.evidenceGatewaySnapshotButton, runEvidenceGatewaySnapshot);
+bindOptionalClick(elements.xrayInsufficientButton, runXrayInsufficientSample);
+bindOptionalClick(elements.fhnNoMaskButton, runFhnNoMaskSample);
+bindOptionalClick(elements.autoRoutingRiskCompareButton, runAutoRoutingRiskCompareSample);
 elements.refreshKnowledgesButton.addEventListener("click", loadKnowledgeList);
 elements.saveKnowledgeDraftButton.addEventListener("click", async () => {
   try {

@@ -1,14 +1,22 @@
 # MedScope Agent
 
-MedScope Agent is an experimental medical AI agent framework for guideline-aware, multimodal clinical evidence workflows. It is built around one principle: image analysis, guideline knowledge loading, diagnostic reasoning, and audit memory should be separated by explicit contracts, so that the system can explain what evidence was used, what evidence was missing, and what must not be inferred.
+MedScope Agent is an experimental ONFH-focused medical AI agent framework for guideline-aware, multimodal clinical evidence workflows. The current product scope is not "diagnose any disease from any image"; it is an osteonecrosis of the femoral head (ONFH) screening, evidence analysis, and staging-assistance system. It is built around one principle: image analysis, ONFH guideline knowledge loading, diagnostic reasoning, and audit memory should be separated by explicit contracts, so that the system can explain what evidence was used, what evidence was missing, and what must not be inferred.
 
 This repository is a research prototype. It is not a medical device and must not be used for real clinical diagnosis or treatment decisions.
 
 中文说明见 [README.zh-CN.md](README.zh-CN.md).
 
+## Product Scope
+
+The project is now scoped as:
+
+> An ONFH-specialized screening, evidence analysis, and staging-assistance system.
+
+MedScope should be presented as an ONFH system first. Other knowledge files, such as glioma, pneumonia, and IPF, are retained as technical examples for the knowledge/evidence architecture, not as a claim that the product is a general all-disease diagnostic system.
+
 ## What This Project Does
 
-MedScope turns a patient message plus medical image input into a traceable evidence workflow:
+MedScope turns a hip-pain patient message plus hip imaging input into a traceable ONFH evidence workflow:
 
 ```text
 Patient / frontend
@@ -20,16 +28,16 @@ Patient / frontend
   -> Runtime Gateway Trace / Stop Hooks / Candidate Queue
 ```
 
-The current MVP supports:
+The current ONFH MVP supports:
 
-- Guideline-based disease knowledge in `knowledge/`.
-- Automatic knowledge routing from patient text, symptoms, and image path clues.
+- ONFH guideline-based disease knowledge in `knowledge/femoral_head_necrosis.yaml`.
+- Automatic ONFH-first knowledge routing from patient text, symptoms, and hip image path clues.
 - Visual evidence generation from either reference masks, VLM-localized regions, or MedSAM2-compatible segmentation runners.
 - Evidence-bounded diagnosis reports that consume structured visual evidence instead of raw pixels.
 - Four memory scopes: `patient_memory`, `image_memory`, `knowledge_memory`, and `reasoning_memory`.
 - Follow-up QA constrained by the saved evidence bundle.
 - A lightweight web UI with upload, thinking state, visual evidence, diagnosis report, evidence bundle, and memory/audit views.
-- Baseline prompt workflows for comparing direct LLM/Codex-style reasoning against the evidence-bounded pipeline.
+- Baseline prompt workflows for comparing direct LLM/Codex-style reasoning against the ONFH evidence-bounded pipeline.
 
 ## Architecture
 
@@ -37,10 +45,10 @@ The project is best described as a two-layer architecture rather than a flat lis
 
 ### Clinical Evidence Pipeline
 
-- `Clinical Orchestrator`: implemented by `agents/gaodoctor_agent.py`. It is the single patient-facing entry point and coordinates routing, knowledge selection, visual evidence, diagnosis, and QA.
+- `Clinical Orchestrator`: implemented by `agents/gaodoctor_agent.py`. It is the single patient-facing entry point and coordinates ONFH-first routing, knowledge selection, visual evidence, diagnosis, and QA.
 - `Vision Evidence Agent`: implemented by `agents/vision_agent.py` plus visual tools. It localizes, segments, measures, and returns structured visual evidence. It does not produce the final diagnosis.
 - `Diagnosis Reasoning Agent`: implemented by `agents/diagnosis_agent.py`. It consumes guideline knowledge and evidence bundles, then generates a diagnosis report with safety checks.
-- `Knowledge Builder / Guideline Component`: implemented mainly under `tools/knowledge_builder_tool.py` and guideline tools. It loads existing knowledge or builds candidate guideline/hypothesis knowledge.
+- `Knowledge Builder / Guideline Component`: implemented mainly under `tools/knowledge_builder_tool.py` and guideline tools. It loads ONFH knowledge and can build candidate supporting/differential knowledge under review gates.
 - `Memory / Audit Layer`: implemented by `memory/memory_manager.py`. It persists evidence, reports, runtime traces, replay data, and QA history.
 
 ### Agentic Runtime / Evidence Gateway
@@ -91,9 +99,12 @@ Generated outputs and local medical data are intentionally ignored by git:
 
 ## Supported Knowledge
 
-Current formal knowledge files:
+Current formal ONFH product knowledge:
 
 - `knowledge/femoral_head_necrosis.yaml`
+
+Architecture examples retained for testing and extension:
+
 - `knowledge/diffuse_glioma_brats.yaml`
 - `knowledge/idiopathic_pulmonary_fibrosis_hrct.yaml`
 - `knowledge/pneumonia_chest_xray.yaml`

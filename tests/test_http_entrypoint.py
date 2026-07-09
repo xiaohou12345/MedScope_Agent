@@ -59,6 +59,14 @@ class FakeGaoDoctor:
         }
 
 
+class FakeOnfhVisualCandidateFailureDoctor(FakeGaoDoctor):
+    def handle_message(self, **kwargs):
+        super().handle_message(**kwargs)
+        raise RuntimeError(
+            "FHN no-mask visual pipeline did not complete: finding_segmentation_not_ready"
+        )
+
+
 class HttpEntrypointTest(unittest.TestCase):
     def test_load_dotenv_local_loads_missing_keys_without_overriding_environment(self):
         with TemporaryDirectory() as tmpdir, patch.dict(
@@ -125,10 +133,12 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(content_type, "text/html; charset=utf-8")
         text = body.decode("utf-8")
-        self.assertIn("MedScope Agent", text)
+        self.assertIn("MedScope ONFH Agent", text)
         self.assertIn("/static/app.js", text)
         self.assertIn("dropZone", text)
-        self.assertIn("医疗影像", text)
+        self.assertIn("髋关节相关影像", text)
+        self.assertIn("病例描述 / 检查背景", text)
+        self.assertIn("可填写症状、不良习惯、风险因素、X 光/MRI 描述或希望重点分析的问题", text)
         self.assertIn("visualPanel", text)
         self.assertIn("开发调试信息", text)
         self.assertIn("alignmentPanel", text)
@@ -137,17 +147,19 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("evidencePanel", text)
         self.assertIn("auditPanel", text)
         self.assertIn("qaSubmitButton", text)
-        self.assertIn("载入标准样例", text)
-        self.assertIn("运行 Public-safe MVP 样例", text)
-        self.assertIn("载入 X 光证据不足样例", text)
-        self.assertIn("载入 FHN no-mask 样例", text)
+        self.assertIn("载入 ONFH 专病样例", text)
+        self.assertNotIn("载入扩展示例", text)
+        self.assertNotIn("运行 ONFH MVP 样例", text)
+        self.assertNotIn("载入 X 光证据不足样例", text)
+        self.assertNotIn("载入 FHN no-mask 样例", text)
         self.assertIn("Evidence Gateway 快照", text)
-        self.assertIn("载入 VLM+MedSAM2 样例", text)
+        self.assertNotIn("载入 VLM+MedSAM2 样例", text)
         self.assertNotIn("调试 JSON", text)
         self.assertNotIn("图像路径", text)
         self.assertNotIn("Mask 路径", text)
         self.assertNotIn("视觉模式", text)
         self.assertNotIn("疾病 Knowledge", text)
+        self.assertNotIn("<label>\n              补充信息 / 检查背景", text)
 
     def test_root_frontend_assets_use_current_cache_buster(self):
         status, body, content_type = dispatch_static_request("/")
@@ -155,11 +167,11 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(content_type, "text/html; charset=utf-8")
         text = body.decode("utf-8")
-        self.assertIn('/static/app.css?v=knowledge-rename-v1-20260624', text)
-        self.assertIn('/static/app.js?v=knowledge-rename-v1-20260624', text)
+        self.assertIn('/static/app.css?v=onfh-scope-v1-20260625', text)
+        self.assertIn('/static/app.js?v=onfh-scope-v1-20260625', text)
         self.assertNotIn("knowledge-review-20260528", text)
-        css_status, _, css_type = dispatch_static_request("/static/app.css?v=knowledge-rename-v1-20260624")
-        js_status, _, js_type = dispatch_static_request("/static/app.js?v=knowledge-rename-v1-20260624")
+        css_status, _, css_type = dispatch_static_request("/static/app.css?v=onfh-scope-v1-20260625")
+        js_status, _, js_type = dispatch_static_request("/static/app.js?v=onfh-scope-v1-20260625")
         self.assertEqual(css_status, 200)
         self.assertEqual(css_type, "text/css; charset=utf-8")
         self.assertEqual(js_status, 200)
@@ -176,7 +188,7 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("clinicalDemoView", html)
         self.assertIn("architectureRoadmapPanel", html)
         self.assertIn("Architecture / Roadmap", html)
-        self.assertIn("Guideline-aware Evidence Pipeline", html)
+        self.assertIn("ONFH Screening & Evidence Pipeline", html)
         self.assertIn("architectureDiagramView", html)
         self.assertIn("architectureModuleList", html)
         self.assertIn("architectureDetailView", html)
@@ -206,9 +218,9 @@ class HttpEntrypointTest(unittest.TestCase):
         ]:
             self.assertIn(module_name, js)
         for direction_name in [
-            "Guideline Knowledge 结构扩展",
+            "ONFH Guideline Knowledge 结构扩展",
             "患者临床信息结合",
-            "系统生成候选假设 / Knowledge Routing",
+            "ONFH 主线候选假设 / Knowledge Routing",
             "论文证据安全补充 Guideline Knowledge",
         ]:
             self.assertIn(direction_name, js)
@@ -222,6 +234,8 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("默认诊断流程不固定检索论文", js)
         self.assertIn("evidence gap 触发的按需检索", js)
         self.assertIn("clinical risk changes suspicion level only", js)
+        self.assertIn("假阳性抑制器", js)
+        self.assertIn("false_positive_risk", js)
 
     def test_frontend_architecture_roadmap_uses_patient_friendly_bilingual_copy(self):
         js_status, js_body, js_type = dispatch_static_request("/static/app.js")
@@ -235,7 +249,7 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("从图片里提取证据", roadmap_js)
         self.assertIn("把视觉结果打包成证据包（evidence_bundle）", roadmap_js)
         self.assertIn("判断还能不能下结论", roadmap_js)
-        self.assertIn("指南 Knowledge 升级", roadmap_js)
+        self.assertIn("ONFH 指南 Knowledge 升级", roadmap_js)
         self.assertIn("影像证据清单（Imaging evidence）", roadmap_js)
         self.assertIn("可量化指标（Measurement）", roadmap_js)
         self.assertIn("鉴别诊断（Differential diagnosis）", roadmap_js)
@@ -279,9 +293,9 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn('data-scroll-target="architectureDetailView"', js)
         self.assertIn('data-scroll-target="optimizationDirectionDetail"', js)
         self.assertIn("poster-optimization-inline", js)
-        self.assertIn("Guideline Knowledge 结构扩展", js)
+        self.assertIn("ONFH Guideline Knowledge 结构扩展", js)
         self.assertIn("患者临床信息结合", js)
-        self.assertIn("系统生成候选假设 / Knowledge Routing", js)
+        self.assertIn("ONFH 主线候选假设 / Knowledge Routing", js)
         self.assertIn("论文证据安全补充 Guideline Knowledge", js)
         self.assertIn("scrollArchitectureTarget", js)
         self.assertIn("scrollIntoView", js)
@@ -305,14 +319,15 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertNotIn("真实 VLM 候选验证", html)
         self.assertNotIn("FHN no-mask 候选证据", html)
         self.assertNotIn("MedSAM2 分割模式", html)
-        self.assertIn("Agent 会按 Knowledge evidence protocol 自动选择安全视觉链路", html)
+        self.assertIn("系统默认使用股骨头坏死 Knowledge", html)
+        self.assertIn("先检查髋关节影像中的 ONFH 征象", html)
         self.assertNotIn("visionModeSelect", js)
         self.assertNotIn('option value="" selected', html)
         self.assertNotIn("state.sampleVisionMode || elements.visionModeSelect.value", js)
         self.assertIn('state.sampleVisionMode = "no_mask_knowledge"', js)
         self.assertIn("候选视觉证据", js)
 
-    def test_frontend_exposes_knowledge_selection_modes_without_vision_mode_picker(self):
+    def test_frontend_hides_knowledge_selection_and_defaults_to_onfh(self):
         status, body, content_type = dispatch_static_request("/")
         js_status, js_body, js_type = dispatch_static_request("/static/app.js")
 
@@ -322,24 +337,33 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(js_type, "application/javascript; charset=utf-8")
         html = body.decode("utf-8")
         js = js_body.decode("utf-8")
-        self.assertIn("knowledgeSelectionMode", html)
-        self.assertIn("evidenceProtocolMode", html)
+        self.assertIn("imageModality", html)
+        self.assertIn("影像类型", html)
+        self.assertIn("X 光", html)
+        self.assertIn("MRI", html)
+        self.assertIn("不确定", html)
+        self.assertIn('type="hidden" id="knowledgeSelectionMode"', html)
+        self.assertIn('value="primary_only"', html)
+        self.assertIn('type="hidden" id="evidenceProtocolMode"', html)
+        self.assertIn('value="finding_list_baseline"', html)
         self.assertIn("finding_list_baseline", html)
-        self.assertIn("quantitative_optional", html)
-        self.assertIn("默认：只看病灶征象", html)
-        self.assertIn("可选：加入量化指标协议", html)
         self.assertIn("primary_only", html)
-        self.assertIn("manual_secondary", html)
-        self.assertIn("agent_auto_secondary", html)
+        self.assertNotIn("Knowledge 选择模式", html)
+        self.assertNotIn("证据提取范围", html)
+        self.assertNotIn("默认：只看病灶征象", html)
+        self.assertNotIn("可选：加入量化指标协议", html)
+        self.assertNotIn("<option value=\"manual_secondary\"", html)
+        self.assertNotIn("<option value=\"agent_auto_secondary\"", html)
         self.assertIn("manualSecondaryKnowledges", html)
         self.assertIn("manualSecondaryKnowledgeSelection", html)
-        self.assertIn("主 Knowledge 单路", html)
-        self.assertIn("人工备用 Knowledge", html)
-        self.assertIn("Agent 自动多 Knowledge", html)
+        self.assertIn("系统默认使用股骨头坏死 Knowledge", html)
         self.assertIn('type="hidden" id="manualSecondaryKnowledges"', html)
         self.assertNotIn("例如 osteoarthritis_or_degenerative_hip_disease", html)
         self.assertIn("payload.knowledge_selection_mode", js)
         self.assertIn("payload.evidence_protocol_mode", js)
+        self.assertIn('payload.disease_key = state.sampleDiseaseKey || "femoral_head_necrosis"', js)
+        self.assertIn("image_modality: elements.imageModality.value", js)
+        self.assertIn("clinical_notes: caseNarrative", js)
         self.assertIn("elements.evidenceProtocolMode.value", js)
         self.assertIn("setEvidenceProtocolMode", js)
         self.assertIn("clearManualSecondaryKnowledges", js)
@@ -384,7 +408,7 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertEqual(js_type, "application/javascript; charset=utf-8")
         html = body.decode("utf-8")
         js = js_body.decode("utf-8")
-        self.assertIn("载入自动路由+不良习惯对比样例", html)
+        self.assertIn("载入 ONFH 专病样例", html)
         self.assertIn("autoRoutingRiskCompareButton", html)
         self.assertIn("loadAutoRoutingRiskCompareSample", js)
         sample_start = js.index("function loadAutoRoutingRiskCompareSample")
@@ -394,12 +418,18 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("长期激素治疗", sample_slice)
         self.assertIn("偶尔饮酒", sample_slice)
         self.assertIn("无明显外伤史", sample_slice)
-        self.assertIn('state.sampleDiseaseKey = ""', sample_slice)
+        self.assertIn("检查背景：已上传髋关节 X 光片", sample_slice)
+        self.assertNotIn("分析目标：优先筛查股骨头坏死", sample_slice)
+        self.assertNotIn("降低假阳性。", sample_slice)
+        self.assertNotIn('elements.symptoms.value = "髋关节疼痛";', sample_slice)
+        self.assertIn('elements.imageModality.value = "xray"', sample_slice)
+        self.assertIn('state.sampleDiseaseKey = "femoral_head_necrosis"', sample_slice)
         self.assertIn('state.sampleVisionMode = "real_vlm_validation"', sample_slice)
-        self.assertIn('setKnowledgeSelectionMode("agent_auto_secondary", [])', sample_slice)
+        self.assertIn('setKnowledgeSelectionMode("primary_only", [])', sample_slice)
         self.assertIn("clearManualSecondaryKnowledges()", sample_slice)
         self.assertNotIn('state.sampleVisionMode = "no_mask_knowledge"', sample_slice)
-        self.assertNotIn("股骨头坏死", sample_slice)
+        self.assertIn("直接使用股骨头坏死 Knowledge", sample_slice)
+        self.assertNotIn("自动生成候选假设", sample_slice)
 
     def test_frontend_exposes_collapsible_fhn_knowledge_protocol_comparison(self):
         status, body, content_type = dispatch_static_request("/")
@@ -428,6 +458,8 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("新版强在哪", js)
         self.assertIn("哪些指标需要量化", js)
         self.assertIn("renderQuantificationNeedDetails", js)
+        self.assertIn("staging_rule_summary", js)
+        self.assertIn("safety_summary", js)
         self.assertIn("knowledge-quantification-details", js)
         comparison_section = html[
             html.index("knowledge-comparison-details"):
@@ -695,9 +727,11 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("发现的病灶/征象", summary_slice)
         self.assertIn("疑似/确诊边界", summary_slice)
         self.assertIn("主要依据", summary_slice)
+        self.assertIn("分期辅助", summary_slice)
         self.assertIn("下一步", summary_slice)
         self.assertIn("renderPatientPrimaryDiagnosis(payload)", summary_slice)
         self.assertIn("renderPatientSecondaryReviewSummary(payload)", summary_slice)
+        self.assertIn("renderOnfhStagingAssessment(payload)", summary_slice)
         self.assertIn("patientDiagnosisLesionHighlights(payload)", summary_slice)
         self.assertIn("patientDiagnosisBoundary(payload)", summary_slice)
         self.assertIn("slice(0, 3)", summary_slice)
@@ -705,6 +739,14 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertNotIn("临床风险因素", summary_slice)
         self.assertNotIn("缺失证据</h3>", summary_slice)
         self.assertIn("function patientDiagnosisLesionHighlights", text)
+        self.assertIn("function renderOnfhStagingAssessment", text)
+        self.assertIn("function onfhPriorityStagingSummary", text)
+        self.assertIn("function deriveOnfhStagingFromVisibleFindings", text)
+        self.assertIn("subchondral_fracture", text)
+        self.assertIn("function onfhNegativeCategoryLabel", text)
+        self.assertIn("图像质量或体位不足", text)
+        self.assertIn("X 光未见明确征象", text)
+        self.assertIn("当前证据不支持 ONFH", text)
         self.assertIn("patientVisibleFindings(visualBundle)", text)
         self.assertIn("function patientDiagnosisBoundary", text)
 
@@ -765,14 +807,20 @@ class HttpEntrypointTest(unittest.TestCase):
             text.index("function renderPatientPrimaryDiagnosis"):
             text.index("function primaryDiagnosticConfidence")
         ]
-        self.assertIn("规则支持度", primary_slice)
+        self.assertIn("规则支持等级", primary_slice)
+        self.assertIn("diagnosticSupportTierLabel(confidence)", primary_slice)
+        self.assertIn("onfhPriorityStagingSummary(payload)", primary_slice)
+        self.assertIn("分期辅助", primary_slice)
+        self.assertIn("分期依据", primary_slice)
         self.assertIn("不是校准后的真实患病概率", primary_slice)
+        self.assertIn("diagnosis-stage-line", text)
         helper_slice = text[
             text.index("function patientSecondaryKnowledgeConclusion"):
             text.index("function patientDiagnosisEvidenceItems")
         ]
         self.assertIn("function secondaryConfidenceText", helper_slice)
-        self.assertIn("规则支持度", helper_slice)
+        self.assertIn("规则支持等级", helper_slice)
+        self.assertIn("diagnosticSupportTierLabel(confidence)", helper_slice)
         self.assertIn("const visibleItems = items.filter", helper_slice)
         self.assertIn(".map((item) => secondaryKnowledgeConclusionText", helper_slice)
         self.assertIn("function secondaryKnowledgeConclusionText", helper_slice)
@@ -998,6 +1046,17 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn("state.qaPending", qa_slice)
         self.assertIn("elements.qaInput.disabled = !analysisReady || state.casePending || state.qaPending", qa_slice)
         self.assertIn("elements.qaSubmitButton.disabled = !analysisReady || state.casePending", qa_slice)
+
+    def test_static_app_js_translates_onfh_visual_candidate_failure(self):
+        status, body, content_type = dispatch_static_request("/static/app.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "application/javascript; charset=utf-8")
+        text = body.decode("utf-8")
+        self.assertIn("function isOnfhVisualCandidateFailure", text)
+        self.assertIn("finding_segmentation_not_ready", text)
+        self.assertIn("不适用当前 ONFH 专病系统", text)
+        self.assertIn("当前图片不适用 ONFH 专病筛查", text)
 
     def test_static_app_js_renders_qa_answer_with_patient_safe_clean_paragraphs(self):
         status, body, content_type = dispatch_static_request("/static/app.js")
@@ -1263,7 +1322,7 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertIn(b"runFhnNoMaskSample", body)
         self.assertIn(b"runEvidenceGatewaySnapshot", body)
         self.assertIn(b"fetchPublicSafeDemo", body)
-        self.assertIn(b"publicSafeDemoButton", body)
+        self.assertIn(b"runPublicSafeDemo", body)
         self.assertIn(b"postPublicSafeDemoQa", body)
         self.assertIn(b"publicSafeDemoMode", body)
         self.assertIn(b"/v1/demo/public-safe/qa", body)
@@ -1619,7 +1678,25 @@ class HttpEntrypointTest(unittest.TestCase):
                         },
                         "quantitative_evidence_protocol": {
                             "image_feature_quantification": [{"feature_name": "texture_disorder_score"}],
-                            "measurement_evidence": [{"measurement_name": "subchondral_fracture_extent"}],
+                            "measurement_evidence": [
+                                {
+                                    "measurement_name": "maximum_femoral_head_depression_mm",
+                                    "target": "collapse",
+                                    "unit": "mm",
+                                    "primary_metric": "maximum_depression_depth",
+                                    "measurement_method": "reference_contour_deviation",
+                                    "calibration_required": True,
+                                    "staging_rule": {
+                                        "ARCO_IIIA": "<= 2 mm",
+                                        "ARCO_IIIB": "> 2 mm",
+                                    },
+                                    "no_calibration_policy": "do_not_output_mm; output normalized_contour_deviation only",
+                                    "failure_policy": {
+                                        "roi_or_landmark_unreliable": "measurement_usable=false"
+                                    },
+                                    "quality_requirements": ["roi_qc", "calibration_qc"],
+                                }
+                            ],
                         },
                     },
                     ensure_ascii=False,
@@ -1675,8 +1752,11 @@ class HttpEntrypointTest(unittest.TestCase):
             quantification = payload["versions"][1]["quantification_groups"]
             self.assertEqual(quantification[0]["label"], "影像特征量化")
             self.assertEqual(quantification[1]["label"], "几何 / 形态测量")
-            self.assertEqual(quantification[1]["items"][0]["name"], "subchondral_fracture_extent")
-            self.assertIn("软骨下骨骨折", quantification[1]["items"][0]["human_target"])
+            self.assertEqual(quantification[1]["items"][0]["name"], "maximum_femoral_head_depression_mm")
+            self.assertIn("股骨头塌陷", quantification[1]["items"][0]["human_target"])
+            self.assertEqual(quantification[1]["items"][0]["unit"], "mm")
+            self.assertIn("ARCO IIIA <= 2 mm", quantification[1]["items"][0]["staging_rule_summary"])
+            self.assertIn("不能输出 mm", quantification[1]["items"][0]["safety_summary"])
             self.assertEqual(payload["evaluation_summary"]["primary_modality"], "Xray")
             self.assertEqual(payload["evaluation_summary"]["current_coverage"], "86/86")
             self.assertEqual(payload["evaluation_summary"]["baseline_coverage"], "70/86")
@@ -2981,6 +3061,36 @@ class HttpEntrypointTest(unittest.TestCase):
         self.assertFalse(payload["knowledge_builder_proposal"]["diagnosis_allowed"])
         self.assertFalse(payload["knowledge_builder_proposal"]["formal_update_allowed"])
         self.assertEqual(fake_doctor.calls, [])
+
+    def test_post_medscope_maps_onfh_visual_candidate_failure_to_200_applicability_response(self):
+        fake_doctor = FakeOnfhVisualCandidateFailureDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+        status, payload = dispatch_http_request(
+            method="POST",
+            path="/v1/medscope",
+            body=json.dumps(
+                {
+                    "patient_message": "右髋疼痛三个月，走路后加重，请结合 X 光分析",
+                    "image_path": "output/uploads/patient_uploaded_xray.png",
+                    "disease_key": "femoral_head_necrosis",
+                    "patient_info": {
+                        "symptoms": ["髋关节疼痛"],
+                        "image_modality": "xray",
+                    },
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            service_factory=lambda: service,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["analysis_status"], "not_applicable_to_onfh_system")
+        self.assertEqual(
+            payload["onfh_applicability"]["reason"],
+            "visual_pipeline_could_not_confirm_hip_onfh_candidate",
+        )
+        self.assertIn("不适用当前 ONFH 专病系统", payload["reply_to_patient"])
+        self.assertNotIn("finding_segmentation_not_ready", payload["reply_to_patient"])
 
     @unittest.skipUnless(
         REAL_IMAGE.exists() and REAL_MASK.exists(),

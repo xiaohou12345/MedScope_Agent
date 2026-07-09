@@ -738,11 +738,33 @@ def _quantification_item(
 ) -> dict:
     name = str(item.get(name_key) or "")
     target = str(item.get("target") or _infer_target_from_quantification_name(name))
+    staging_rule = item.get("staging_rule") if isinstance(item.get("staging_rule"), dict) else {}
+    unit = str(item.get("unit") or "")
+    measurement_method = str(item.get("measurement_method") or "")
+    primary_metric = str(item.get("primary_metric") or "")
+    calibration_required = bool(item.get("calibration_required"))
+    is_primary_collapse_metric = (
+        name == "maximum_femoral_head_depression_mm"
+        or primary_metric == "maximum_depression_depth"
+    )
+    item_reason = (
+        "用于 ARCO IIIA/IIIB 分层的核心指标；必须通过像素间距/标尺和 ROI/轮廓/landmark QC 后才可输出 mm。"
+        if is_primary_collapse_metric
+        else reason
+    )
     return {
         "name": name,
         "target": target,
         "human_target": target_name_by_key.get(target, _humanize_target(target)),
-        "reason": reason,
+        "reason": item_reason,
+        "unit": unit,
+        "primary_metric": primary_metric,
+        "measurement_method": measurement_method,
+        "calibration_required": calibration_required,
+        "diagnosis_usable_level": str(item.get("diagnosis_usable_level") or ""),
+        "staging_rule_summary": _staging_rule_summary(staging_rule),
+        "safety_summary": _quantification_safety_summary(item),
+        "is_primary_collapse_metric": is_primary_collapse_metric,
         "quality_gate": "、".join(str(value) for value in item.get("quality_requirements") or []),
         "diagnosis_boundary": "量化结果只能作为 evidence bundle 的支持项，不能替代影像证据和医生审核。",
     }
@@ -751,7 +773,7 @@ def _quantification_item(
 def _infer_target_from_quantification_name(name: str) -> str:
     if "subchondral_fracture" in name:
         return "subchondral_fracture"
-    if "collapse" in name:
+    if "collapse" in name or "depression" in name:
         return "collapse"
     if "trabecular" in name or "texture" in name:
         return "trabecular_blurring"
@@ -762,6 +784,39 @@ def _infer_target_from_quantification_name(name: str) -> str:
     if "asymmetry" in name:
         return "bilateral_femoral_heads"
     return ""
+
+
+def _staging_rule_summary(staging_rule: dict) -> str:
+    if not staging_rule:
+        return ""
+    labels = {
+        "ARCO_IIIA": "ARCO IIIA",
+        "ARCO_IIIB": "ARCO IIIB",
+    }
+    parts = []
+    for key, value in staging_rule.items():
+        if value is None:
+            continue
+        parts.append(f"{labels.get(str(key), str(key))} {value}")
+    return "；".join(parts)
+
+
+def _quantification_safety_summary(item: dict) -> str:
+    parts: list[str] = []
+    no_calibration_policy = str(item.get("no_calibration_policy") or "")
+    if no_calibration_policy:
+        if "do_not_output_mm" in no_calibration_policy:
+            parts.append("无 DICOM pixel spacing 或可靠标尺时不能输出 mm，只输出归一化轮廓偏差。")
+        else:
+            parts.append(no_calibration_policy)
+    failure_policy = item.get("failure_policy")
+    if isinstance(failure_policy, dict):
+        if "measurement_usable=false" in str(failure_policy.get("roi_or_landmark_unreliable") or ""):
+            parts.append("ROI、参考轮廓或 landmark 不可靠时 measurement_usable=false。")
+        suspected = str(failure_policy.get("suspected_collapse_unmeasurable") or "")
+        if suspected:
+            parts.append("疑似塌陷但无法可靠测量时不能强行细分 ARCO IIIA/IIIB。")
+    return " ".join(parts)
 
 
 def _humanize_target(target: str) -> str:
@@ -2379,7 +2434,7 @@ def _format_real_vlm_medsam2_demo_qa_answer(
             "当前样例的后验 QC 只用于演示评估："
             f"whole tumor Dice={whole_dice}，enhancing tumor Dice={enhancing_dice}。"
             "reference mask 只用于评估，不参与 VLM bbox prompt 或 MedSAM2 分割输入。"
-            "因此这个样例能证明主线可运行，但不能证明通用临床级分割已经完成。"
+            "因此这个样例只能证明扩展示例主线可运行，不能证明系统具备全病种临床级分割能力。"
         )
     if any(keyword in question_lower for keyword in ["体积", "volume", "whole"]):
         return (

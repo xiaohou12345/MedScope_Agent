@@ -3,22 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MedScope Agent</title>
-    <link rel="stylesheet" href="/static/app.css?v=knowledge-rename-v1-20260624" />
+    <title>MedScope ONFH Agent</title>
+    <link rel="stylesheet" href="/static/app.css?v=onfh-scope-v1-20260625" />
   </head>
   <body>
     <main class="app-shell">
       <section class="workspace">
         <header class="topbar">
           <div>
-            <h1>MedScope Agent</h1>
+            <h1>MedScope ONFH Agent</h1>
             <p id="statusText">未连接</p>
           </div>
           <button id="healthButton" type="button">检查连接</button>
         </header>
 
         <nav class="workspace-tabs" aria-label="MedScope workspace">
-          <button id="clinicalDemoTab" class="workspace-tab active" type="button">Clinical Demo</button>
+          <button id="clinicalDemoTab" class="workspace-tab active" type="button">ONFH Demo</button>
           <button id="architectureRoadmapTab" class="workspace-tab" type="button">Architecture / Roadmap</button>
         </nav>
 
@@ -28,61 +28,47 @@
             <div class="panel-title">
               <h2>病例输入</h2>
               <div class="sample-actions">
-                <button id="sampleGliomaButton" type="button">载入标准样例</button>
-                <button id="publicSafeDemoButton" type="button">运行 Public-safe MVP 样例</button>
-                <button id="realVlmMedSAM2Button" type="button">载入 VLM+MedSAM2 样例</button>
-                <button id="xrayInsufficientButton" type="button">载入 X 光证据不足样例</button>
-                <button id="fhnNoMaskButton" type="button">载入 FHN no-mask 样例</button>
-                <button id="autoRoutingRiskCompareButton" type="button">载入自动路由+不良习惯对比样例</button>
+                <button id="autoRoutingRiskCompareButton" type="button">载入 ONFH 专病样例</button>
               </div>
             </div>
 
             <label>
-              患者描述
-              <textarea id="patientMessage" name="patient_message" rows="5" required>请描述症状、检查背景和希望咨询的问题</textarea>
+              病例描述 / 检查背景
+              <textarea id="patientMessage" name="patient_message" rows="6" required placeholder="可填写症状、不良习惯、风险因素、X 光/MRI 描述或希望重点分析的问题">请描述髋部症状、检查背景、风险因素和希望咨询的问题</textarea>
+            </label>
+
+            <label>
+              影像类型
+              <select id="imageModality" name="image_modality">
+                <option value="xray" selected>X 光</option>
+                <option value="mri">MRI</option>
+                <option value="unknown">不确定</option>
+              </select>
             </label>
 
             <div id="dropZone" class="drop-zone">
               <input id="fileInput" type="file" multiple />
               <div>
-                <strong>拖拽一组医疗影像文件到这里</strong>
-                <span id="uploadStatus">支持一次上传多张 X 光 / MRI / CT / PNG / NIfTI；同一患者多体位影像会作为一组证据输入。</span>
+                <strong>拖拽髋关节相关影像到这里</strong>
+                <span id="uploadStatus">优先支持骨盆/髋关节 X 光和 MRI；同一患者多体位影像会作为一组 ONFH 证据输入。</span>
               </div>
             </div>
 
             <div class="mode-control">
               <strong>安全证据流程</strong>
-              <span>Agent 会按 Knowledge evidence protocol 自动选择安全视觉链路：先获取候选视觉证据，再按需要调用分割或测量工具；弱证据不会被升级为确诊依据。</span>
+              <span>系统默认使用股骨头坏死 Knowledge：先检查髋关节影像中的 ONFH 征象，再根据证据充分性输出支持程度、分期依据或下一步检查建议。</span>
             </div>
 
-            <label>
-              Knowledge 选择模式
-              <select id="knowledgeSelectionMode" name="knowledge_selection_mode">
-                <option value="primary_only" selected>主 Knowledge 单路</option>
-                <option value="manual_secondary">主 Knowledge + 人工备用 Knowledge</option>
-                <option value="agent_auto_secondary">Agent 自动多 Knowledge</option>
-              </select>
-            </label>
-
-            <label>
-              证据提取范围
-              <select id="evidenceProtocolMode" name="evidence_protocol_mode">
-                <option value="finding_list_baseline" selected>默认：只看病灶征象</option>
-                <option value="quantitative_optional">可选：加入量化指标协议</option>
-              </select>
-            </label>
-
-            <div id="manualSecondaryKnowledgeSelection" class="mode-control">
+            <input type="hidden" id="knowledgeSelectionMode" name="knowledge_selection_mode" value="primary_only" />
+            <input type="hidden" id="evidenceProtocolMode" name="evidence_protocol_mode" value="finding_list_baseline" />
+            <div id="manualSecondaryKnowledgeSelection" class="mode-control" hidden>
               <strong>当前备用复查 Knowledge</strong>
               <span>先运行主 Knowledge 分析；系统给出候选假设后，可在报告中点击“加入备用复查”。</span>
             </div>
             <input type="hidden" id="manualSecondaryKnowledges" name="manual_secondary_knowledge_candidates" value="" />
 
             <input id="imagePath" name="image_path" type="hidden" value="" />
-            <label>
-              症状
-              <input id="symptoms" name="symptoms" value="" />
-            </label>
+            <input id="symptoms" name="symptoms" type="hidden" value="" />
 
             <div class="actions">
               <button id="submitButton" type="submit">运行分析</button>
@@ -176,9 +162,9 @@
         <section id="architectureRoadmapPanel" class="workspace-view architecture-roadmap-view" hidden>
           <section class="panel architecture-hero">
             <div>
-              <h2>MedScope</h2>
-              <p class="architecture-subtitle">Guideline-aware Evidence Pipeline</p>
-              <p class="architecture-summary">核心不是堆叠多个 Agent，而是围绕 evidence_bundle 建立受医疗安全边界约束的临床证据流水线。</p>
+              <h2>MedScope ONFH</h2>
+              <p class="architecture-subtitle">ONFH Screening & Evidence Pipeline</p>
+              <p class="architecture-summary">核心不是做全病种自动诊断，而是围绕股骨头坏死的 evidence_bundle 建立受医疗安全边界约束的专病证据流水线。</p>
             </div>
             <span class="status-pill status-in_progress">展示前端 v1</span>
           </section>
@@ -190,7 +176,7 @@
                 <span>后续可替换为正式图片</span>
               </div>
               <figure id="architectureDiagramView" class="architecture-diagram" data-flow-image-src=""></figure>
-              <p class="architecture-caption">该图展示 MedScope 当前主线：Clinical Orchestrator → Vision Evidence Agent → evidence_bundle → Diagnosis Reasoning Agent，并由 Memory & Audit Layer 记录全链路。</p>
+              <p class="architecture-caption">该图展示 MedScope 当前 ONFH 主线：Clinical Orchestrator → Vision Evidence Agent → evidence_bundle → Diagnosis Reasoning Agent，并由 Memory & Audit Layer 记录全链路。</p>
             </section>
 
             <section class="panel architecture-detail-panel">
@@ -208,7 +194,7 @@
               <h2>对外表述</h2>
               <span>组会讲解用</span>
             </div>
-            <p>本系统不是简单堆叠多个 Agent，而是以 evidence_bundle 为中心的临床证据流水线。Agent 的拆分依据不是功能数量，而是医疗安全边界：谁能看图、谁能解释指南、谁能做诊断、谁负责审计。</p>
+            <p>本系统不是全病种自动诊断器，也不是简单堆叠多个 Agent，而是以 ONFH evidence_bundle 为中心的专病证据流水线。Agent 的拆分依据不是功能数量，而是医疗安全边界：谁能看图、谁能解释指南、谁能做诊断、谁负责审计。</p>
           </section>
 
           <section class="panel optimization-panel">
@@ -255,6 +241,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=knowledge-rename-v1-20260624"></script>
+    <script src="/static/app.js?v=onfh-scope-v1-20260625"></script>
   </body>
 </html>

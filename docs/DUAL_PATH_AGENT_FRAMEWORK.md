@@ -2,7 +2,11 @@
 
 ## 目标定位
 
-MedScope 的目标是构建一个通用型临床指南感知与多模态知识发现双驱医疗 Agent 框架。系统不绑定单一器官、病种或影像模态，而是通过 Knowledge 配置把疾病知识、视觉协议、证据充分性和安全边界注入同一套临床证据流水线。
+MedScope 当前目标已收敛为面向股骨头坏死（ONFH）的专病筛查、证据分析和分期辅助系统。系统不再对外表述为“从所有疾病中自动判断患者患了什么病”的通用诊断系统；它首先围绕 ONFH 的指南 Knowledge、髋关节影像证据、风险因素、鉴别复查和分期边界建立一条可审计的临床证据流水线。
+
+底层 Knowledge / Evidence Gateway 仍保留可扩展设计，但这属于后续研究扩展能力，不是当前产品主张。胶质瘤、肺炎、IPF 等 Knowledge 仅作为架构验证或技术样例，不作为全病种临床诊断能力声明。
+
+髋关节相关的非 ONFH Knowledge 应被定义为 `differential review knowledge` 或 `false-positive suppressor knowledge`：它们的任务不是和 ONFH 主线并列做多病种自动诊断，而是在 ONFH 支持度较高、证据不足或征象不特异时，检查骨关节炎、外伤后改变、DDH 相关退变等替代解释是否更合理。最终报告应同时输出 ONFH 支持度、替代解释强度、假阳性风险和建议补充检查。
 
 本文档区分三类状态：
 
@@ -34,7 +38,7 @@ MedScope 的目标是构建一个通用型临床指南感知与多模态知识�
 
 一句话版本：
 
-> MedScope 不是为了分 Agent 而分 Agent，而是把临床诊断拆成一条受指南约束的证据流水线，并在底层引入类似 Claude Code / Codex 的 agentic runtime，通过 knowledge 分发、文件 artifact 共享、工具约束、stop hooks、memory audit 和候选规则验证门，让每次推理都可追踪、可复核、可回滚。
+> MedScope 不是为了分 Agent 而分 Agent，而是把 ONFH 专病筛查、影像证据分析和分期辅助拆成一条受指南约束的证据流水线，并在底层引入类似 Claude Code / Codex 的 agentic runtime，通过 knowledge 分发、文件 artifact 共享、工具约束、stop hooks、memory audit 和候选规则验证门，让每次推理都可追踪、可复核、可回滚。
 
 如果老师质疑“五个 Agent 像是为了分而分”，建议直接把重点从 Agent 数量转到 runtime 机制：
 
@@ -42,8 +46,8 @@ MedScope 的目标是构建一个通用型临床指南感知与多模态知识�
 
 这套口径解决两个问题：
 
-- 医疗安全边界：图像观察、指南加载、诊断推理和审计记忆不能混在一个黑盒里，否则错误难以定位。
-- 工程可扩展性：新病种、新视觉模型、新指南来源和新验证规则应接入 knowledge/tool/runtime 层，而不是重构临床主链路。
+- 医疗安全边界：ONFH 图像观察、指南加载、诊断推理和审计记忆不能混在一个黑盒里，否则错误难以定位。
+- 工程可扩展性：新的 ONFH 鉴别知识、新视觉模型、新指南来源和新验证规则应接入 knowledge/tool/runtime 层，而不是重构临床主链路。
 
 因此，`Knowledge Builder` 和 `MemoryManager` 不应被讲成始终并列的业务诊断 Agent。它们分别属于条件触发的 guideline/knowledge 组件和底层 audit/runtime 基础设施。
 

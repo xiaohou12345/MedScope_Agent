@@ -1,6 +1,6 @@
 # MedScope Agent 中文说明
 
-MedScope Agent 是一个实验性的医疗多 Agent / Agentic Runtime 项目，目标是把“患者描述 + 医疗图像 + 医学指南 Knowledge”组织成一条可追踪、可审计、受证据约束的临床证据流水线。
+MedScope Agent 是一个面向股骨头坏死（ONFH）的实验性医疗多 Agent / Agentic Runtime 项目，目标是把“髋部症状 + 髋关节影像 + ONFH 医学指南 Knowledge”组织成一条可追踪、可审计、受证据约束的专病筛查、证据分析和分期辅助流水线。
 
 本项目是科研原型，不是医疗器械，不能用于真实临床诊断或治疗决策。
 
@@ -8,7 +8,15 @@ MedScope Agent 是一个实验性的医疗多 Agent / Agentic Runtime 项目，�
 
 ## 项目定位
 
-MedScope 不是简单把系统拆成很多 Agent。更准确的说法是：
+MedScope 不再定位为“从所有疾病中自动判断患者患了什么病”的通用诊断系统，而是收敛为：
+
+> 面向股骨头坏死（ONFH）的专病筛查、证据分析和分期辅助系统。
+
+其他 knowledge（如胶质瘤、肺炎、IPF）保留为架构验证、对照样例或后续扩展材料，不作为当前产品主线，也不代表系统已经具备全病种自动诊断能力。
+
+同属髋关节场景的其他 knowledge（如骨关节炎或退行性髋关节病变、外伤后改变、发育性髋臼发育不良相关退变）应作为 ONFH 的鉴别复查和假阳性控制模块使用。它们不和 ONFH 平级竞争“最终诊断”，而是在 ONFH 影像证据看起来阳性或证据不足时，检查这些征象是否可能由其他髋关节疾病解释，从而降低把退变、外伤或发育异常误判为股骨头坏死的风险。
+
+MedScope 也不是简单把系统拆成很多 Agent。更准确的说法是：
 
 ```text
 上层：Clinical Evidence Pipeline 临床证据流水线
@@ -29,12 +37,12 @@ MedScope 不是简单把系统拆成很多 Agent。更准确的说法是：
 
 一句话概括：
 
-> MedScope 把医疗诊断拆成一条受指南和证据约束的执行链路：视觉 Agent 只负责观察、定位、分割和测量；诊断 Agent 只消费结构化 evidence bundle；Memory/Audit 记录证据链；Gateway 负责 knowledge、文件、工具、契约和候选更新的统一管理。
+> MedScope 把 ONFH 专病筛查与分期辅助拆成一条受指南和证据约束的执行链路：视觉 Agent 只负责观察、定位、分割和测量；诊断 Agent 只消费结构化 evidence bundle；Memory/Audit 记录证据链；Gateway 负责 knowledge、文件、工具、契约和候选更新的统一管理。
 
 ## 当前已经实现的能力
 
-- 支持 `knowledge/` 中的正式 guideline knowledge。
-- 支持根据患者描述、症状、图像路径线索自动选择 knowledge。
+- 支持 `knowledge/femoral_head_necrosis.yaml` 中的 ONFH 正式 guideline knowledge。
+- 支持根据患者描述、症状、图像路径线索进行 ONFH-first knowledge 路由。
 - 支持 Vision Agent 根据 knowledge 的 `visual_protocol` 输出结构化视觉证据。
 - 支持参考 mask、VLM-only、VLM+MedSAM2 候选分割、MedSAM2 runner 等多种视觉路径。
 - 支持诊断 Agent 只读取 evidence bundle，不直接读取原始图像。
@@ -42,7 +50,7 @@ MedScope 不是简单把系统拆成很多 Agent。更准确的说法是：
 - 支持四类 memory：`patient_memory`、`image_memory`、`knowledge_memory`、`reasoning_memory`。
 - 支持 follow-up QA 基于 evidence bundle 回答，避免脱离当前病例证据。
 - 支持前端上传、Thinking 状态、影像发现、诊断报告、evidence bundle、memory audit 展示。
-- 支持 prompt baseline，用于比较普通 LLM/Codex 式提示词和 evidence-bounded pipeline 的差异。
+- 支持 prompt baseline，用于比较普通 LLM/Codex 式提示词和 ONFH evidence-bounded pipeline 的差异。
 
 ## 五个实现模块应该怎么讲
 
@@ -53,7 +61,7 @@ MedScope 不是简单把系统拆成很多 Agent。更准确的说法是：
 - `Clinical Orchestrator`：对应 `agents/gaodoctor_agent.py`，负责患者入口、意图识别、knowledge 路由、流程调度和 QA。
 - `Vision Evidence Agent`：对应 `agents/vision_agent.py` 和视觉工具，只输出视觉证据、mask、overlay、数值测量和证据充分性。
 - `Diagnosis Reasoning Agent`：对应 `agents/diagnosis_agent.py`，只根据 knowledge 和 evidence bundle 生成报告。
-- `Knowledge Builder / Guideline Component`：条件触发组件。已有 knowledge 时加载和校验；缺 knowledge 时才检索指南、抽取规则、生成候选或正式 knowledge。
+- `Knowledge Builder / Guideline Component`：条件触发组件。主线加载和校验 ONFH knowledge；需要鉴别复查或扩展时，才检索指南、抽取规则、生成候选或正式 knowledge。
 - `Memory / Audit Layer`：基础设施，不参与医学判断，只保存四类 memory、evidence bundle、runtime trace、audit 和 replay。
 
 底层的 `Evidence Gateway` 才是系统扩展性的核心：
@@ -102,9 +110,12 @@ web/          静态前端
 
 ## 当前 Knowledge
 
-正式 knowledge 文件：
+当前产品主线 knowledge：
 
 - `knowledge/femoral_head_necrosis.yaml`：股骨头坏死
+
+架构验证和扩展示例 knowledge：
+
 - `knowledge/diffuse_glioma_brats.yaml`：成人弥漫性胶质瘤 / BraTS
 - `knowledge/idiopathic_pulmonary_fibrosis_hrct.yaml`：特发性肺纤维化 HRCT
 - `knowledge/pneumonia_chest_xray.yaml`：肺炎胸片

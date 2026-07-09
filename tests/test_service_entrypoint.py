@@ -49,6 +49,14 @@ class FakeGaoDoctor:
         }
 
 
+class FakeOnfhVisualCandidateFailureDoctor(FakeGaoDoctor):
+    def handle_message(self, *args, **kwargs):
+        super().handle_message(*args, **kwargs)
+        raise RuntimeError(
+            "FHN no-mask visual pipeline did not complete: finding_segmentation_not_ready"
+        )
+
+
 class FakeInsufficientEvidenceDoctor(FakeGaoDoctor):
     def handle_message(self, *args, **kwargs):
         super().handle_message(*args, **kwargs)
@@ -1615,6 +1623,197 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
         self.assertIn("囊性变", confidence["basis"])
         self.assertIn("诊断置信度", result["report"])
         self.assertNotIn("不能确认", result["report"]["诊断置信度"][0]["display_sentence"])
+        onfh = result["onfh_assessment"]
+        self.assertEqual(onfh["flow_type"], "positive")
+        self.assertEqual(onfh["support_level"], "high")
+        self.assertEqual(onfh["staging_assessment"]["stage"], "疑似 ARCO II")
+        self.assertIn("硬化带", onfh["staging_assessment"]["supporting_findings"])
+        self.assertIn("囊性变", onfh["staging_assessment"]["supporting_findings"])
+        self.assertIn("重点结论", result["report"])
+        self.assertIn("分期辅助", result["report"]["重点结论"])
+        self.assertIn("疑似 ARCO II", result["report"]["重点结论"]["分期辅助"])
+        self.assertIn("硬化带", result["report"]["重点结论"]["分期辅助"])
+        self.assertIn("MRI", " ".join(onfh["next_steps"]))
+
+    def test_service_onfh_positive_flow_marks_collapse_as_arco_iii_or_above(self):
+        class CollapseEvidenceDoctor(FakeGaoDoctor):
+            def handle_message(self, *args, **kwargs):
+                super().handle_message(*args, **kwargs)
+                return {
+                    "case_id": "case_new",
+                    "intent": "diagnosis",
+                    "reply_to_patient": "collapse evidence",
+                    "visual_evidence_bundle": {
+                        "present_findings": ["crescent_sign", "collapse"],
+                        "structured_visual_facts": [
+                            {
+                                "target": "crescent_sign",
+                                "display_name": "新月征/软骨下骨折",
+                                "summary_text": "右侧股骨头软骨下骨折/新月征",
+                            },
+                            {
+                                "target": "collapse",
+                                "display_name": "股骨头塌陷",
+                                "summary_text": "右侧股骨头轮廓塌陷",
+                            },
+                        ],
+                    },
+                    "report": {
+                        "target_disease_assessment": {
+                            "target_disease": kwargs.get("disease_key"),
+                            "evidence_status": "partial_evidence",
+                        },
+                        "imaging_evidence_summary": {
+                            "supported_targets": ["crescent_sign", "collapse"],
+                        },
+                    },
+                }
+
+        result = MedScopeService(
+            gaodoctor_agent=CollapseEvidenceDoctor(),
+            knowledge_tool=FhnOnlyKnowledgeTool(),
+        ).handle_request(
+            {
+                "patient_message": "右髋疼痛，X 光有新月征和塌陷，判断股骨头坏死。",
+                "image_path": "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"], "image_modality": "xray"},
+                "disease_key": "femoral_head_necrosis",
+                "vision_mode": "real_vlm_validation",
+            }
+        )
+
+        onfh = result["onfh_assessment"]
+        self.assertEqual(onfh["flow_type"], "positive")
+        self.assertEqual(onfh["staging_assessment"]["stage"], "疑似 ARCO III 或以上")
+        self.assertIn("新月征/软骨下骨折", onfh["staging_assessment"]["supporting_findings"])
+        self.assertIn("股骨头塌陷", onfh["staging_assessment"]["supporting_findings"])
+        self.assertIn("疑似 ARCO III 或以上", result["report"]["重点结论"]["分期辅助"])
+
+    def test_service_onfh_positive_flow_maps_subchondral_fracture_to_arco_iii(self):
+        class SubchondralFractureDoctor(FakeGaoDoctor):
+            def handle_message(self, *args, **kwargs):
+                super().handle_message(*args, **kwargs)
+                return {
+                    "case_id": "case_new",
+                    "intent": "diagnosis",
+                    "reply_to_patient": "subchondral fracture evidence",
+                    "visual_evidence_bundle": {
+                        "present_findings": ["subchondral_fracture"],
+                        "structured_visual_facts": [
+                            {
+                                "target": "subchondral_fracture",
+                                "display_name": "subchondral_fracture",
+                                "summary_text": "Possible subtle subchondral lucent line beneath the superior articular surface.",
+                            },
+                        ],
+                    },
+                    "report": {
+                        "target_disease_assessment": {
+                            "target_disease": kwargs.get("disease_key"),
+                            "evidence_status": "partial_evidence",
+                        },
+                        "imaging_evidence_summary": {
+                            "supported_targets": ["subchondral_fracture"],
+                        },
+                    },
+                }
+
+        result = MedScopeService(
+            gaodoctor_agent=SubchondralFractureDoctor(),
+            knowledge_tool=FhnOnlyKnowledgeTool(),
+        ).handle_request(
+            {
+                "patient_message": "右髋疼痛，X 光提示软骨下骨折，判断股骨头坏死。",
+                "image_path": "output/fake/fhn_multifinding_source/fhn_pelvis_xray_panel_b.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"], "image_modality": "xray"},
+                "disease_key": "femoral_head_necrosis",
+                "vision_mode": "real_vlm_validation",
+            }
+        )
+
+        onfh = result["onfh_assessment"]
+        self.assertEqual(onfh["staging_assessment"]["stage"], "疑似 ARCO III 或以上")
+        self.assertIn("新月征/软骨下骨折", onfh["staging_assessment"]["supporting_findings"])
+        self.assertIn("疑似 ARCO III 或以上", result["report"]["重点结论"]["分期辅助"])
+
+    def test_service_onfh_negative_flow_recommends_mri_when_xray_negative_but_risk_high(self):
+        result = MedScopeService(
+            gaodoctor_agent=FakeInsufficientEvidenceDoctor(),
+            knowledge_tool=FhnOnlyKnowledgeTool(),
+        ).handle_request(
+            {
+                "patient_message": "右髋疼痛三个月，走路后加重，长期激素治疗，偶尔饮酒，X 光未见明确异常。",
+                "image_path": "output/fake/uploads/right_hip_ap_xray.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"], "image_modality": "xray"},
+                "disease_key": "femoral_head_necrosis",
+                "vision_mode": "real_vlm_validation",
+            }
+        )
+
+        onfh = result["onfh_assessment"]
+        self.assertEqual(onfh["flow_type"], "negative")
+        self.assertEqual(onfh["negative_category"], "xray_negative_but_clinical_risk_high")
+        self.assertIn("不能排除早期股骨头坏死", onfh["conclusion"])
+        self.assertIn("MRI", " ".join(onfh["next_steps"]))
+
+    def test_service_onfh_negative_flow_marks_low_quality_or_view_as_unreliable(self):
+        class LowQualityDoctor(FakeGaoDoctor):
+            def handle_message(self, *args, **kwargs):
+                super().handle_message(*args, **kwargs)
+                return {
+                    "case_id": "case_new",
+                    "intent": "diagnosis",
+                    "reply_to_patient": "image quality insufficient",
+                    "visual_evidence_bundle": {
+                        "present_findings": [],
+                        "quality_status": "low_quality",
+                        "view_status": "not_standard_view",
+                    },
+                    "report": {
+                        "target_disease_assessment": {
+                            "target_disease": kwargs.get("disease_key"),
+                            "evidence_status": "insufficient",
+                        }
+                    },
+                }
+
+        result = MedScopeService(
+            gaodoctor_agent=LowQualityDoctor(),
+            knowledge_tool=FhnOnlyKnowledgeTool(),
+        ).handle_request(
+            {
+                "patient_message": "右髋疼痛，上传 X 光。",
+                "image_path": "output/fake/uploads/right_hip_ap_xray.png",
+                "patient_info": {"symptoms": ["髋关节疼痛"], "image_modality": "xray"},
+                "disease_key": "femoral_head_necrosis",
+                "vision_mode": "real_vlm_validation",
+            }
+        )
+
+        onfh = result["onfh_assessment"]
+        self.assertEqual(onfh["flow_type"], "negative")
+        self.assertEqual(onfh["negative_category"], "image_quality_or_view_insufficient")
+        self.assertIn("不能可靠判断", onfh["conclusion"])
+
+    def test_service_onfh_negative_flow_keeps_follow_up_when_evidence_not_supportive(self):
+        result = MedScopeService(
+            gaodoctor_agent=FakeInsufficientEvidenceDoctor(),
+            knowledge_tool=FhnOnlyKnowledgeTool(),
+        ).handle_request(
+            {
+                "patient_message": "右髋轻微不适，上传 X 光，日常走路偶有酸胀。",
+                "image_path": "output/fake/uploads/right_hip_ap_xray.png",
+                "patient_info": {"symptoms": ["髋关节不适"], "image_modality": "xray"},
+                "disease_key": "femoral_head_necrosis",
+                "vision_mode": "real_vlm_validation",
+            }
+        )
+
+        onfh = result["onfh_assessment"]
+        self.assertEqual(onfh["flow_type"], "negative")
+        self.assertEqual(onfh["negative_category"], "evidence_not_supportive")
+        self.assertIn("未发现支持股骨头坏死", onfh["conclusion"])
+        self.assertIn("随访", " ".join(onfh["next_steps"]))
 
     def test_service_confidence_reads_visual_bundle_findings_used_by_patient_ui(self):
         class FindingsOnlyDoctor(FakeGaoDoctor):
@@ -1823,7 +2022,7 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
             {
                 "patient_message": "右髋疼痛，帮我看看",
                 "image_path": "output/fake/uploads/uploaded_patient_image.png",
-                "patient_info": {"symptoms": ["髋关节疼痛"]},
+                "patient_info": {"symptoms": ["髋关节疼痛"], "image_modality": "xray"},
             }
         )
 
@@ -1833,6 +2032,101 @@ class MedScopeServiceEntrypointTest(unittest.TestCase):
         self.assertEqual(result["routing_decision"]["selected_vision_mode"], "no_mask_knowledge")
         self.assertEqual(result["routing_decision"]["source"], "auto")
         self.assertIn("髋", result["routing_decision"]["matched_clues"])
+        self.assertEqual(result["routing_decision"]["onfh_applicability"]["status"], "applicable")
+
+    def test_service_rejects_non_hip_image_for_onfh_scope_before_vision_analysis(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        result = service.handle_request(
+            {
+                "patient_message": "头痛，上传脑部 MRI，请分析这张图",
+                "image_path": "output/fake/uploads/brain_flair.nii.gz",
+                "disease_key": "femoral_head_necrosis",
+                "patient_info": {
+                    "symptoms": ["头痛"],
+                    "image_modality": "mri",
+                },
+            }
+        )
+
+        self.assertEqual(fake_doctor.calls, [])
+        self.assertEqual(result["analysis_status"], "not_applicable_to_onfh_system")
+        self.assertEqual(result["onfh_applicability"]["status"], "not_applicable")
+        self.assertEqual(
+            result["onfh_applicability"]["reason"],
+            "uploaded_image_is_not_hip_related",
+        )
+        self.assertIn("不适用当前 ONFH 专病系统", result["reply_to_patient"])
+        self.assertFalse(result["onfh_applicability"]["checks"]["hip_related_image"])
+
+    def test_service_rejects_text_declared_chest_xray_for_onfh_scope(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        result = service.handle_request(
+            {
+                "patient_message": "我上传了一张胸部 X 光，用于测试当前系统是否会误诊股骨头坏死",
+                "image_path": "output/fake/uploads/uploaded_patient_image.png",
+                "disease_key": "femoral_head_necrosis",
+                "patient_info": {"image_modality": "xray"},
+            }
+        )
+
+        self.assertEqual(fake_doctor.calls, [])
+        self.assertEqual(result["analysis_status"], "not_applicable_to_onfh_system")
+        self.assertEqual(
+            result["onfh_applicability"]["reason"],
+            "uploaded_image_is_not_hip_related",
+        )
+        self.assertIn("不适用当前 ONFH 专病系统", result["reply_to_patient"])
+
+    def test_service_reports_insufficient_onfh_input_when_image_type_is_missing(self):
+        fake_doctor = FakeGaoDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        result = service.handle_request(
+            {
+                "patient_message": "右髋疼痛，帮我看看",
+                "image_path": "output/fake/uploads/uploaded_patient_image.png",
+                "disease_key": "femoral_head_necrosis",
+                "patient_info": {"symptoms": ["髋关节疼痛"]},
+            }
+        )
+
+        self.assertEqual(fake_doctor.calls, [])
+        self.assertEqual(result["analysis_status"], "insufficient_onfh_input")
+        self.assertEqual(result["onfh_applicability"]["status"], "insufficient_input")
+        self.assertIn("请说明影像类型是 X 光还是 MRI。", result["reply_to_patient"])
+
+    def test_service_maps_onfh_visual_candidate_failure_to_applicability_response(self):
+        fake_doctor = FakeOnfhVisualCandidateFailureDoctor()
+        service = MedScopeService(gaodoctor_agent=fake_doctor)
+
+        result = service.handle_request(
+            {
+                "patient_message": "右髋疼痛三个月，走路后加重，请结合 X 光分析",
+                "image_path": "output/uploads/patient_uploaded_xray.png",
+                "disease_key": "femoral_head_necrosis",
+                "patient_info": {
+                    "symptoms": ["髋关节疼痛"],
+                    "image_modality": "xray",
+                },
+            }
+        )
+
+        self.assertEqual(result["analysis_status"], "not_applicable_to_onfh_system")
+        self.assertEqual(result["onfh_applicability"]["status"], "not_applicable")
+        self.assertEqual(
+            result["onfh_applicability"]["reason"],
+            "visual_pipeline_could_not_confirm_hip_onfh_candidate",
+        )
+        self.assertIn("不适用当前 ONFH 专病系统", result["reply_to_patient"])
+        self.assertNotIn("finding_segmentation_not_ready", result["reply_to_patient"])
+        self.assertEqual(
+            result["report"]["target_disease_assessment"]["target_disease"],
+            "femoral_head_necrosis",
+        )
 
     def test_service_delegates_alignment_plan_to_planner(self):
         fake_doctor = FakeGaoDoctor()

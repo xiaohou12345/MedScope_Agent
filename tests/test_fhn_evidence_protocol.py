@@ -98,12 +98,32 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
         self.assertEqual(targets["early_osteonecrosis"]["execution_mode"], "insufficient_input")
 
         quantitative = self.knowledge["quantitative_evidence_protocol"]
+        collapse_protocol = quantitative["collapse_measurement_protocol"]
+        self.assertEqual(collapse_protocol["primary_metric"], "maximum_depression_depth")
+        self.assertEqual(collapse_protocol["unit"], "mm")
+        self.assertEqual(collapse_protocol["staging_rule"]["ARCO_IIIA"], "<= 2 mm")
+        self.assertEqual(collapse_protocol["staging_rule"]["ARCO_IIIB"], "> 2 mm")
+        self.assertIn("do_not_output_mm", collapse_protocol["safety_rules"]["no_calibration"])
+
         exploratory = {
             item["feature_name"]: item
             for item in quantitative["image_feature_quantification"]
         }
         self.assertEqual(exploratory["trabecular_irregularity_score"]["validation_status"], "requires_validation")
         self.assertFalse(exploratory["trabecular_irregularity_score"]["diagnosis_usable"])
+        self.assertEqual(exploratory["collapse_angle"]["diagnosis_usable_level"], "exploratory_only")
+
+        measurements = {
+            item["measurement_name"]: item
+            for item in quantitative["measurement_evidence"]
+        }
+        collapse_depth = measurements["maximum_femoral_head_depression_mm"]
+        self.assertEqual(collapse_depth["target"], "collapse")
+        self.assertEqual(collapse_depth["measurement_method"], "reference_contour_deviation")
+        self.assertTrue(collapse_depth["calibration_required"])
+        self.assertIn("pixel_spacing_or_scale_marker", collapse_depth["requires"])
+        self.assertEqual(collapse_depth["staging_rule"]["ARCO_IIIA"], "<= 2 mm")
+        self.assertIn("measurement_usable=false", collapse_depth["failure_policy"]["roi_or_landmark_unreliable"])
 
     def test_knowledge_descriptor_preserves_fhn_protocols_for_memory_and_diagnosis(self):
         descriptor = KnowledgeDescriptor.from_knowledge(self.knowledge).to_dict()
@@ -168,7 +188,14 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
         self.assertEqual(by_target["collapse"]["execution_mode"], "measurement_only")
         self.assertEqual(
             by_target["collapse"]["measurements"]["measurement_dependencies"],
-            ["femoral_head_roi", "contour", "articular_surface_contour", "landmark_quality"],
+            [
+                "femoral_head_roi",
+                "contour",
+                "articular_surface_contour",
+                "reference_contour",
+                "landmark_quality",
+                "pixel_spacing_or_scale_marker",
+            ],
         )
         self.assertFalse(by_target["collapse"]["measurements"]["measurement_usable"])
         self.assertEqual(by_target["early_osteonecrosis"]["execution_mode"], "insufficient_input")
@@ -301,7 +328,7 @@ class FemoralHeadEvidenceProtocolTest(unittest.TestCase):
         self.assertIn("femoral_head_roi", collapse["measurements"]["measurement_dependencies"])
         self.assertEqual(
             collapse["quantitative_protocol"]["measurement_names"],
-            ["femoral_head_collapse_depth"],
+            ["maximum_femoral_head_depression_mm"],
         )
 
     def test_gaodoctor_persists_fhn_protocol_evidence_items_to_memory(self):

@@ -1101,6 +1101,28 @@ body.lightbox-open {
   font-weight: 700;
 }
 
+.diagnosis-stage-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(15, 139, 111, 0.22);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px 10px;
+}
+
+.diagnosis-stage-line span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.diagnosis-stage-line strong {
+  color: var(--accent-dark);
+  font-size: 14px;
+}
+
 .diagnosis-confidence-note {
   color: var(--muted);
   font-size: 12px;
